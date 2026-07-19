@@ -1,0 +1,474 @@
+import { useState, type ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api';
+import type {
+  Character,
+  Encounter,
+  EncounterWithParticipants,
+  MonsterCatalogEntry,
+  MonsterInstance,
+  SnapshotParticipant,
+} from '../lib/types';
+import { isExactHp } from '../lib/types';
+import { useCampaignShell } from '../campaigns/CampaignShell';
+import { useEncounterLive } from './useEncounterLive';
+import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
+import { HPBar, HPBandPill } from '../components/HPBar';
+import { HpAdjustForm } from '../components/HpAdjustForm';
+import { EffectBadge } from '../components/EffectBadge';
+import { EffectApplyDialog, type ApplyEffectFormInput } from '../components/EffectApplyDialog';
+import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { BattleMap } from './BattleMap';
+import { ActionEconomyPanel } from './ActionEconomyPanel';
+import { Combobox } from '../components/Combobox';
+
+export function CombatTracker({ encounter }: { encounter: Encounter }) {
+  const { campaignId, campaign, role } = useCampaignShell();
+  const queryClient = useQueryClient();
+  const isDm = role === 'dm';
+  const live = useEncounterLive(encounter.id);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+
+  const detailQuery = useQuery({
+    queryKey: ['encounterDetail', encounter.id],
+    queryFn: () =>
+      api.get<{ encounter: EncounterWithParticipants }>(`/campaigns/${campaignId}/encounters/${encounter.id}`),
+  });
+
+  const charactersQuery = useQuery({
+    queryKey: ['characters', campaignId],
+    queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${campaignId}/characters`),
+    enabled: isDm,
+  });
+
+  const monsterInstancesQuery = useQuery({
+    queryKey: ['monsterInstances', campaignId],
+    queryFn: () => api.get<{ monsterInstances: MonsterInstance[] }>(`/campaigns/${campaignId}/monster-instances`),
+    enabled: isDm,
+  });
+
+  // Ability scores for the turn-action panel's roll triggers (Grab/Shove/
+  // Hide) — characters carry these directly, monster instances need a join
+  // through the bestiary catalog to their monster_id.
+  const bestiaryQuery = useQuery({
+    queryKey: ['catalog', 'monsters', campaign.srd_edition, campaignId],
+    queryFn: () =>
+      api.get<{ monsters: MonsterCatalogEntry[] }>(
+        `/catalog/monsters?edition=${campaign.srd_edition}&campaignId=${campaignId}`,
+      ),
+    enabled: isDm,
+  });
+
+  const effectDefinitionsQuery = useEffectDefinitionsCatalog(campaignId);
+
+  function invalidateControlPlane() {
+    void queryClient.invalidateQueries({ queryKey: ['encounters', campaignId] });
+    void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounter.id] });
+  }
+
+  const startMutation = useMutation({
+    mutationFn: () => api.post(`/encounters/${encounter.id}/start`),
+    onSuccess: invalidateControlPlane,
+  });
+  const endMutation = useMutation({
+    mutationFn: () => api.post(`/encounters/${encounter.id}/end`),
+    onSuccess: invalidateControlPlane,
+  });
+  const rollInitiativeMutation = useMutation({
+    mutationFn: (force: boolean) => api.post(`/encounters/${encounter.id}/roll-initiative`, { force }),
+    onSuccess: invalidateControlPlane,
+  });
+  const advanceTurnMutation = useMutation({
+    mutationFn: () => api.post(`/encounters/${encounter.id}/advance-turn`),
+    onSuccess: invalidateControlPlane,
+  });
+  const removeParticipantMutation = useMutation({
+    mutationFn: (participantId: number) => api.delete(`/encounters/${encounter.id}/participants/${participantId}`),
+    onSuccess: invalidateControlPlane,
+  });
+  const addParticipantMutation = useMutation({
+    mutationFn: (body: { characterId?: number; monsterInstanceId?: number }) =>
+      api.post(`/encounters/${encounter.id}/participants`, body),
+    onSuccess: invalidateControlPlane,
+  });
+  const hpMutation = useMutation({
+    mutationFn: ({
+      target,
+      id,
+      delta,
+      tempDelta,
+    }: {
+      target: 'character' | 'monster';
+      id: number;
+      delta: number;
+      tempDelta: number;
+    }) =>
+      target === 'character'
+        ? api.patch(`/characters/${id}/hp`, { delta, tempDelta })
+        : api.patch(`/monster-instances/${id}/hp`, { delta, tempDelta }),
+    // No cache write here on purpose — HP_CHANGED arriving over the socket
+    // (which the DM's own action also triggers, per PLAN.md §5.2) is the
+    // single source of truth for combat HP display, so this mutation only
+    // needs to surface errors, not race a second local write.
+  });
+  const applyEffectMutation = useMutation({
+    mutationFn: ({ participant, input }: { participant: SnapshotParticipant; input: ApplyEffectFormInput }) =>
+      api.post(`/encounters/${encounter.id}/effects`, {
+        ...(participant.characterId != null
+          ? { characterId: participant.characterId }
+          : { monsterInstanceId: participant.monsterInstanceId }),
+        effectDefinitionId: input.effectDefinitionId,
+        durationValue: input.durationValue,
+        visibleToPlayers: input.visibleToPlayers,
+      }),
+    // Same "no cache write" discipline as hpMutation — EFFECT_APPLIED over
+    // the socket is the source of truth (see useEncounterLive.ts).
+  });
+  const removeEffectMutation = useMutation({
+    mutationFn: (effectId: number) => api.delete(`/effects/${effectId}`),
+    // EFFECT_EXPIRED over the socket patches the cache; see useEncounterLive.ts.
+  });
+
+  const status = live?.encounter.status ?? detailQuery.data?.encounter.status ?? encounter.status;
+  const currentRound = live?.encounter.currentRound ?? detailQuery.data?.encounter.current_round ?? encounter.current_round;
+  const participants: SnapshotParticipant[] = live?.participants ?? [];
+  const activeParticipantId = live?.activeParticipantId ?? null;
+
+  const existingCharacterIds = new Set(
+    (live?.participants.map((p) => p.characterId) ?? detailQuery.data?.encounter.participants.map((p) => p.character_id) ?? []).filter(
+      (id): id is number => id != null,
+    ),
+  );
+  const existingMonsterInstanceIds = new Set(
+    (
+      live?.participants.map((p) => p.monsterInstanceId) ??
+      detailQuery.data?.encounter.participants.map((p) => p.monster_instance_id) ??
+      []
+    ).filter((id): id is number => id != null),
+  );
+
+  const availableCharacters = (charactersQuery.data?.characters ?? []).filter((c) => !existingCharacterIds.has(c.id));
+  const availableMonsterInstances = (monsterInstancesQuery.data?.monsterInstances ?? []).filter(
+    (mi) => !existingMonsterInstanceIds.has(mi.id),
+  );
+
+  return (
+    <div className="space-y-4">
+      <header className="rounded-lg border border-stone-800 bg-stone-900 p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-stone-100">{encounter.name}</h2>
+          <p className="text-sm text-stone-400">
+            <span className="uppercase font-medium">{status}</span>
+            {status !== 'preparing' && ` · Round ${currentRound}`}
+          </p>
+        </div>
+
+        {isDm && (
+          <div className="flex flex-wrap gap-2">
+            {status === 'preparing' && (
+              <ActionButton onClick={() => startMutation.mutate()} pending={startMutation.isPending}>
+                Start encounter
+              </ActionButton>
+            )}
+            {(status === 'active' || status === 'paused') && (
+              <ActionButton onClick={() => endMutation.mutate()} pending={endMutation.isPending} variant="danger">
+                End encounter
+              </ActionButton>
+            )}
+            <ActionButton
+              onClick={() => rollInitiativeMutation.mutate(false)}
+              pending={rollInitiativeMutation.isPending}
+              variant="secondary"
+            >
+              Roll initiative
+            </ActionButton>
+            {status === 'active' && (
+              <ActionButton onClick={() => advanceTurnMutation.mutate()} pending={advanceTurnMutation.isPending}>
+                Advance turn
+              </ActionButton>
+            )}
+          </div>
+        )}
+      </header>
+
+      {[
+        startMutation,
+        endMutation,
+        rollInitiativeMutation,
+        advanceTurnMutation,
+        removeParticipantMutation,
+        addParticipantMutation,
+        hpMutation,
+        applyEffectMutation,
+        removeEffectMutation,
+      ]
+        .filter((m) => m.isError)
+        .map((m, i) => (
+          <ErrorBanner key={i} message={errorMessage(m.error)} />
+        ))}
+
+      {!live && (
+        <p className="text-sm text-stone-500 italic">
+          {isDm
+            ? 'Connecting to live combat state…'
+            : "You don't have a character in this encounter yet — nothing to show until the DM adds you."}
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <ActionButton
+          onClick={() => setViewMode('list')}
+          variant={viewMode === 'list' ? 'primary' : 'secondary'}
+        >
+          List
+        </ActionButton>
+        <ActionButton
+          onClick={() => setViewMode('map')}
+          variant={viewMode === 'map' ? 'primary' : 'secondary'}
+        >
+          Map
+        </ActionButton>
+      </div>
+
+      {viewMode === 'map' && (
+        <BattleMap
+          encounterId={encounter.id}
+          campaignId={campaignId}
+          map={live?.map ?? null}
+          participants={participants}
+          activeParticipantId={activeParticipantId}
+          isDm={isDm}
+        />
+      )}
+
+      {viewMode === 'list' && (
+      <ol className="space-y-2">
+        {participants.map((p) => (
+          <li
+            key={p.participantId}
+            className={`rounded-lg border p-3 sm:p-4 ${
+              p.participantId === activeParticipantId
+                ? 'border-amber-600 bg-amber-950/20'
+                : 'border-stone-800 bg-stone-900'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-stone-500 text-sm font-mono w-10 flex-shrink-0">
+                  {p.initiativeRoll > -9999 ? p.initiativeRoll : '—'}
+                </span>
+                <span className="font-medium text-stone-100 truncate">{p.name}</span>
+                <span
+                  className="text-xs text-stone-500 border border-stone-700 rounded px-1 flex-shrink-0"
+                  title="Armor Class"
+                >
+                  AC {p.armorClass}
+                </span>
+                <span
+                  className={`text-xs rounded px-1 flex-shrink-0 border ${
+                    p.posX != null && p.posY != null
+                      ? 'text-stone-500 border-stone-700'
+                      : 'text-stone-600 border-stone-800 italic'
+                  }`}
+                  title="Position on the battle map"
+                >
+                  {p.posX != null && p.posY != null ? `(${p.posX}, ${p.posY})` : 'unplaced'}
+                </span>
+                {p.participantId === activeParticipantId && (
+                  <span className="text-xs uppercase font-semibold text-amber-500">Current turn</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="min-w-[8rem]">
+                  {isExactHp(p.hp) ? (
+                    <HPBar current={p.hp.hpCurrent} max={p.hp.hpMax} temp={p.hp.hpTemp} />
+                  ) : (
+                    <HPBandPill band={p.hp.band} />
+                  )}
+                </div>
+                {isDm && (
+                  <button
+                    type="button"
+                    onClick={() => removeParticipantMutation.mutate(p.participantId)}
+                    className="text-red-400 hover:text-red-300 text-sm px-1"
+                    aria-label={`Remove ${p.name} from encounter`}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {isDm && (
+              <HpAdjustForm
+                compact
+                disabled={hpMutation.isPending}
+                onApply={(delta, tempDelta) =>
+                  hpMutation.mutate({
+                    target: p.characterId != null ? 'character' : 'monster',
+                    id: (p.characterId ?? p.monsterInstanceId)!,
+                    delta,
+                    tempDelta,
+                  })
+                }
+              />
+            )}
+
+            {(p.effects.length > 0 || isDm) && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {p.effects.map((effect) => (
+                  <EffectBadge
+                    key={effect.effectId}
+                    effect={effect}
+                    removable={isDm}
+                    onRemove={() => removeEffectMutation.mutate(effect.effectId)}
+                  />
+                ))}
+                {isDm && (
+                  <EffectApplyDialog
+                    effectDefinitions={effectDefinitionsQuery.data?.effectDefinitions ?? []}
+                    pending={applyEffectMutation.isPending}
+                    onApply={(input) => applyEffectMutation.mutate({ participant: p, input })}
+                  />
+                )}
+              </div>
+            )}
+
+            {isDm && p.participantId === activeParticipantId && (
+              <ActionEconomyPanel
+                encounterId={encounter.id}
+                participant={p}
+                abilityScores={resolveAbilityScores(p, charactersQuery.data?.characters, monsterInstancesQuery.data?.monsterInstances, bestiaryQuery.data?.monsters)}
+              />
+            )}
+          </li>
+        ))}
+        {participants.length === 0 && live && <EmptyState message="No participants in this encounter yet." />}
+      </ol>
+      )}
+
+      {isDm && (
+        <AddParticipantForm
+          characters={availableCharacters}
+          monsterInstances={availableMonsterInstances}
+          pending={addParticipantMutation.isPending}
+          onAdd={(body) => addParticipantMutation.mutate(body)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Ability scores for ActionEconomyPanel's roll triggers — characters carry
+// str/dex/etc directly; a monster instance needs a hop through the bestiary
+// catalog via its monster_id. Returns null (panel just omits roll buttons)
+// if the relevant source list hasn't loaded yet or the row can't be found.
+function resolveAbilityScores(
+  participant: SnapshotParticipant,
+  characters: Character[] | undefined,
+  monsterInstances: MonsterInstance[] | undefined,
+  monsters: MonsterCatalogEntry[] | undefined,
+): Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number> | null {
+  if (participant.characterId != null) {
+    const c = characters?.find((ch) => ch.id === participant.characterId);
+    if (!c) return null;
+    return { str: c.str, dex: c.dex, con: c.con, int: c.int, wis: c.wis, cha: c.cha };
+  }
+  if (participant.monsterInstanceId != null) {
+    const mi = monsterInstances?.find((m) => m.id === participant.monsterInstanceId);
+    const m = mi ? monsters?.find((catalog) => catalog.id === mi.monster_id) : undefined;
+    if (!m) return null;
+    return { str: m.str, dex: m.dex, con: m.con, int: m.int, wis: m.wis, cha: m.cha };
+  }
+  return null;
+}
+
+function ActionButton({
+  children,
+  onClick,
+  pending,
+  variant = 'primary',
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  pending?: boolean;
+  variant?: 'primary' | 'secondary' | 'danger';
+}) {
+  const styles = {
+    primary: 'bg-amber-600 hover:bg-amber-500 text-stone-950',
+    secondary: 'bg-stone-800 hover:bg-stone-700 text-stone-100 border border-stone-700',
+    danger: 'bg-red-700 hover:bg-red-600 text-white',
+  }[variant];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={pending}
+      className={`rounded-md font-semibold px-3 py-2 text-sm disabled:opacity-60 min-h-[2.5rem] ${styles}`}
+    >
+      {pending ? '…' : children}
+    </button>
+  );
+}
+
+function AddParticipantForm({
+  characters,
+  monsterInstances,
+  onAdd,
+  pending,
+}: {
+  characters: Character[];
+  monsterInstances: MonsterInstance[];
+  onAdd: (body: { characterId?: number; monsterInstanceId?: number }) => void;
+  pending: boolean;
+}) {
+  const [kind, setKind] = useState<'character' | 'monster'>('character');
+  const [selected, setSelected] = useState('');
+
+  const options = kind === 'character' ? characters : monsterInstances;
+
+  function handleAdd() {
+    const id = Number(selected);
+    if (!id) return;
+    onAdd(kind === 'character' ? { characterId: id } : { monsterInstanceId: id });
+    setSelected('');
+  }
+
+  return (
+    <div className="rounded-lg border border-stone-800 bg-stone-900 p-4 flex flex-wrap items-end gap-2">
+      <div>
+        <label className="block text-xs text-stone-500 mb-1">Add participant</label>
+        <select
+          value={kind}
+          onChange={(e) => {
+            setKind(e.target.value as 'character' | 'monster');
+            setSelected('');
+          }}
+          className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+        >
+          <option value="character">Character</option>
+          <option value="monster">Monster instance</option>
+        </select>
+      </div>
+      <Combobox
+        value={selected}
+        onChange={setSelected}
+        placeholder="Search…"
+        className="min-w-[10rem]"
+        options={options.map((o) => ({
+          value: String(o.id),
+          label: 'name' in o ? o.name : (o as MonsterInstance).custom_name || (o as MonsterInstance).monster_name || `#${o.id}`,
+        }))}
+      />
+      <button
+        type="button"
+        disabled={!selected || pending}
+        onClick={handleAdd}
+        className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-stone-950 font-semibold px-3 py-1.5 text-sm"
+      >
+        Add
+      </button>
+    </div>
+  );
+}
