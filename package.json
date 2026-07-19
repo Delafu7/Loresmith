@@ -1,0 +1,16 @@
+{
+  "name": "loresmith",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=packages/server",
+    "dev:web": "npm run dev --workspace=packages/web",
+    "migrate": "npm run migrate --workspace=packages/server",
+    "seed": "npm run seed --workspace=packages/server",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}

@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+.DS_Store
+coverage/
+*.tsbuildinfo
+packages/server/uploads/
+
+# Externally-fetched skill cache — regenerable from skills-lock.json, same
+# reasoning as node_modules/package-lock.json.
+.agents/
+
+# .claude/skills/* are symlinks into .agents/skills/ above — would be
+# dangling for anyone else who clones this repo. settings.local.json is
+# Claude Code's own per-machine/session permission allowlist, not project
+# config (that's what the "local" in the filename denotes).
+.claude/skills/
+.claude/settings.local.json
