@@ -1,0 +1,203 @@
+import { useEffect, useState } from 'react';
+import type { ClassCatalog, CharacterClass, MulticlassPrereqFailure, SubclassCatalog } from '../lib/types';
+import { ApiError } from '../lib/api';
+import { ErrorBanner, errorMessage } from '../components/Feedback';
+
+interface DraftRow {
+  classId: number;
+  subclassId: number | null;
+  level: number;
+}
+
+function formatValidationError(error: unknown) {
+  if (error instanceof ApiError && error.code === 'VALIDATION_ERROR') {
+    const failures = (error.details as { failures?: MulticlassPrereqFailure[] } | null | undefined)?.failures;
+    if (Array.isArray(failures) && failures.length > 0) {
+      return (
+        <div role="alert" className="rounded-md border border-red-800 bg-red-950/50 text-red-300 text-xs px-3 py-2 space-y-1">
+          <p className="font-semibold">Multiclass prerequisites not met:</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {failures.map((f, i) => (
+              <li key={i}>
+                {f.className} requires {f.abilityIndex.toUpperCase()} {f.required} (this character has {f.actual})
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+  }
+  return <ErrorBanner message={errorMessage(error)} />;
+}
+
+export function ClassSummaryPanel({
+  classesCatalog,
+  subclassesCatalog,
+  classRows,
+  editable,
+  onSave,
+  saving,
+}: {
+  classesCatalog: ClassCatalog[];
+  subclassesCatalog: SubclassCatalog[];
+  classRows: CharacterClass[];
+  editable: boolean;
+  // Returns a Promise (backed by TanStack Query's mutateAsync) so this panel
+  // can stay open and show a readable inline error on a 4xx VALIDATION_ERROR
+  // (multiclass prerequisites not met) instead of closing immediately and
+  // losing the user's in-progress edit — see formatValidationError above.
+  onSave: (rows: DraftRow[]) => Promise<unknown>;
+  saving?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<DraftRow[]>(
+    classRows.map((r) => ({ classId: r.class_id, subclassId: r.subclass_id, level: r.level })),
+  );
+  const [saveError, setSaveError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (!editing) {
+      setDraft(classRows.map((r) => ({ classId: r.class_id, subclassId: r.subclass_id, level: r.level })));
+    }
+  }, [classRows, editing]);
+
+  const classById = new Map(classesCatalog.map((c) => [c.id, c]));
+  const subclassById = new Map(subclassesCatalog.map((s) => [s.id, s]));
+  const totalLevel = classRows.reduce((sum, r) => sum + r.level, 0) || 1;
+
+  if (!editing) {
+    return (
+      <div className="rounded-lg border border-stone-800 bg-stone-900 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Class &amp; level</h3>
+          {editable && (
+            <button
+              type="button"
+              onClick={() => {
+                setSaveError(null);
+                setEditing(true);
+              }}
+              className="text-xs text-amber-500 hover:text-amber-400"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+        {classRows.length === 0 ? (
+          <p className="text-stone-500 text-sm italic">No classes set.</p>
+        ) : (
+          <ul className="text-sm text-stone-200 space-y-1">
+            {classRows.map((r) => {
+              const subclass = r.subclass_id != null ? subclassById.get(r.subclass_id) : undefined;
+              return (
+                <li key={r.class_id}>
+                  {classById.get(r.class_id)?.name ?? `Class #${r.class_id}`} {r.level}
+                  {subclass ? ` (${subclass.name})` : ''}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="text-xs text-stone-500 mt-2">Total level {totalLevel}</p>
+      </div>
+    );
+  }
+
+  function updateRow(idx: number, patch: Partial<DraftRow>) {
+    setDraft((d) => d.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  }
+
+  async function handleSave() {
+    setSaveError(null);
+    try {
+      await onSave(draft);
+      setEditing(false);
+    } catch (err) {
+      setSaveError(err);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-stone-800 bg-stone-900 p-4">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">Class &amp; level</h3>
+      <div className="space-y-2">
+        {draft.map((row, idx) => {
+          const subclassOptions = subclassesCatalog.filter((s) => s.class_id === row.classId);
+          return (
+            <div key={idx} className="flex flex-wrap items-center gap-2">
+              <select
+                value={row.classId}
+                onChange={(e) => updateRow(idx, { classId: Number(e.target.value), subclassId: null })}
+                className="flex-1 min-w-[8rem] rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100 text-sm"
+              >
+                {classesCatalog.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={row.subclassId ?? ''}
+                onChange={(e) => updateRow(idx, { subclassId: e.target.value ? Number(e.target.value) : null })}
+                disabled={subclassOptions.length === 0}
+                className="flex-1 min-w-[8rem] rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100 text-sm disabled:opacity-50"
+              >
+                <option value="">No subclass{subclassOptions.length === 0 ? ' (none yet)' : ''}</option>
+                {subclassOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={row.level}
+                onChange={(e) => updateRow(idx, { level: Number(e.target.value) })}
+                className="w-16 rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100 text-sm text-center"
+              />
+              <button
+                type="button"
+                onClick={() => setDraft((d) => d.filter((_, i) => i !== idx))}
+                className="text-red-400 hover:text-red-300 text-sm px-1"
+                aria-label="Remove class"
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setDraft((d) => [...d, { classId: classesCatalog[0]?.id ?? 0, subclassId: null, level: 1 }])}
+          disabled={classesCatalog.length === 0}
+          className="text-xs text-amber-500 hover:text-amber-400"
+        >
+          + Add class {draft.length > 0 ? '(multiclass)' : ''}
+        </button>
+      </div>
+      {saveError !== null && <div className="mt-3">{formatValidationError(saveError)}</div>}
+      <div className="flex gap-2 mt-3">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={handleSave}
+          className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-stone-950 font-semibold px-3 py-1.5 text-sm"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSaveError(null);
+            setEditing(false);
+          }}
+          className="rounded-md border border-stone-700 px-3 py-1.5 text-sm text-stone-300 hover:bg-stone-800"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
