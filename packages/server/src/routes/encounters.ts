@@ -1,0 +1,175 @@
+import { Router } from 'express';
+import type { NextFunction, Request, Response } from 'express';
+import { pool } from '../db/pool.js';
+import { requireAuth } from '../middleware/auth.js';
+import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
+import { AppError, notFound } from '../middleware/errors.js';
+import { requireMembership, requireDm } from '../services/authz.js';
+import {
+  addParticipantSchema,
+  applyActionEconomySchema,
+  createEncounterSchema,
+  rollInitiativeSchema,
+  setInitiativeSchema,
+  setParticipantPositionSchema,
+  updateEncounterSchema,
+  upsertEncounterMapSchema,
+} from '../schemas/encounters.js';
+import * as encountersService from '../services/encounters.js';
+import {
+  getIo,
+  broadcastCombatStarted,
+  broadcastCombatEnded,
+  broadcastInitiativeRolled,
+  broadcastTurnAdvanced,
+  broadcastParticipantJoined,
+  broadcastParticipantLeft,
+  broadcastEffectExpired,
+  broadcastMapUpdated,
+  broadcastTokenMoved,
+  broadcastActionEconomyChanged,
+  pushEncounterRoomJoinForOwner,
+} from '../sockets/broadcast.js';
+
+// Mounted at /campaigns/:id/encounters — nested CRUD (id under the campaign
+// prefix, same convention as monster-instances). A campaign can have several
+// encounters with status='active' at once; never assume a single one.
+export const campaignEncountersRouter = Router({ mergeParams: true });
+campaignEncountersRouter.use(requireAuth, requireCampaignMember());
+
+campaignEncountersRouter.get('/', async (req, res) => {
+  const encounters = await encountersService.listEncounters(pool, req.campaignId!);
+  res.json({ encounters });
+});
+
+campaignEncountersRouter.post('/', requireRole('dm'), async (req, res) => {
+  const input = createEncounterSchema.parse(req.body);
+  const encounter = await encountersService.createEncounter(pool, req.campaignId!, input);
+  res.status(201).json({ encounter });
+});
+
+campaignEncountersRouter.get('/:encounterId', async (req, res) => {
+  const encounter = await encountersService.getEncounter(pool, req.campaignId!, Number(req.params.encounterId));
+  res.json({ encounter });
+});
+
+campaignEncountersRouter.patch('/:encounterId', requireRole('dm'), async (req, res) => {
+  const input = updateEncounterSchema.parse(req.body);
+  const encounter = await encountersService.updateEncounter(pool, req.campaignId!, Number(req.params.encounterId), input);
+  res.json({ encounter });
+});
+
+campaignEncountersRouter.delete('/:encounterId', requireRole('dm'), async (req, res) => {
+  await encountersService.deleteEncounter(pool, req.campaignId!, Number(req.params.encounterId));
+  res.status(204).send();
+});
+
+// Mounted at /encounters — flat action routes (start/end/participants/
+// roll-initiative/advance-turn). No campaignId in the URL, so this local
+// middleware derives it from the encounter row itself, then applies the
+// usual membership + DM-role checks (combat control is a DM tool).
+async function requireEncounterDm(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const encounterId = Number(req.params.id);
+  if (!Number.isInteger(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
+
+  const result = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
+  const row = result.rows[0];
+  if (!row) throw notFound('Encounter');
+
+  const role = await requireMembership(pool, row.campaign_id, req.user!.id);
+  requireDm(role);
+  next();
+}
+
+export const encountersRouter = Router();
+encountersRouter.use(requireAuth);
+
+encountersRouter.post('/:id/start', requireEncounterDm, async (req, res) => {
+  const encounter = await encountersService.startEncounter(pool, Number(req.params.id));
+  broadcastCombatStarted(getIo(req.app), encounter);
+  res.json({ encounter });
+});
+
+encountersRouter.post('/:id/end', requireEncounterDm, async (req, res) => {
+  const encounter = await encountersService.endEncounter(pool, Number(req.params.id));
+  broadcastCombatEnded(getIo(req.app), encounter);
+  res.json({ encounter });
+});
+
+encountersRouter.post('/:id/participants', requireEncounterDm, async (req, res) => {
+  const input = addParticipantSchema.parse(req.body);
+  const { encounter, participant } = await encountersService.addParticipant(pool, Number(req.params.id), input);
+  const io = getIo(req.app);
+  broadcastParticipantJoined(io, encounter, participant);
+  await pushEncounterRoomJoinForOwner(io, pool, encounter.id, encounter.campaign_id, participant.character_id);
+  res.status(201).json({ participant });
+});
+
+encountersRouter.delete('/:id/participants/:pid', requireEncounterDm, async (req, res) => {
+  const { encounter, participant } = await encountersService.removeParticipant(
+    pool, Number(req.params.id), Number(req.params.pid),
+  );
+  broadcastParticipantLeft(getIo(req.app), encounter, participant);
+  res.status(204).send();
+});
+
+encountersRouter.patch('/:id/participants/:pid/initiative', requireEncounterDm, async (req, res) => {
+  const input = setInitiativeSchema.parse(req.body);
+  const participant = await encountersService.setParticipantInitiative(
+    pool, Number(req.params.id), Number(req.params.pid), input,
+  );
+  res.json({ participant });
+});
+
+encountersRouter.post('/:id/roll-initiative', requireEncounterDm, async (req, res) => {
+  const input = rollInitiativeSchema.parse(req.body ?? {});
+  const result = await encountersService.rollInitiative(pool, Number(req.params.id), input.force);
+  broadcastInitiativeRolled(getIo(req.app), result.encounter, result.participants);
+  res.json(result);
+});
+
+encountersRouter.post('/:id/advance-turn', requireEncounterDm, async (req, res) => {
+  const result = await encountersService.advanceTurn(pool, Number(req.params.id));
+  const io = getIo(req.app);
+  broadcastTurnAdvanced(io, result.encounter, result.participants);
+  // Round-based effects that just hit zero duration (services/encounters.ts's
+  // advanceTurn decrements 'rounds' effects in the same transaction as the
+  // turn advance) all share this turn advance's bumped sync_seq — see
+  // broadcast.ts's batching-choice comment on broadcastEffectExpired for why
+  // this is one event per expired effect rather than one batched event.
+  const sync = { encounter_id: result.encounter.id, campaign_id: result.encounter.campaign_id, sync_seq: result.encounter.sync_seq };
+  for (const expired of result.expiredEffects) {
+    await broadcastEffectExpired(io, sync, expired, expired.effect_definition_name);
+  }
+  res.json(result);
+});
+
+// Battle map (Phase 3.3). Same requireEncounterDm guard as /start, /end,
+// etc. — placing tokens and configuring the map is a DM tool.
+encountersRouter.put('/:id/map', requireEncounterDm, async (req, res) => {
+  const input = upsertEncounterMapSchema.parse(req.body);
+  const { encounter, map } = await encountersService.upsertEncounterMap(pool, Number(req.params.id), input);
+  broadcastMapUpdated(getIo(req.app), encounter, map);
+  res.json({ map: encountersService.formatMapForWire(map) });
+});
+
+encountersRouter.patch('/:id/participants/:pid/position', requireEncounterDm, async (req, res) => {
+  const input = setParticipantPositionSchema.parse(req.body);
+  const { encounter, participant } = await encountersService.setParticipantPosition(
+    pool, Number(req.params.id), Number(req.params.pid), input,
+  );
+  broadcastTokenMoved(getIo(req.app), encounter, participant);
+  res.json({ participant });
+});
+
+// Per-turn action economy (Phase 3.6). Same requireEncounterDm guard as
+// every other combat_participants mutation in this file — combat control is
+// a DM tool throughout this app, not something a player mutates directly.
+encountersRouter.patch('/:id/participants/:pid/action-economy', requireEncounterDm, async (req, res) => {
+  const input = applyActionEconomySchema.parse(req.body);
+  const { encounter, participant } = await encountersService.applyActionEconomy(
+    pool, Number(req.params.id), Number(req.params.pid), input,
+  );
+  broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
+  res.json({ participant });
+});

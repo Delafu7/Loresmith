@@ -1,0 +1,234 @@
+// Server-authoritative d20 dice roller (Phase 3.4, PLAN.md §3.5/§4.4/§5.7).
+// The RNG lives here and ONLY here — the client never computes or submits a
+// roll result, closing the obvious cheating vector (PLAN.md tradeoff #2,
+// §4.3) where a player-supplied "result" could just be lied about. Same
+// `1 + Math.floor(Math.random() * 20)` idiom as services/encounters.ts's
+// rollInitiative.
+
+import type { Pool } from 'pg';
+import { AppError, notFound } from '../middleware/errors.js';
+import { requireOwnerOrDm, type CampaignRole } from './authz.js';
+import { fetchCharacterOrThrow } from './characters.js';
+import type { CreateDiceRollInput, ListDiceRollsQuery } from '../schemas/diceRolls.js';
+
+export interface DiceRollRow {
+  id: number;
+  campaign_id: number;
+  user_id: number;
+  character_id: number | null;
+  monster_instance_id: number | null;
+  encounter_id: number | null;
+  roll_type: string;
+  roll_context: string | null;
+  d20_rolls: number[];
+  keep: 'normal' | 'advantage' | 'disadvantage';
+  dice_sides: number;
+  dice_count: number;
+  modifier: number;
+  result_total: number;
+  visible_to_players: boolean;
+  created_at: Date;
+}
+
+function rollDie(sides: number): number {
+  return 1 + Math.floor(Math.random() * sides);
+}
+
+export async function rollDice(
+  pool: Pool,
+  campaignId: number,
+  actorId: number,
+  role: CampaignRole,
+  input: CreateDiceRollInput,
+): Promise<DiceRollRow> {
+  // ---- characterId: must belong to THIS campaign; a player may only roll
+  // as their own PC, never someone else's (or an NPC) — mirrors the
+  // ownership-scoping convention used everywhere else (e.g.
+  // services/characters.ts's authorizeCharacterMutation). Cross-campaign
+  // characterId 404s rather than 403s, same "don't leak existence of another
+  // campaign's row" convention as services/monsterCatalog.ts's
+  // fetchHomebrewMonsterOrThrow.
+  let characterId: number | null = null;
+  if (input.characterId !== undefined) {
+    const character = await fetchCharacterOrThrow(pool, input.characterId);
+    if (Number(character.campaign_id) !== campaignId) throw notFound('Character');
+    requireOwnerOrDm(role, character.owner_user_id, actorId);
+    characterId = input.characterId;
+  }
+
+  // ---- monsterInstanceId: DM-only (players never roll for monsters), and
+  // must belong to this campaign.
+  let monsterInstanceId: number | null = null;
+  if (input.monsterInstanceId !== undefined) {
+    if (role !== 'dm') {
+      throw new AppError('FORBIDDEN_ROLE', 'Only the DM can roll for a monster instance');
+    }
+    const instanceRes = await pool.query<{ campaign_id: number }>(
+      `SELECT campaign_id FROM monster_instances WHERE id = $1`,
+      [input.monsterInstanceId],
+    );
+    const instanceRow = instanceRes.rows[0];
+    if (!instanceRow || Number(instanceRow.campaign_id) !== campaignId) throw notFound('Monster instance');
+    monsterInstanceId = input.monsterInstanceId;
+  }
+
+  // ---- encounterId: optional (rolls can happen outside combat), but if
+  // supplied it must belong to this campaign — same cross-campaign 404
+  // convention as above.
+  let encounterId: number | null = null;
+  if (input.encounterId !== undefined) {
+    const encounterRes = await pool.query<{ campaign_id: number }>(
+      `SELECT campaign_id FROM encounters WHERE id = $1`,
+      [input.encounterId],
+    );
+    const encounterRow = encounterRes.rows[0];
+    if (!encounterRow || Number(encounterRow.campaign_id) !== campaignId) throw notFound('Encounter');
+    encounterId = input.encounterId;
+  }
+
+  // ---- visibleToPlayers: only a DM may hide a roll. A player's own attempt
+  // to set it false is silently forced back to true rather than rejected —
+  // this is a CREATE endpoint, so it follows services/notes.ts's
+  // createNote precedent (`role === 'player' ? true : ...`), not
+  // updateNote's precedent of throwing FORBIDDEN_ROLE — that rejection only
+  // applies on the PATCH path, where a player is trying to flip visibility
+  // on an already-existing row out from under it. Defaults to true when
+  // omitted, matching the migration's column default.
+  const visibleToPlayers = role === 'player' ? true : (input.visibleToPlayers ?? true);
+
+  // ---- server RNG: advantage/disadvantage always rolls exactly 2 d20s (the
+  // schema's .refine already guarantees diceSides===20 whenever keep isn't
+  // 'normal') and keeps the max/min; 'normal' rolls `diceCount` dice of
+  // `diceSides` and sums ALL of them — this generalizes the old single-d20
+  // case (diceCount defaults to 1, so summing "all of them" is just that one
+  // die) to arbitrary NdM expressions like "2d6+3" for damage/custom rolls.
+  const rollCount = input.keep === 'normal' ? input.diceCount : 2;
+  const rolls = Array.from({ length: rollCount }, () => rollDie(input.diceSides));
+  const keptTotal =
+    input.keep === 'advantage'
+      ? Math.max(...rolls)
+      : input.keep === 'disadvantage'
+        ? Math.min(...rolls)
+        : rolls.reduce((sum, r) => sum + r, 0);
+  const resultTotal = keptTotal + input.modifier;
+
+  // A single INSERT is already atomic on its own — there's no second write
+  // (no sync_seq bump, no companion row) that needs to commit alongside it,
+  // unlike e.g. addParticipant/insertActiveEffect's explicit BEGIN/COMMIT
+  // blocks — so plain pool.query() is enough to make this "transactional"
+  // in the sense that matters here (same as createNote/createEncounter).
+  const result = await pool.query<DiceRollRow>(
+    `INSERT INTO dice_rolls
+       (campaign_id, user_id, character_id, monster_instance_id, encounter_id, roll_type, roll_context,
+        d20_rolls, keep, dice_sides, dice_count, modifier, result_total, visible_to_players)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     RETURNING *`,
+    [
+      campaignId,
+      actorId,
+      characterId,
+      monsterInstanceId,
+      encounterId,
+      input.rollType,
+      input.rollContext ?? null,
+      rolls,
+      input.keep,
+      input.diceSides,
+      input.diceCount,
+      input.modifier,
+      resultTotal,
+      visibleToPlayers,
+    ],
+  );
+  return result.rows[0]!;
+}
+
+// ---- GET /campaigns/:id/dice-rolls — keyset (cursor) pagination ----
+//
+// First cursor-paginated endpoint in this codebase, so there's no existing
+// pattern to copy. Keyset over (created_at DESC, id DESC): the cursor is an
+// opaque base64url-encoded {createdAt, id} pointing at the last row of the
+// previous page, and the next page selects strictly-older rows via a
+// tuple comparison. This avoids the classic OFFSET-pagination problem where
+// a new roll landing mid-scroll shifts every subsequent page by one.
+
+const PAGE_SIZE = 30;
+
+interface DecodedCursor {
+  createdAt: string;
+  id: number;
+}
+
+function encodeCursor(row: Pick<DiceRollRow, 'created_at' | 'id'>): string {
+  const createdAt = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
+  return Buffer.from(JSON.stringify({ createdAt, id: row.id })).toString('base64url');
+}
+
+function decodeCursor(cursor: string): DecodedCursor {
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof (parsed as Record<string, unknown>).createdAt !== 'string' ||
+      typeof (parsed as Record<string, unknown>).id !== 'number'
+    ) {
+      throw new Error('malformed cursor shape');
+    }
+    return parsed as DecodedCursor;
+  } catch {
+    throw new AppError('VALIDATION_ERROR', 'Invalid cursor');
+  }
+}
+
+export interface ListDiceRollsResult {
+  rolls: DiceRollRow[];
+  nextCursor: string | null;
+}
+
+export async function listDiceRolls(
+  pool: Pool,
+  campaignId: number,
+  role: CampaignRole,
+  query: ListDiceRollsQuery,
+): Promise<ListDiceRollsResult> {
+  const conditions = ['campaign_id = $1'];
+  const values: unknown[] = [campaignId];
+
+  // Players never see visible_to_players=false rows — filtered at the query
+  // level (same as services/notes.ts's listNotes), not just hidden client-side.
+  if (role === 'player') {
+    conditions.push('visible_to_players = true');
+  }
+
+  if (query.encounterId !== undefined) {
+    values.push(query.encounterId);
+    conditions.push(`encounter_id = $${values.length}`);
+  }
+
+  if (query.cursor !== undefined) {
+    const decoded = decodeCursor(query.cursor);
+    values.push(decoded.createdAt, decoded.id);
+    const createdAtParam = values.length - 1;
+    const idParam = values.length;
+    conditions.push(`(created_at, id) < ($${createdAtParam}::timestamptz, $${idParam})`);
+  }
+
+  // Fetch one extra row past the page size purely to detect "is there a next
+  // page" without a second COUNT query; the extra row is trimmed below and
+  // never returned to the caller.
+  values.push(PAGE_SIZE + 1);
+  const limitParam = values.length;
+
+  const result = await pool.query<DiceRollRow>(
+    `SELECT * FROM dice_rolls WHERE ${conditions.join(' AND ')}
+     ORDER BY created_at DESC, id DESC
+     LIMIT $${limitParam}`,
+    values,
+  );
+
+  const hasMore = result.rows.length > PAGE_SIZE;
+  const rolls = hasMore ? result.rows.slice(0, PAGE_SIZE) : result.rows;
+  const nextCursor = hasMore ? encodeCursor(rolls[rolls.length - 1]!) : null;
+  return { rolls, nextCursor };
+}
