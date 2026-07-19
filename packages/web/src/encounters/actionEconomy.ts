@@ -87,3 +87,19 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
 export function jumpDistanceFt(strScore: number, running: boolean): number {
   return running ? strScore : Math.floor(strScore / 2);
 }
+
+/** High jump = 3 + STR modifier in feet with a running start; standing
+ * (no running start) halves it, rounded down (5e PHB rule) — same shape as
+ * jumpDistanceFt above, but keyed off the STR modifier rather than the raw
+ * score. */
+export function highJumpDistanceFt(strModifier: number, running: boolean): number {
+  const full = Math.max(0, 3 + strModifier);
+  return running ? full : Math.floor(full / 2);
+}
+
+/** Standing up from prone costs movement equal to half your speed, rounded
+ * down (5e PHB rule) — also modeled outside the slot registry since it
+ * spends movement, not an action/bonus-action/reaction. */
+export function standUpCostFt(speedFt: number): number {
+  return Math.floor(speedFt / 2);
+}

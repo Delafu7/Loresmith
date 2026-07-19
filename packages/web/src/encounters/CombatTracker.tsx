@@ -21,9 +21,11 @@ import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { BattleMap } from './BattleMap';
 import { ActionEconomyPanel } from './ActionEconomyPanel';
 import { Combobox } from '../components/Combobox';
+import { useAuth } from '../auth/AuthContext';
 
 export function CombatTracker({ encounter }: { encounter: Encounter }) {
   const { campaignId, campaign, role } = useCampaignShell();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const isDm = role === 'dm';
   const live = useEncounterLive(encounter.id);
@@ -35,11 +37,19 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
       api.get<{ encounter: EncounterWithParticipants }>(`/campaigns/${campaignId}/encounters/${encounter.id}`),
   });
 
+  // Not DM-only: a player needs this too, to know which participant row is
+  // THEIR OWN character (see myCharacterIds below) — the player-facing
+  // "optimized for movement/HP/actions" visual redesign is a highlighted row
+  // for that character, since players have no other reason to scan the full
+  // roster the way a DM does.
   const charactersQuery = useQuery({
     queryKey: ['characters', campaignId],
     queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${campaignId}/characters`),
-    enabled: isDm,
   });
+
+  const myCharacterIds = new Set(
+    charactersQuery.data?.characters.filter((c) => c.owner_user_id === user?.id).map((c) => c.id) ?? [],
+  );
 
   const monsterInstancesQuery = useQuery({
     queryKey: ['monsterInstances', campaignId],
@@ -243,14 +253,16 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
 
       {viewMode === 'list' && (
       <ol className="space-y-2">
-        {participants.map((p) => (
+        {participants.map((p) => {
+          const isMine = p.characterId != null && myCharacterIds.has(p.characterId);
+          return (
           <li
             key={p.participantId}
             className={`rounded-lg border p-3 sm:p-4 ${
               p.participantId === activeParticipantId
                 ? 'border-amber-600 bg-amber-950/20'
                 : 'border-stone-800 bg-stone-900'
-            }`}
+            } ${isMine ? 'ring-2 ring-amber-500/50' : ''}`}
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -258,6 +270,11 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
                   {p.initiativeRoll > -9999 ? p.initiativeRoll : '—'}
                 </span>
                 <span className="font-medium text-stone-100 truncate">{p.name}</span>
+                {isMine && (
+                  <span className="text-[10px] uppercase font-semibold text-amber-500 border border-amber-700 rounded px-1 flex-shrink-0">
+                    You
+                  </span>
+                )}
                 <span
                   className="text-xs text-stone-500 border border-stone-700 rounded px-1 flex-shrink-0"
                   title="Armor Class"
@@ -340,10 +357,12 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
                 encounterId={encounter.id}
                 participant={p}
                 abilityScores={resolveAbilityScores(p, charactersQuery.data?.characters, monsterInstancesQuery.data?.monsterInstances, bestiaryQuery.data?.monsters)}
+                otherParticipants={participants.filter((other) => other.participantId !== p.participantId)}
               />
             )}
           </li>
-        ))}
+          );
+        })}
         {participants.length === 0 && live && <EmptyState message="No participants in this encounter yet." />}
       </ol>
       )}

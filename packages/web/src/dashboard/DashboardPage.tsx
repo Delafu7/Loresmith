@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import type { DashboardResponse } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { ThemePicker } from '../components/ThemePicker';
 
 function relativeTime(iso: string): string {
   const diffSec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -39,6 +40,7 @@ export function DashboardPage() {
           <Link to="/campaigns" className="hover:text-stone-200">
             All campaigns
           </Link>
+          <ThemePicker />
           <span>{user?.displayName}</span>
           <button
             type="button"

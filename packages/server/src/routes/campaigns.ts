@@ -11,6 +11,7 @@ import {
   updateSessionLogSchema,
 } from '../schemas/campaigns.js';
 import * as campaignsService from '../services/campaigns.js';
+import { rollAbilityScores } from '../services/abilityScoreRoll.js';
 
 export const campaignsRouter = Router();
 
@@ -43,6 +44,18 @@ campaignsRouter.patch('/:id', requireCampaignMember(), requireRole('dm'), async 
 campaignsRouter.delete('/:id', requireCampaignMember(), requireRole('dm'), async (req, res) => {
   await campaignsService.deleteCampaign(pool, req.campaignId!);
   res.status(204).send();
+});
+
+// Automated Ability Score Rolls (Phase 3.8). Any campaign member — not
+// DM-only — since a player rolls their OWN character's scores; there's
+// nothing to persist or authorize beyond "you're in this campaign" (see
+// services/abilityScoreRoll.ts for why this never touches dice_rolls). The
+// allow_ability_reroll toggle governs whether the frontend offers a second
+// roll, not this endpoint — there's no in-progress-character row yet to
+// attach a "has already rolled" flag to, so enforcement here would need new
+// session-tracking state nobody asked for.
+campaignsRouter.post('/:id/roll-ability-scores', requireCampaignMember(), async (_req, res) => {
+  res.json({ sets: rollAbilityScores() });
 });
 
 // ---- Members ----

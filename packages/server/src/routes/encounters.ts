@@ -15,7 +15,9 @@ import {
   updateEncounterSchema,
   upsertEncounterMapSchema,
 } from '../schemas/encounters.js';
+import { performShoveSchema } from '../schemas/shove.js';
 import * as encountersService from '../services/encounters.js';
+import { performShove } from '../services/shove.js';
 import {
   getIo,
   broadcastCombatStarted,
@@ -28,6 +30,7 @@ import {
   broadcastMapUpdated,
   broadcastTokenMoved,
   broadcastActionEconomyChanged,
+  broadcastDiceRolled,
   pushEncounterRoomJoinForOwner,
 } from '../sockets/broadcast.js';
 
@@ -172,4 +175,28 @@ encountersRouter.patch('/:id/participants/:pid/action-economy', requireEncounter
   );
   broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
   res.json({ participant });
+});
+
+// Shove Check Against a Specific NPC (Phase 3.7). Same requireEncounterDm
+// guard as the rest of this file — the DM triggers the contested roll on
+// behalf of whichever PC's turn it is, same as every other combat mutation.
+encountersRouter.post('/:id/participants/:pid/shove', requireEncounterDm, async (req, res) => {
+  const input = performShoveSchema.parse(req.body);
+  const shove = await performShove(pool, Number(req.params.id), Number(req.params.pid), req.user!.id, input);
+  const io = getIo(req.app);
+  broadcastActionEconomyChanged(io, shove.encounter, shove.participant);
+  await broadcastDiceRolled(io, shove.encounter.campaign_id, shove.attackerRoll);
+  if (shove.defenderRoll) {
+    await broadcastDiceRolled(io, shove.encounter.campaign_id, shove.defenderRoll);
+  }
+  res.json({
+    participant: shove.participant,
+    attackerRoll: shove.attackerRoll,
+    defenderRoll: shove.defenderRoll,
+    defenderTotal: shove.defenderTotal,
+    defenderOverridden: shove.defenderOverridden,
+    success: shove.success,
+    outcome: shove.outcome,
+    message: shove.message,
+  });
 });

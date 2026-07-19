@@ -2,15 +2,16 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Character, CampaignMember } from '../lib/types';
+import type { Campaign, Character, CampaignMember } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { HPBandPill } from '../components/HPBar';
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
+import { AbilityScoreGenerator } from './AbilityScoreGenerator';
 
 export function CharactersListPage() {
-  const { campaignId, role } = useCampaignShell();
+  const { campaignId, campaign, role } = useCampaignShell();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
@@ -67,6 +68,14 @@ export function CharactersListPage() {
     },
   });
 
+  const allowRerollMutation = useMutation({
+    mutationFn: (allowAbilityReroll: boolean) =>
+      api.patch<{ campaign: Campaign }>(`/campaigns/${campaignId}`, { allowAbilityReroll }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+    },
+  });
+
   const players = membersQuery.data?.members.filter((m) => m.role === 'player') ?? [];
   const pcs = charactersQuery.data?.characters.filter((c) => c.is_pc) ?? [];
   const npcs = charactersQuery.data?.characters.filter((c) => !c.is_pc) ?? [];
@@ -89,6 +98,18 @@ export function CharactersListPage() {
           {showCreate ? 'Cancel' : role === 'dm' ? 'New character' : 'Create my PC'}
         </button>
       </div>
+
+      {role === 'dm' && (
+        <label className="flex items-center gap-2 text-xs text-stone-400 mb-4">
+          <input
+            type="checkbox"
+            checked={campaign.allow_ability_reroll}
+            disabled={allowRerollMutation.isPending}
+            onChange={(e) => allowRerollMutation.mutate(e.target.checked)}
+          />
+          Allow players to reroll ability scores
+        </label>
+      )}
 
       {showCreate && (
         <form onSubmit={handleCreate} className="mb-6 bg-stone-900 border border-stone-800 rounded-lg p-5 space-y-4">
@@ -147,6 +168,12 @@ export function CharactersListPage() {
               </select>
             </div>
           )}
+
+          <AbilityScoreGenerator
+            campaignId={campaignId}
+            allowReroll={campaign.allow_ability_reroll}
+            onApply={(scores) => setForm((f) => ({ ...f, ...scores }))}
+          />
 
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map((key) => (

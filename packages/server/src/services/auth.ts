@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import type { Pool } from 'pg';
 import { AppError } from '../middleware/errors.js';
-import type { LoginInput, RegisterInput } from '../schemas/auth.js';
+import type { LoginInput, RegisterInput, UpdateThemeInput } from '../schemas/auth.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -9,6 +9,7 @@ export interface UserRow {
   id: number;
   email: string;
   displayName: string;
+  uiTheme: 'crimson' | 'amber';
 }
 
 export interface MembershipSummary {
@@ -24,18 +25,20 @@ export async function register(pool: Pool, input: RegisterInput): Promise<UserRo
   }
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-  const result = await pool.query<{ id: number; email: string; display_name: string }>(
+  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' }>(
     `INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3)
-     RETURNING id, email, display_name`,
+     RETURNING id, email, display_name, ui_theme`,
     [input.email, input.displayName, passwordHash],
   );
   const row = result.rows[0]!;
-  return { id: row.id, email: row.email, displayName: row.display_name };
+  return { id: row.id, email: row.email, displayName: row.display_name, uiTheme: row.ui_theme };
 }
 
 export async function login(pool: Pool, input: LoginInput): Promise<UserRow> {
-  const result = await pool.query<{ id: number; email: string; display_name: string; password_hash: string }>(
-    `SELECT id, email, display_name, password_hash FROM users WHERE email = $1`,
+  const result = await pool.query<
+    { id: number; email: string; display_name: string; password_hash: string; ui_theme: 'crimson' | 'amber' }
+  >(
+    `SELECT id, email, display_name, password_hash, ui_theme FROM users WHERE email = $1`,
     [input.email],
   );
   const row = result.rows[0];
@@ -48,7 +51,16 @@ export async function login(pool: Pool, input: LoginInput): Promise<UserRow> {
     throw new AppError('UNAUTHENTICATED', 'Invalid email or password');
   }
 
-  return { id: row.id, email: row.email, displayName: row.display_name };
+  return { id: row.id, email: row.email, displayName: row.display_name, uiTheme: row.ui_theme };
+}
+
+export async function updateTheme(pool: Pool, userId: number, input: UpdateThemeInput): Promise<UserRow> {
+  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' }>(
+    `UPDATE users SET ui_theme = $1 WHERE id = $2 RETURNING id, email, display_name, ui_theme`,
+    [input.uiTheme, userId],
+  );
+  const row = result.rows[0]!;
+  return { id: row.id, email: row.email, displayName: row.display_name, uiTheme: row.ui_theme };
 }
 
 export async function getMemberships(pool: Pool, userId: number): Promise<MembershipSummary[]> {

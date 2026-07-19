@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
-import { loginSchema, registerSchema } from '../schemas/auth.js';
+import { loginSchema, registerSchema, updateThemeSchema } from '../schemas/auth.js';
 import * as authService from '../services/auth.js';
 
 export const authRouter = Router();
@@ -34,4 +34,13 @@ authRouter.post('/logout', (req, res, next) => {
 authRouter.get('/me', requireAuth, async (req, res) => {
   const memberships = await authService.getMemberships(pool, req.user!.id);
   res.json({ user: req.user, memberships });
+});
+
+// Customizable Styles per Role (Phase 3.9) — a personal preference, not tied
+// to any campaign/role, so this is requireAuth-only: no campaign membership
+// or DM check applies to changing your own theme.
+authRouter.patch('/me/theme', requireAuth, async (req, res) => {
+  const input = updateThemeSchema.parse(req.body);
+  const user = await authService.updateTheme(pool, req.user!.id, input);
+  res.json({ user });
 });

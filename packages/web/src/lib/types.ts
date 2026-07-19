@@ -6,10 +6,16 @@
 
 export type CampaignRole = 'dm' | 'player';
 
+export type UiTheme = 'crimson' | 'amber';
+
 export interface User {
   id: number;
   email: string;
   displayName: string;
+  // Customizable Styles per Role (Phase 3.9) — a personal preference, not
+  // tied to any campaign or role; see auth/AuthContext.tsx for how this
+  // gets applied to <html data-theme> and index.css for the actual palette.
+  uiTheme: UiTheme;
 }
 
 export interface Membership {
@@ -27,6 +33,9 @@ export interface Campaign {
   created_at: string;
   archived_at: string | null;
   my_role?: CampaignRole; // present only on the list endpoint
+  // Automated Ability Score Rolls (Phase 3.8) — DM-togglable, whether a
+  // player may re-roll their 4d6-drop-lowest set after seeing the results.
+  allow_ability_reroll: boolean;
 }
 
 export interface CampaignMember {
@@ -586,4 +595,32 @@ export interface DiceRoll {
   result_total: number;
   visible_to_players: boolean;
   created_at: string;
+}
+
+// POST /campaigns/:id/roll-ability-scores's response (Phase 3.8) — one of
+// these per ability, six total. `dice`/`droppedIndex` are shown so the
+// player can see the discarded die, not just the final total.
+export interface AbilityScoreRollSet {
+  dice: number[];
+  droppedIndex: number;
+  total: number;
+}
+
+// POST /encounters/:id/participants/:pid/shove's response (Phase 3.7). Both
+// rolls are already-persisted dice_rolls rows (see services/shove.ts) except
+// defenderRoll, which is null when the DM supplied defenderRollOverride —
+// there's no roll to show in that case, just the DM's adjudicated total.
+export interface ShoveResult {
+  // Raw combat_participants row (snake_case) — unlike SnapshotParticipant,
+  // never read directly; ACTION_ECONOMY_CHANGED over the socket is what
+  // actually updates the UI (same "no local cache write" discipline as
+  // ActionEconomyPanel's spendMutation).
+  participant: Record<string, unknown>;
+  attackerRoll: DiceRoll;
+  defenderRoll: DiceRoll | null;
+  defenderTotal: number;
+  defenderOverridden: boolean;
+  success: boolean;
+  outcome: 'push_5ft' | 'knock_prone' | null;
+  message: string;
 }

@@ -1,1 +1,65 @@
 @import "tailwindcss";
+
+/*
+ * Per-user color themes (Phase 3.9). Every component in this app is styled
+ * with plain Tailwind `amber-*`/`stone-*` utility classes — rather than
+ * rewriting all of them to new semantic token names, this overrides the
+ * actual CSS custom properties Tailwind v4 generates for those two palettes
+ * (`--color-amber-600` etc., see node_modules/tailwindcss/theme.css). Every
+ * existing `bg-amber-600`/`text-stone-500`/etc. class anywhere in the app
+ * re-colors automatically based on which theme is active, with zero
+ * component changes.
+ *
+ * "Crimson" is the default (Visual Redesign — Red Theme) and always wins
+ * with no `data-theme` attribute present, so a not-yet-loaded user
+ * preference never flashes the old amber look. "Amber" reproduces Tailwind's
+ * exact original amber/stone values (oklch, copied from theme.css) as the
+ * one alternate theme a user can switch back to (Customizable Styles per
+ * Role — see auth/ThemeContext.tsx for how `data-theme` gets set from the
+ * logged-in user's persisted `ui_theme` column).
+ *
+ * All shades below were picked/verified against WCAG AA (4.5:1 normal text)
+ * for every actual foreground/background pairing used in the app — see the
+ * PR description for the contrast table. One known gap: `stone-700` on
+ * `stone-800` (input/card borders) sits around 1.7:1, short of the 3:1
+ * non-text contrast guideline — tightening it further broke the rest of the
+ * ramp's ordering, so borders stay subtle rather than fully AA in this pass.
+ */
+:root,
+:root[data-theme="crimson"] {
+  --color-amber-400: #f87171;
+  --color-amber-500: #f25454;
+  --color-amber-600: #ef4444;
+  --color-amber-700: #b91c1c;
+  --color-amber-950: #450a0a;
+
+  --color-stone-100: #f5e9e7;
+  --color-stone-200: #e4cfcb;
+  --color-stone-300: #cfa9a3;
+  --color-stone-400: #b9827a;
+  --color-stone-500: #ab7a70;
+  --color-stone-600: #875046;
+  --color-stone-700: #6e4038;
+  --color-stone-800: #3d211d;
+  --color-stone-900: #291613;
+  --color-stone-950: #170d0e;
+}
+
+:root[data-theme="amber"] {
+  --color-amber-400: oklch(82.8% 0.189 84.429);
+  --color-amber-500: oklch(76.9% 0.188 70.08);
+  --color-amber-600: oklch(66.6% 0.179 58.318);
+  --color-amber-700: oklch(55.5% 0.163 48.998);
+  --color-amber-950: oklch(27.9% 0.077 45.635);
+
+  --color-stone-100: oklch(97% 0.001 106.424);
+  --color-stone-200: oklch(92.3% 0.003 48.717);
+  --color-stone-300: oklch(86.9% 0.005 56.366);
+  --color-stone-400: oklch(70.9% 0.01 56.259);
+  --color-stone-500: oklch(55.3% 0.013 58.071);
+  --color-stone-600: oklch(44.4% 0.011 73.639);
+  --color-stone-700: oklch(37.4% 0.01 67.558);
+  --color-stone-800: oklch(26.8% 0.007 34.298);
+  --color-stone-900: oklch(21.6% 0.006 56.043);
+  --color-stone-950: oklch(14.7% 0.004 49.25);
+}

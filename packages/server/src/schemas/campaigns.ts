@@ -11,6 +11,10 @@ export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;
 
 export const updateCampaignSchema = createCampaignSchema.partial().extend({
   archived: z.boolean().optional(), // true -> set archived_at = now(); false -> clear it
+  // Ability Score Roll feature (Phase 3.8): DM-togglable, whether players may
+  // re-roll their 4d6-drop-lowest set after seeing the results. See
+  // routes/campaigns.ts's /roll-ability-scores for the roll itself.
+  allowAbilityReroll: z.boolean().optional(),
 });
 export type UpdateCampaignInput = z.infer<typeof updateCampaignSchema>;
 

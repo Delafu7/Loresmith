@@ -64,6 +64,10 @@ export async function updateCampaign(pool: Pool, campaignId: number, input: Upda
   if (input.archived !== undefined) {
     sets.push(`archived_at = ${input.archived ? 'now()' : 'NULL'}`);
   }
+  if (input.allowAbilityReroll !== undefined) {
+    sets.push(`allow_ability_reroll = $${i++}`);
+    values.push(input.allowAbilityReroll);
+  }
 
   if (sets.length === 0) {
     return getCampaign(pool, campaignId);

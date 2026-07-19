@@ -6,6 +6,7 @@ import type { Campaign, CampaignRole } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useJoinCampaign } from '../lib/useJoinCampaign';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
+import { ThemePicker } from '../components/ThemePicker';
 
 interface CampaignShellContextValue {
   campaignId: number;
@@ -62,6 +63,7 @@ export function CampaignShell() {
             <NavItem to="notes" label="Notes" />
             <NavItem to="dice-rolls" label="Dice Rolls" />
           </ul>
+          <ThemePicker className="mt-4" />
         </nav>
         <main className="flex-1 min-w-0">
           <Outlet />
