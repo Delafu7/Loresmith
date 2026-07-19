@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+.env
+*.log
+.DS_Store
+coverage
+**/coverage
+*.tsbuildinfo
+packages/server/uploads
+.git
+.github
+.agents
+.claude

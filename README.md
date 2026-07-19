@@ -112,6 +112,12 @@ Run `npm test` twice in a row if you touch anything DB-related — the integrati
 npm run build   # builds both workspaces (tsc for the server, tsc + vite build for the web client)
 ```
 
+### Docker images
+
+`packages/server/Dockerfile` and `packages/web/Dockerfile` build from the **repo root** as build context (`docker build -f packages/server/Dockerfile -t <image> .`), since this is an npm workspaces monorepo. The web image is nginx serving the built static assets, reverse-proxying the same API/Socket.io path prefixes `vite.config.ts` proxies in dev to a backend container (`BACKEND_HOST`/`BACKEND_PORT` env vars, default `server:3001`) — see `packages/web/docker/nginx.conf.template`. The server image needs `DATABASE_URL`/`REDIS_URL`/`SESSION_SECRET`/`CLIENT_ORIGIN` (same as `.env.example`) at `docker run` time; migrations/seeding aren't run automatically on container start — run `npm run migrate`/`npm run seed` against the image explicitly first.
+
+`.github/workflows/ci.yml` runs the test suite (with Postgres/Redis services matching `docker-compose.yml`) on every push/PR to `main`, then on push to `main` only, builds and pushes both images to Docker Hub as `<DOCKERHUB_USERNAME>/loresmith-{server,web}:latest` and `:<sha>`. Requires two repo secrets: `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token, not your account password).
+
 ## Project layout
 
 ```
