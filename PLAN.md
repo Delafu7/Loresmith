@@ -1,5 +1,7 @@
 # PLAN.md — Loresmith
 
+> **Status**: superseded for new work by `REVISION-PLAN.md` (v2, shipped) and `REFACTOR-PLAN.md` (v3, in progress) — kept here in full as the original design record. See those files for what's actually current.
+
 ## Context
 
 This repo is currently pre-code (only OpenCode agent/skill configs exist under `.opencode/`). The goal is a campaign management web app for D&D Dungeon Masters with a player-facing shared view: character/NPC sheets, spell & attack libraries, campaign notes, active effects/conditions, a live combat tracker (supporting multiple simultaneous encounters, e.g. a split party), and a DM-vs-player visibility split that updates in real time. This document is the output of a five-agent design pass (data model, REST API, real-time sync, frontend architecture, and D&D SRD rules-compliance review) and is meant to be read end-to-end before any implementation begins.

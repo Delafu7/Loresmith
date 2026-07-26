@@ -1,5 +1,7 @@
 # REVISION-PLAN.md — Loresmith v2
 
+> **v3 note**: a further "Full Refactor" brief landed after this document's §10 shipped — see `REFACTOR-PLAN.md`. It picks up some of this file's still-deferred sections (§2 bestiary polish, parts of §4/§6) in a smaller form scoped to what was actually asked for; §0 there has the full reality-check against this file.
+
 > **Status update (after review):** the sections below (§1–§8, as originally drafted) covered the full v2 revision brief — reveal-system removal, global bestiary, a media/content-addressing overhaul, a new campaign-level canvas map system, a music system, and a table-display route. After discussion, the actual scope for this work round is much narrower — see **§9 (Interface Accessibility & DM Ergonomics)** below, which is what's actually being built now. The decisions that changed things:
 >
 > - **The reveal engine and `hp_visibility` are both KEPT, not removed.** §1 below (reveal-system removal) does **not** happen. The DM still controls what's visible to players per-field (including occulting a creature's vulnerabilities/resistances/immunities until the party discovers them in play — this already works today via `MONSTER_INSTANCE_REVEALABLE_FIELDS`, no new code needed for that specific case) and per-HP-band. DM-only records (notes, encounter planning) stay hidden via the existing `visible_to_players` flags, untouched.
