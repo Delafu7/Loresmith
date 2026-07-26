@@ -323,6 +323,9 @@ export interface SnapshotParticipant {
   reactionUsed: boolean;
   dashUsed: boolean;
   movementUsedFt: number;
+  // REFACTOR-PLAN.md §5 — a fourth per-turn tracked resource, separate from
+  // the three economy slots above (docs/rules/actions.md §1.6).
+  objectInteractionUsed: boolean;
   // Display-only movement budget in feet (see CombatSnapshotParticipant's
   // speed_ft comment) — null if neither the character's speed column nor
   // the monster's speed.walk resolved to a usable number.

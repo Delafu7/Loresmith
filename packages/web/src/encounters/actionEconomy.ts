@@ -6,6 +6,18 @@
 // whether it triggers a roll — lives here instead, so adding a new action
 // later (Dodge, Help, Hide, ...) is a pure addition to this array, no
 // server change required.
+//
+// REFACTOR-PLAN.md §5 / docs/rules/actions.md: Climb and Swim are
+// DELIBERATELY not in this registry — neither edition's SRD treats them as
+// actions at all (both are movement modes, costing extra feet per foot per
+// docs/rules/movement.md §1.4, not an action-economy slot). A "Climb" button
+// that consumed an action slot would be inventing a mechanic. Object
+// interaction (one free per turn) is also not a registry entry — it's a
+// fourth tracked resource, separate from the action/bonus-action/reaction
+// slots below (see ActionEconomyPanel.tsx's dedicated button and
+// combat_participants.object_interaction_used); only its PAID fallback
+// ("Use an Object" / 2024 "Utilize") costs an actual slot, hence the
+// `use_object` entry below.
 
 export type ActionSlot = 'action' | 'bonus_action' | 'reaction';
 
@@ -77,6 +89,52 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
     slot: 'action',
     rollTrigger: { rollContext: 'Hide (Stealth)', ability: 'dex' },
     description: 'Stealth check to become hidden.',
+  },
+  {
+    key: 'disengage',
+    label: 'Disengage',
+    slot: 'action',
+    // docs/rules/actions.md §1.4: "rest of THIS turn" — not the longer
+    // "until the start of your next turn" window Dodge gets. Easy to
+    // misremember as the same duration; it isn't.
+    description: "Your movement doesn't provoke opportunity attacks for the rest of this turn.",
+  },
+  {
+    key: 'search',
+    label: 'Search',
+    slot: 'action',
+    // docs/rules/actions.md §1.3: GM picks the skill situationally (2014:
+    // Perception or Investigation; 2024: Insight/Medicine/Perception/
+    // Survival, all Wisdom). Perception is the one candidate common to both
+    // editions' lists — a representative default, not a hardcoded rule; the
+    // description below names the GM's discretion explicitly.
+    rollTrigger: { rollContext: 'Search (Perception)', ability: 'wis' },
+    description:
+      "GM-adjudicated check to find something — Wisdom (Perception) or Intelligence (Investigation) in 2014; Wisdom (Insight, Medicine, Perception, or Survival) in 2024.",
+  },
+  {
+    key: 'ready',
+    label: 'Ready',
+    slot: 'action',
+    // docs/rules/actions.md §1.5/§2.2: this only spends the ACTION slot to
+    // set up the trigger. Executing the readied response later is a
+    // SEPARATE reaction-slot spend (possibly on a different turn) — the DM
+    // triggers that second spend manually via the Reaction pip/undo tools
+    // when the trigger actually fires, same as any other reaction.
+    description:
+      'Prepare a triggered response (an action, or up to your speed of movement) to use with your reaction before the start of your next turn. Executing the readied response spends your reaction separately, whenever the trigger fires — if it never fires (or you ignore it), the readied action is lost at the start of your next turn.',
+  },
+  {
+    key: 'use_object',
+    label: 'Use an Object',
+    slot: 'action',
+    // docs/rules/actions.md §1.6/§2.3: the paid fallback for a SECOND object
+    // interaction this turn (the first is free — see the dedicated Object
+    // Interaction button in ActionEconomyPanel, not this registry). 2024
+    // renames this "Utilize" and narrows it to nonmagical objects; mechanic
+    // is identical, only the label/wording differs.
+    description:
+      "Spend your action to interact with an object beyond your one free interaction this turn (2024: \"Utilize\"). Magic items may require their own action per their own description.",
   },
 ];
 

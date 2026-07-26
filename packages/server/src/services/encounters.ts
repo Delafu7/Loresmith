@@ -64,7 +64,26 @@ interface ParticipantRow {
   reaction_used: boolean;
   dash_used: boolean;
   movement_used_ft: number;
+  object_interaction_used: boolean;
+  last_action_economy_snapshot: ActionEconomySnapshot | null;
   [key: string]: unknown;
+}
+
+// docs/rules/actions.md §2.4 — the smallest mechanism satisfying
+// REFACTOR-PLAN.md §5's "allow the DM to undo": one slot, overwritten on
+// every applyActionEconomy call with the PRE-mutation values of whatever it
+// touched, consumed (nulled) by a single undo call. Not a stack/log — a
+// second consecutive spend without an intervening undo simply overwrites
+// the previous snapshot, matching the "last mutation, not this turn's
+// mutations" scoping that doc calls out as the sharpest edge case (a
+// readied reaction can fire turns after the action that readied it).
+interface ActionEconomySnapshot {
+  action_used?: boolean;
+  bonus_action_used?: boolean;
+  reaction_used?: boolean;
+  dash_used?: boolean;
+  movement_used_ft?: number;
+  object_interaction_used?: boolean;
 }
 
 async function fetchEncounterScoped(
@@ -674,6 +693,10 @@ export async function applyActionEconomy(
     const sets: string[] = [];
     const values: unknown[] = [];
     let i = 1;
+    // docs/rules/actions.md §2.4: snapshot the PRE-mutation value of every
+    // column this call is about to touch, so a single undo call can restore
+    // exactly this spend (and only this spend) — see ActionEconomySnapshot.
+    const snapshot: Record<string, boolean | number> = {};
 
     if (input.spend) {
       const column = `${input.spend}_used`;
@@ -681,15 +704,82 @@ export async function applyActionEconomy(
         throw new AppError('CONFLICT', `That participant's ${input.spend.replace('_', ' ')} has already been used this turn`);
       }
       sets.push(`${column} = true`);
+      snapshot[column] = false;
       if (input.spend === 'action' && input.dash) {
         sets.push(`dash_used = true`);
+        snapshot.dash_used = current.dash_used;
       }
     }
     if (input.addMovementFt !== undefined) {
       sets.push(`movement_used_ft = movement_used_ft + $${i}`);
       values.push(input.addMovementFt);
       i++;
+      snapshot.movement_used_ft = current.movement_used_ft;
     }
+
+    values.push(JSON.stringify(snapshot));
+    const snapshotParam = i++;
+    sets.push(`last_action_economy_snapshot = $${snapshotParam}::jsonb`);
+
+    values.push(participantId, encounterId);
+    const idParam = i++;
+    const encounterParam = i;
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET ${sets.join(', ')} WHERE id = $${idParam} AND encounter_id = $${encounterParam} RETURNING *`,
+      values,
+    );
+    const participant = updated.rows[0]!;
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participant };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// REFACTOR-PLAN.md §5 / docs/rules/actions.md §2.4: DM-only "undo last
+// consumption." Restores exactly the columns the last applyActionEconomy
+// call touched (per its stored snapshot) — not a guessed decrement, and not
+// scoped to "this turn," since a readied action's reaction can fire (and
+// need undoing) turns after the action slot that readied it was spent
+// (docs/rules/actions.md §3's sharpest flagged edge case).
+export async function undoActionEconomy(
+  pool: Pool,
+  encounterId: number,
+  participantId: number,
+): Promise<ParticipantMutationResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<ParticipantRow>(
+      `SELECT * FROM combat_participants WHERE id = $1 AND encounter_id = $2 FOR UPDATE`,
+      [participantId, encounterId],
+    );
+    const current = locked.rows[0];
+    if (!current) throw notFound('Participant');
+    if (!current.last_action_economy_snapshot) {
+      throw new AppError('CONFLICT', 'Nothing to undo for that participant');
+    }
+
+    const snapshot = current.last_action_economy_snapshot;
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    let i = 1;
+    for (const [column, value] of Object.entries(snapshot)) {
+      sets.push(`${column} = $${i}`);
+      values.push(value);
+      i++;
+    }
+    sets.push('last_action_economy_snapshot = NULL');
 
     values.push(participantId, encounterId);
     const idParam = i++;
@@ -751,6 +841,9 @@ export interface CombatSnapshotParticipant {
   reaction_used: boolean;
   dash_used: boolean;
   movement_used_ft: number;
+  // REFACTOR-PLAN.md §5 / docs/rules/actions.md §1.6: a fourth per-turn
+  // tracked resource, distinct from the three economy slots above.
+  object_interaction_used: boolean;
   // Null for character participants; a monster instance's alive/dead/fled/
   // captured status. REFACTOR-PLAN.md §1: the map view only spawns a token
   // for status='alive' instances — a dead monster stays in the initiative
@@ -788,6 +881,7 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             cp.initiative_roll, cp.initiative_tiebreak, cp.turn_order, cp.hp_visibility,
             cp.pos_x, cp.pos_y,
             cp.action_used, cp.bonus_action_used, cp.reaction_used, cp.dash_used, cp.movement_used_ft,
+            cp.object_interaction_used,
             COALESCE(c.name, mi.custom_name, m.name) AS name,
             COALESCE(c.hp_current, mi.hp_current) AS hp_current,
             COALESCE(c.hp_max, mi.hp_max_override, m.hit_point_average) AS hp_max,
@@ -1155,7 +1249,8 @@ export async function advanceTurn(pool: Pool, encounterId: number): Promise<Adva
     await client.query(
       `UPDATE combat_participants
        SET action_used = false, bonus_action_used = false, reaction_used = false,
-           dash_used = false, movement_used_ft = 0
+           dash_used = false, movement_used_ft = 0, object_interaction_used = false,
+           last_action_economy_snapshot = NULL
        WHERE encounter_id = $1 AND turn_order = $2`,
       [encounterId, nextIndex],
     );

@@ -261,6 +261,7 @@ export function broadcastActionEconomyChanged(
     reaction_used: boolean;
     dash_used: boolean;
     movement_used_ft: number;
+    object_interaction_used: boolean;
   },
 ): void {
   io.to(encounterRoom(encounter.id)).emit('ACTION_ECONOMY_CHANGED', {
@@ -271,6 +272,7 @@ export function broadcastActionEconomyChanged(
     reactionUsed: participant.reaction_used,
     dashUsed: participant.dash_used,
     movementUsedFt: participant.movement_used_ft,
+    objectInteractionUsed: participant.object_interaction_used,
   });
 }
 
@@ -606,6 +608,7 @@ export async function buildFullStateSyncPayload(
       reactionUsed: p.reaction_used,
       dashUsed: p.dash_used,
       movementUsedFt: p.movement_used_ft,
+      objectInteractionUsed: p.object_interaction_used,
       speedFt: p.speed_ft,
       monsterInstanceStatus: p.monster_instance_status,
       size: p.size,

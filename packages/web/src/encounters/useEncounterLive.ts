@@ -163,7 +163,15 @@ export function useEncounterLive(encounterId: number | undefined) {
           // separate event, since TURN_ADVANCED's seq bump already covers it.
           participants: prev.participants.map((p) =>
             p.participantId === payload.activeParticipantId
-              ? { ...p, actionUsed: false, bonusActionUsed: false, reactionUsed: false, dashUsed: false, movementUsedFt: 0 }
+              ? {
+                  ...p,
+                  actionUsed: false,
+                  bonusActionUsed: false,
+                  reactionUsed: false,
+                  dashUsed: false,
+                  movementUsedFt: 0,
+                  objectInteractionUsed: false,
+                }
               : p,
           ),
         }));
@@ -185,6 +193,7 @@ export function useEncounterLive(encounterId: number | undefined) {
                   reactionUsed: payload.reactionUsed,
                   dashUsed: payload.dashUsed,
                   movementUsedFt: payload.movementUsedFt,
+                  objectInteractionUsed: payload.objectInteractionUsed,
                 }
               : p,
           ),

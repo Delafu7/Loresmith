@@ -50,6 +50,7 @@ interface ParticipantRow {
   reaction_used: boolean;
   dash_used: boolean;
   movement_used_ft: number;
+  object_interaction_used: boolean;
   [key: string]: unknown;
 }
 

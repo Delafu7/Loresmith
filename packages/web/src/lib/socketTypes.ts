@@ -115,6 +115,7 @@ export interface FullStateSyncEvent extends Envelope {
     reactionUsed: boolean;
     dashUsed: boolean;
     movementUsedFt: number;
+    objectInteractionUsed: boolean;
     speedFt: number | null;
     monsterInstanceStatus: 'alive' | 'dead' | 'fled' | 'captured' | null;
     size: string;
@@ -160,6 +161,7 @@ export interface ActionEconomyChangedEvent extends Envelope {
   reactionUsed: boolean;
   dashUsed: boolean;
   movementUsedFt: number;
+  objectInteractionUsed: boolean;
 }
 
 // EFFECT_APPLIED/EFFECT_EXPIRED (sockets/broadcast.ts's effectPayloadBase) —

@@ -54,11 +54,21 @@ export function ActionEconomyPanel({
   const [defenderOverride, setDefenderOverride] = useState('');
 
   const spendMutation = useMutation({
-    mutationFn: (body: { spend?: ActionSlot; dash?: boolean; addMovementFt?: number }) =>
+    mutationFn: (body: { spend?: ActionSlot | 'object_interaction'; dash?: boolean; addMovementFt?: number }) =>
       api.patch(`/encounters/${encounterId}/participants/${participant.participantId}/action-economy`, body),
     // No local cache write — ACTION_ECONOMY_CHANGED over the socket is the
     // source of truth, same discipline as CombatTracker's hpMutation/
     // applyEffectMutation.
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounterId] });
+    },
+  });
+
+  // REFACTOR-PLAN.md §5 ("allow the DM to undo") — restores exactly whatever
+  // the last spend touched (see docs/rules/actions.md §2.4); DM-only,
+  // separate from the player-or-DM spend endpoint above.
+  const undoMutation = useMutation({
+    mutationFn: () => api.post(`/encounters/${encounterId}/participants/${participant.participantId}/action-economy/undo`),
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounterId] });
     },
@@ -107,9 +117,31 @@ export function ActionEconomyPanel({
         <EconomyPip label="Action" used={participant.actionUsed} />
         <EconomyPip label="Bonus Action" used={participant.bonusActionUsed} />
         <EconomyPip label="Reaction" used={participant.reactionUsed} />
+        <EconomyPip label="Object" used={participant.objectInteractionUsed} />
         <span className="text-[10px] uppercase text-stone-500 border border-stone-800 rounded px-1.5 py-0.5">
           Movement {movementRemaining}/{movementBudget} ft
         </span>
+        <button
+          type="button"
+          title="Undo the last action-economy spend for this participant"
+          disabled={undoMutation.isPending}
+          onClick={() => undoMutation.mutate()}
+          className="text-[10px] uppercase text-stone-500 hover:text-amber-400 border border-stone-800 hover:border-amber-700 rounded px-1.5 py-0.5 disabled:opacity-40"
+        >
+          ↺ Undo last
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          title="Interact with one object for free (drawing a weapon, opening a door, ...) — a second interaction this turn costs an action (Use an Object)"
+          disabled={participant.objectInteractionUsed || spendMutation.isPending}
+          onClick={() => spendMutation.mutate({ spend: 'object_interaction' })}
+          className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs px-2 py-1"
+        >
+          Free object interaction
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

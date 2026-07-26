@@ -264,6 +264,17 @@ encountersRouter.patch('/:id/participants/:pid/action-economy', requireOwnPartic
   res.json({ participant });
 });
 
+// REFACTOR-PLAN.md §5 ("allow the DM to undo") — DM-only, unlike the spend
+// route just above: undo is a DM correction tool, not a player action, so
+// this stays on requireEncounterDm rather than requireOwnParticipantOrDm.
+encountersRouter.post('/:id/participants/:pid/action-economy/undo', requireEncounterDm, async (req, res) => {
+  const { encounter, participant } = await encountersService.undoActionEconomy(
+    pool, Number(req.params.id), Number(req.params.pid),
+  );
+  broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
+  res.json({ participant });
+});
+
 // Shove Check Against a Specific NPC (Phase 3.7). Same requireEncounterDm
 // guard as the rest of this file — the DM triggers the contested roll on
 // behalf of whichever PC's turn it is, same as every other combat mutation.

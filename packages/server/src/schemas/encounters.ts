@@ -101,9 +101,15 @@ export type SetParticipantPositionInput = z.infer<typeof setParticipantPositionS
 // Adding a new named action later (Dodge, Help, Hide, ...) is then a
 // frontend-only change; this endpoint and schema never need to grow. At
 // least one of `spend`/`addMovementFt` must be present.
+// docs/rules/actions.md §2.3: object interaction is a fourth per-turn
+// resource, not part of the action/bonus-action/reaction economy — but it's
+// the same "spend one of my per-turn resources" shape as the other three,
+// so it's a fourth enum member here rather than a parallel boolean flag
+// (the column this maps to, ${spend}_used, already follows a uniform naming
+// convention — see applyActionEconomy).
 export const applyActionEconomySchema = z
   .object({
-    spend: z.enum(['action', 'bonus_action', 'reaction']).optional(),
+    spend: z.enum(['action', 'bonus_action', 'reaction', 'object_interaction']).optional(),
     // Only meaningful alongside spend:'action' — Dash both consumes the
     // action slot AND doubles the movement budget, so the server needs to
     // know it was specifically Dash, not some other action.
