@@ -3,11 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type {
   Character,
+  CharacterAttack,
   Encounter,
   EncounterWithParticipants,
   MonsterCatalogEntry,
   MonsterInstance,
   SnapshotParticipant,
+  StatBlockEntry,
 } from '../lib/types';
 import { isExactHp } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
@@ -27,6 +29,7 @@ import { StatBlock } from '../components/StatBlock';
 import { AbilityScoreGrid } from '../components/AbilityScoreGrid';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { BattleMode } from './BattleMode';
+import { AttackRoller, type AttackTarget, type NormalizedAttack } from './AttackRoller';
 
 // One per non-PC participant row (characters or monster instances — never
 // PCs, matching the server-side exemption in services/entityFieldReveal.ts:
@@ -58,16 +61,32 @@ export function ParticipantArmorClassReveal({ characterId, monsterInstanceId }: 
 // devtools. Characters render via the same read-only AbilityScoreGrid the
 // character sheet itself uses, not a new component; monster instances reuse
 // StatBlock as-is (already built for the bestiary page).
+function attackTargetsFor(allParticipants: SnapshotParticipant[] | undefined, selfId: number): AttackTarget[] {
+  return (allParticipants ?? [])
+    .filter((p) => p.participantId !== selfId)
+    .map((p) => ({ participantId: p.participantId, name: p.name, characterId: p.characterId, monsterInstanceId: p.monsterInstanceId }));
+}
+
 export function ParticipantStatLookup({
   participant,
   characters,
   monsterInstances,
   monsters,
+  encounterId,
+  allParticipants,
 }: {
   participant: SnapshotParticipant;
   characters: Character[] | undefined;
   monsterInstances: MonsterInstance[] | undefined;
   monsters: MonsterCatalogEntry[] | undefined;
+  /** REFACTOR-PLAN.md §6 — when supplied (battle mode / the live Session
+   * view), renders the participant's selectable attacks with a target picker
+   * and server-validated damage application. Omitted entirely in contexts
+   * with no live encounter/roster to target (e.g. none today — every caller
+   * currently supplies these — but kept optional so a future non-combat
+   * caller of this component degrades gracefully instead of crashing). */
+  encounterId?: number;
+  allParticipants?: SnapshotParticipant[];
 }) {
   if (participant.characterId != null) {
     const c = characters?.find((ch) => ch.id === participant.characterId);
@@ -90,6 +109,9 @@ export function ParticipantStatLookup({
           </div>
         </dl>
         {c.notes && <p className="text-xs text-stone-400 whitespace-pre-wrap">{c.notes}</p>}
+        {encounterId !== undefined && (
+          <CharacterAttackRoller characterId={c.id} encounterId={encounterId} targets={attackTargetsFor(allParticipants, participant.participantId)} />
+        )}
       </div>
     );
   }
@@ -97,11 +119,51 @@ export function ParticipantStatLookup({
   const mi = monsterInstances?.find((m) => m.id === participant.monsterInstanceId);
   const monster = mi ? monsters?.find((m) => m.id === mi.monster_id) : undefined;
   if (!monster) return <p className="text-xs text-stone-500 italic mt-2">Loading…</p>;
+  const monsterAttacks: NormalizedAttack[] = Array.isArray(monster.actions)
+    ? (monster.actions as StatBlockEntry[]).map((a, i) => ({
+        key: `${monster.id}-${i}`,
+        name: a.name,
+        attackBonus: a.attackBonus ?? null,
+        damageDice: a.damageDice ?? null,
+        damageType: a.damageType ?? null,
+        saveDc: a.saveDc ?? null,
+        saveAbilityIndex: a.saveAbilityIndex ?? null,
+      }))
+    : [];
   return (
-    <div className="mt-3">
+    <div className="mt-3 space-y-3">
       <StatBlock monster={monster} />
+      {encounterId !== undefined && mi && (
+        <AttackRoller
+          attacks={monsterAttacks}
+          rollerMonsterInstanceId={mi.id}
+          encounterId={encounterId}
+          targets={attackTargetsFor(allParticipants, participant.participantId)}
+        />
+      )}
     </div>
   );
+}
+
+// Split out only because it needs its own useQuery for character_attacks —
+// the monster branch above already has its attacks in hand (monster.actions,
+// no fetch needed) so it calls AttackRoller directly.
+function CharacterAttackRoller({ characterId, encounterId, targets }: { characterId: number; encounterId: number; targets: AttackTarget[] }) {
+  const attacksQuery = useQuery({
+    queryKey: ['character', characterId, 'attacks'],
+    queryFn: () => api.get<{ attacks: CharacterAttack[] }>(`/characters/${characterId}/attacks`),
+  });
+  const normalized: NormalizedAttack[] = (attacksQuery.data?.attacks ?? []).map((a) => ({
+    key: String(a.id),
+    name: a.name,
+    attackBonus: a.attack_bonus,
+    damageDice: a.damage_dice,
+    damageType: a.damage_type,
+    saveDc: a.save_dc,
+    saveAbilityIndex: a.save_ability_index,
+  }));
+  if (normalized.length === 0) return null;
+  return <AttackRoller attacks={normalized} rollerCharacterId={characterId} encounterId={encounterId} targets={targets} />;
 }
 
 export function CombatTracker({ encounter }: { encounter: Encounter }) {
@@ -435,6 +497,8 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
                 characters={charactersQuery.data?.characters}
                 monsterInstances={monsterInstancesQuery.data?.monsterInstances}
                 monsters={bestiaryQuery.data?.monsters}
+                encounterId={encounter.id}
+                allParticipants={live?.participants}
               />
             )}
 

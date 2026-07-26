@@ -13,12 +13,15 @@ import {
   updateCharacterSchema,
 } from '../schemas/characters.js';
 import { createCharacterItemSchema, updateCharacterItemSchema } from '../schemas/characterItems.js';
+import { createCharacterAttackSchema, updateCharacterAttackSchema } from '../schemas/characterAttacks.js';
 import { createCharacterSpellSchema, spellRowQuerySchema, updateCharacterSpellSchema } from '../schemas/characterSpells.js';
 import { applyTargetEffectSchema } from '../schemas/effects.js';
 import { resourceAmountSchema } from '../schemas/resources.js';
 import { updateRevealsSchema } from '../schemas/reveals.js';
+import { applyDamageSchema } from '../schemas/damage.js';
 import * as charactersService from '../services/characters.js';
 import * as characterItemsService from '../services/characterItems.js';
+import * as characterAttacksService from '../services/characterAttacks.js';
 import * as characterSpellsService from '../services/characterSpells.js';
 import * as effectsService from '../services/effects.js';
 import * as resourcePoolsService from '../services/resourcePools.js';
@@ -165,6 +168,38 @@ charactersRouter.patch('/:id/hp', async (req, res) => {
   res.json({ character });
 });
 
+// REFACTOR-PLAN.md §6: sibling to PATCH .../hp — rolls the damage dice
+// server-side and applies resistance/vulnerability/immunity, rather than
+// trusting a client-computed final delta (see services/characters.ts's
+// applyDamage for the full rationale).
+charactersRouter.post('/:id/apply-damage', async (req, res) => {
+  const input = applyDamageSchema.parse(req.body);
+  const result = await charactersService.applyDamage(pool, req.user!.id, Number(req.params.id), input);
+  const io = getIo(req.app);
+  for (const sync of result.encounterSyncs) {
+    await broadcastHpChanged(io, {
+      encounterId: sync.encounter_id,
+      campaignId: sync.campaign_id,
+      seq: sync.sync_seq,
+      participantId: sync.participant_id,
+      characterId: Number(req.params.id),
+      monsterInstanceId: null,
+      hpVisibility: sync.hp_visibility,
+      hpCurrent: result.character.hp_current as number,
+      hpMax: result.character.hp_max as number,
+      hpTemp: result.character.hp_temp as number,
+      delta: -result.appliedDamage,
+    });
+  }
+  res.json({
+    character: result.character,
+    diceRoll: result.diceRoll,
+    rawTotal: result.rawTotal,
+    appliedDamage: result.appliedDamage,
+    breakdown: result.breakdown,
+  });
+});
+
 charactersRouter.patch('/:id/exhaustion', async (req, res) => {
   const input = exhaustionSchema.parse(req.body);
   const character = await charactersService.updateExhaustion(pool, req.user!.id, Number(req.params.id), input);
@@ -209,6 +244,31 @@ charactersRouter.delete('/:id/spells/:spellId', async (req, res) => {
 });
 
 // ---- Items (character_items) ----
+
+// REFACTOR-PLAN.md §6: a character's structured, selectable attack list.
+charactersRouter.get('/:id/attacks', async (req, res) => {
+  const attacks = await characterAttacksService.listCharacterAttacks(pool, req.user!.id, Number(req.params.id));
+  res.json({ attacks });
+});
+
+charactersRouter.post('/:id/attacks', async (req, res) => {
+  const input = createCharacterAttackSchema.parse(req.body);
+  const attack = await characterAttacksService.addCharacterAttack(pool, req.user!.id, Number(req.params.id), input);
+  res.status(201).json({ attack });
+});
+
+charactersRouter.patch('/:id/attacks/:attackId', async (req, res) => {
+  const input = updateCharacterAttackSchema.parse(req.body);
+  const attack = await characterAttacksService.updateCharacterAttack(
+    pool, req.user!.id, Number(req.params.id), Number(req.params.attackId), input,
+  );
+  res.json({ attack });
+});
+
+charactersRouter.delete('/:id/attacks/:attackId', async (req, res) => {
+  await characterAttacksService.removeCharacterAttack(pool, req.user!.id, Number(req.params.id), Number(req.params.attackId));
+  res.status(204).send();
+});
 
 charactersRouter.get('/:id/items', async (req, res) => {
   const items = await characterItemsService.listCharacterItems(pool, req.user!.id, Number(req.params.id));

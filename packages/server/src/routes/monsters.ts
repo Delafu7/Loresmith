@@ -12,6 +12,7 @@ import {
 import { createHomebrewMonsterSchema, updateHomebrewMonsterSchema } from '../schemas/monsterCatalog.js';
 import { applyTargetEffectSchema } from '../schemas/effects.js';
 import { updateRevealsSchema } from '../schemas/reveals.js';
+import { applyDamageSchema } from '../schemas/damage.js';
 import * as catalogService from '../services/catalog.js';
 import * as monstersService from '../services/monsters.js';
 import * as monsterCatalogService from '../services/monsterCatalog.js';
@@ -133,6 +134,36 @@ monsterInstancesRouter.patch('/:id/hp', async (req, res) => {
     });
   }
   res.json({ monsterInstance });
+});
+
+// REFACTOR-PLAN.md §6: sibling to PATCH .../hp — see
+// services/monsters.ts's applyMonsterInstanceDamage.
+monsterInstancesRouter.post('/:id/apply-damage', async (req, res) => {
+  const input = applyDamageSchema.parse(req.body);
+  const result = await monstersService.applyMonsterInstanceDamage(pool, req.user!.id, Number(req.params.id), input);
+  const io = getIo(req.app);
+  for (const sync of result.encounterSyncs) {
+    await broadcastHpChanged(io, {
+      encounterId: sync.encounter_id,
+      campaignId: sync.campaign_id,
+      seq: sync.sync_seq,
+      participantId: sync.participant_id,
+      characterId: null,
+      monsterInstanceId: Number(req.params.id),
+      hpVisibility: sync.hp_visibility,
+      hpCurrent: result.monsterInstance.hp_current as number,
+      hpMax: (result.monsterInstance.hp_max_override as number | null) ?? (result.monsterInstance.hit_point_average as number),
+      hpTemp: result.monsterInstance.hp_temp as number,
+      delta: -result.appliedDamage,
+    });
+  }
+  res.json({
+    monsterInstance: result.monsterInstance,
+    diceRoll: result.diceRoll,
+    rawTotal: result.rawTotal,
+    appliedDamage: result.appliedDamage,
+    breakdown: result.breakdown,
+  });
 });
 
 monsterInstancesRouter.get('/:id/effects', async (req, res) => {

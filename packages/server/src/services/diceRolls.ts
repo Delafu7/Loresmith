@@ -30,7 +30,11 @@ export interface DiceRollRow {
   created_at: Date;
 }
 
-function rollDie(sides: number): number {
+// Exported for services/characters.ts's/services/monsters.ts's applyDamage
+// (REFACTOR-PLAN.md §6) — the damage-application endpoint rolls its own
+// dice server-side via this exact same primitive, preserving the "RNG lives
+// here and only here" invariant for damage rolls too, not just d20s.
+export function rollDie(sides: number): number {
   return 1 + Math.floor(Math.random() * sides);
 }
 

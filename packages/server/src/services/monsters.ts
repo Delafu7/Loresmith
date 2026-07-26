@@ -5,11 +5,14 @@ import { applyHpDeltaWithTempAbsorption } from './hp.js';
 import { redactHpFields, resolveHpVisibility } from './hpVisibility.js';
 import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { MONSTER_INSTANCE_STAT_BLOCK_SQL } from '../domain/revealFields.js';
+import { computeAppliedDamage } from './damage.js';
+import { rollDie } from './diceRolls.js';
 import type {
   CreateMonsterInstanceInput,
   MonsterInstanceHpDeltaInput,
   UpdateMonsterInstanceInput,
 } from '../schemas/monsters.js';
+import type { ApplyDamageInput } from '../schemas/damage.js';
 
 // Reveal-gated stat-block fields (MONSTER_INSTANCE_REVEALABLE_FIELDS) live
 // on the shared `monsters` catalog row, not on `monster_instances` —
@@ -334,6 +337,120 @@ export async function applyMonsterInstanceHpDelta(
 
     await client.query('COMMIT');
     return { monsterInstance: result.rows[0], encounterSyncs: encounterSyncs.rows };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// REFACTOR-PLAN.md §6 / docs/rules/attacks-and-damage.md §2.3 — a sibling to
+// applyMonsterInstanceHpDelta above (see services/characters.ts's
+// applyDamage for the fuller rationale: this is the one that reads the
+// monster's actual damage_resistances/vulnerabilities/immunities and rolls
+// the damage dice server-side, rather than trusting a client-computed final
+// delta that could simply skip a resistance).
+export interface ApplyMonsterInstanceDamageResult {
+  monsterInstance: Record<string, unknown>;
+  encounterSyncs: EncounterHpSyncTarget[];
+  diceRoll: { diceTotal: number; rolls: number[] };
+  rawTotal: number;
+  appliedDamage: number;
+  breakdown: {
+    diceTotal: number;
+    modifier: number;
+    resistanceApplied: boolean;
+    vulnerabilityApplied: boolean;
+    immune: boolean;
+  };
+}
+
+export async function applyMonsterInstanceDamage(
+  pool: Pool,
+  actorId: number,
+  instanceId: number,
+  input: ApplyDamageInput,
+): Promise<ApplyMonsterInstanceDamageResult> {
+  const instance = await fetchInstanceOrThrow(pool, instanceId);
+  const role = await requireMembership(pool, instance.campaign_id, actorId);
+  requireDm(role);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<{
+      hp_current: number;
+      hp_temp: number;
+      hp_max: number;
+      damage_resistances: string[] | null;
+      damage_vulnerabilities: string[] | null;
+      damage_immunities: string[] | null;
+    }>(
+      `SELECT mi.hp_current, mi.hp_temp, COALESCE(mi.hp_max_override, m.hit_point_average) AS hp_max,
+              m.damage_resistances, m.damage_vulnerabilities, m.damage_immunities
+       FROM monster_instances mi JOIN monsters m ON m.id = mi.monster_id
+       WHERE mi.id = $1 FOR UPDATE OF mi`,
+      [instanceId],
+    );
+    const row = locked.rows[0]!;
+
+    const diceCount = input.isCritical ? input.diceCount * 2 : input.diceCount;
+    const rolls = Array.from({ length: diceCount }, () => rollDie(input.diceSides));
+    const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
+
+    const applied = computeAppliedDamage(
+      { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical: input.isCritical },
+      {
+        resistances: row.damage_resistances ?? [],
+        vulnerabilities: row.damage_vulnerabilities ?? [],
+        immunities: row.damage_immunities ?? [],
+      },
+    );
+
+    const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(row, { delta: -applied.appliedDamage, tempDelta: 0 });
+
+    const result = await client.query(
+      `UPDATE monster_instances mi
+       SET hp_current = $1, hp_temp = $2
+       FROM monsters m
+       WHERE mi.id = $3 AND m.id = mi.monster_id
+       RETURNING mi.*, m.hit_point_average`,
+      [hpCurrent, hpTemp, instanceId],
+    );
+
+    const encounterSyncs = await client.query<EncounterHpSyncTarget>(
+      `UPDATE encounters e
+       SET sync_seq = sync_seq + 1
+       FROM combat_participants cp
+       WHERE cp.monster_instance_id = $1 AND cp.encounter_id = e.id
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id, cp.hp_visibility`,
+      [instanceId],
+    );
+
+    if (input.encounterId !== undefined) {
+      await client.query(
+        `INSERT INTO dice_rolls
+           (campaign_id, user_id, monster_instance_id, encounter_id, roll_type, roll_context,
+            d20_rolls, keep, dice_sides, dice_count, modifier, result_total, visible_to_players)
+         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10,true)`,
+        [
+          instance.campaign_id, actorId, instanceId, input.encounterId,
+          input.rollContext ?? null, rolls, input.diceSides, diceCount, input.modifier, diceTotal + input.modifier,
+        ],
+      );
+    }
+
+    await client.query('COMMIT');
+    return {
+      monsterInstance: result.rows[0],
+      encounterSyncs: encounterSyncs.rows,
+      diceRoll: { diceTotal, rolls },
+      rawTotal: applied.rawTotal,
+      appliedDamage: applied.appliedDamage,
+      breakdown: applied.breakdown,
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

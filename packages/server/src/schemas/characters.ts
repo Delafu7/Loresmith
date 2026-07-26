@@ -34,6 +34,13 @@ const sharedCharacterShape = {
   senses: z.string().max(500).optional().nullable(),
   languages: z.array(z.number().int().positive()).optional().nullable(),
   notes: z.string().max(20000).optional().nullable(),
+  // REFACTOR-PLAN.md §6 / docs/rules/attacks-and-damage.md §2.4 — permanent/
+  // build-derived resistance sources (a Dwarf's poison resistance, etc.).
+  // Freely-editable arrays, same posture as monsters' existing homebrew
+  // damage_* fields — DM/player-authored content, not a computed list.
+  damageResistances: z.array(z.string().max(50)).optional(),
+  damageVulnerabilities: z.array(z.string().max(50)).optional(),
+  damageImmunities: z.array(z.string().max(50)).optional(),
 };
 
 export const createCharacterSchema = z.object(sharedCharacterShape).extend({
@@ -41,6 +48,9 @@ export const createCharacterSchema = z.object(sharedCharacterShape).extend({
   speed: z.number().int().min(0).default(30),
   hpTemp: z.number().int().min(0).default(0),
   exhaustionLevel: z.number().int().min(0).max(6).default(0),
+  damageResistances: z.array(z.string().max(50)).default([]),
+  damageVulnerabilities: z.array(z.string().max(50)).default([]),
+  damageImmunities: z.array(z.string().max(50)).default([]),
 });
 export type CreateCharacterInput = z.infer<typeof createCharacterSchema>;
 

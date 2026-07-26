@@ -7,6 +7,8 @@ import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
+import { computeAppliedDamage } from './damage.js';
+import { rollDie } from './diceRolls.js';
 import type {
   CreateCharacterInput,
   ExhaustionInput,
@@ -17,6 +19,7 @@ import type {
   UpdateArmorClassModeInput,
   UpdateCharacterInput,
 } from '../schemas/characters.js';
+import type { ApplyDamageInput } from '../schemas/damage.js';
 
 interface CharacterRow {
   id: number;
@@ -125,8 +128,9 @@ export async function createCharacter(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, race_id, subrace_id, background_id,
           alignment, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current, hp_temp,
-          hit_dice_remaining, exhaustion_level, senses, languages, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+          hit_dice_remaining, exhaustion_level, senses, languages, notes,
+          damage_resistances, damage_vulnerabilities, damage_immunities)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
        RETURNING *`,
       [
         campaignId, isPc, ownerUserId, actorId, input.name, input.raceId ?? null, input.subraceId ?? null,
@@ -134,6 +138,7 @@ export async function createCharacter(
         input.wis, input.cha, input.armorClass, input.speed, input.hpMax, input.hpCurrent ?? input.hpMax,
         input.hpTemp, input.hitDiceRemaining ? JSON.stringify(input.hitDiceRemaining) : null,
         input.exhaustionLevel, input.senses ?? null, input.languages ?? null, input.notes ?? null,
+        input.damageResistances, input.damageVulnerabilities, input.damageImmunities,
       ],
     );
     return result.rows[0];
@@ -163,6 +168,9 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
   senses: 'senses',
   languages: 'languages',
   notes: 'notes',
+  damageResistances: 'damage_resistances',
+  damageVulnerabilities: 'damage_vulnerabilities',
+  damageImmunities: 'damage_immunities',
 };
 
 export interface UpdateCharacterResult {
@@ -351,6 +359,109 @@ export async function applyHpDelta(
 
     await client.query('COMMIT');
     return { character: result.rows[0], encounterSyncs: encounterSyncs.rows };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// REFACTOR-PLAN.md §6 / docs/rules/attacks-and-damage.md §2.3 — a sibling to
+// applyHpDelta above, not a replacement: this is the one that actually
+// applies resistance/vulnerability/immunity, by rolling the damage dice
+// SERVER-SIDE (same RNG primitive as diceRolls.ts's rollDice — "the RNG
+// lives here and only here" extended to damage, not just d20s) rather than
+// trusting a client-computed final delta, which would let a client simply
+// skip a target's resistance. Heals/temp-HP grants/manual DM corrections
+// keep using the plain applyHpDelta above unchanged.
+export interface ApplyDamageResult {
+  character: Record<string, unknown>;
+  encounterSyncs: EncounterHpSyncTarget[];
+  diceRoll: { diceTotal: number; rolls: number[] };
+  rawTotal: number;
+  appliedDamage: number;
+  breakdown: {
+    diceTotal: number;
+    modifier: number;
+    resistanceApplied: boolean;
+    vulnerabilityApplied: boolean;
+    immune: boolean;
+  };
+}
+
+export async function applyDamage(
+  pool: Pool,
+  actorId: number,
+  characterId: number,
+  input: ApplyDamageInput,
+): Promise<ApplyDamageResult> {
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  await authorizeCharacterMutation(pool, actorId, character);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<
+      HpState & { damage_resistances: string[]; damage_vulnerabilities: string[]; damage_immunities: string[] }
+    >(
+      `SELECT hp_current, hp_max, hp_temp, damage_resistances, damage_vulnerabilities, damage_immunities
+       FROM characters WHERE id = $1 FOR UPDATE`,
+      [characterId],
+    );
+    const row = locked.rows[0]!;
+
+    // Dice doubling is a rolling-time concern (docs/rules/
+    // attacks-and-damage.md §1.2/§2.2) — roll double the dice count when
+    // this was a critical hit, never double the flat modifier.
+    const diceCount = input.isCritical ? input.diceCount * 2 : input.diceCount;
+    const rolls = Array.from({ length: diceCount }, () => rollDie(input.diceSides));
+    const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
+
+    const applied = computeAppliedDamage(
+      { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical: input.isCritical },
+      { resistances: row.damage_resistances, vulnerabilities: row.damage_vulnerabilities, immunities: row.damage_immunities },
+    );
+
+    const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(row, { delta: -applied.appliedDamage, tempDelta: 0 });
+
+    const result = await client.query(
+      `UPDATE characters SET hp_current = $1, hp_temp = $2, updated_at = now() WHERE id = $3 RETURNING *`,
+      [hpCurrent, hpTemp, characterId],
+    );
+
+    const encounterSyncs = await client.query<EncounterHpSyncTarget>(
+      `UPDATE encounters e
+       SET sync_seq = sync_seq + 1
+       FROM combat_participants cp
+       WHERE cp.character_id = $1 AND cp.encounter_id = e.id
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id, cp.hp_visibility`,
+      [characterId],
+    );
+
+    if (input.encounterId !== undefined) {
+      await client.query(
+        `INSERT INTO dice_rolls
+           (campaign_id, user_id, character_id, encounter_id, roll_type, roll_context,
+            d20_rolls, keep, dice_sides, dice_count, modifier, result_total, visible_to_players)
+         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10,true)`,
+        [
+          character.campaign_id, actorId, characterId, input.encounterId,
+          input.rollContext ?? null, rolls, input.diceSides, diceCount, input.modifier, diceTotal + input.modifier,
+        ],
+      );
+    }
+
+    await client.query('COMMIT');
+    return {
+      character: result.rows[0],
+      encounterSyncs: encounterSyncs.rows,
+      diceRoll: { diceTotal, rolls },
+      rawTotal: applied.rawTotal,
+      appliedDamage: applied.appliedDamage,
+      breakdown: applied.breakdown,
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

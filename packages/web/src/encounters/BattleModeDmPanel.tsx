@@ -124,7 +124,14 @@ export function BattleModeDmPanel({
                 )}
               </div>
               {expandedParticipantId === p.participantId && (
-                <ParticipantStatLookup participant={p} characters={characters} monsterInstances={monsterInstances} monsters={monsters} />
+                <ParticipantStatLookup
+                  participant={p}
+                  characters={characters}
+                  monsterInstances={monsterInstances}
+                  monsters={monsters}
+                  encounterId={encounterId}
+                  allParticipants={live.participants}
+                />
               )}
             </li>
           );

@@ -218,6 +218,24 @@ export interface StatBlockEntry {
   saveAbilityIndex?: string;
 }
 
+// REFACTOR-PLAN.md §6 — a character's structured, selectable attack list
+// (packages/server/src/db/migrations/..._add-attacks-and-damage-resistance.ts).
+// Raw DB row shape (snake_case) — same "GET returns the raw row" convention
+// as most other sub-resource list endpoints in this app.
+export interface CharacterAttack {
+  id: number;
+  character_id: number;
+  name: string;
+  attack_bonus: number | null;
+  damage_dice: string | null;
+  damage_type: string | null;
+  save_dc: number | null;
+  save_ability_index: string | null;
+  half_on_save: boolean;
+  notes: string | null;
+  sort_order: number;
+}
+
 export type MonsterInstanceStatus = 'alive' | 'dead' | 'fled' | 'captured';
 
 export interface MonsterInstance {

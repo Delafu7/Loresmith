@@ -34,6 +34,11 @@ export interface DiceRollerProps {
    * instead. */
   triggerLabel?: string;
   className?: string;
+  /** REFACTOR-PLAN.md §6 — AttackRoller.tsx uses this to learn the kept d20
+   * for crit detection (a natural 20 only crits if it's the KEPT die, never
+   * a discarded one under disadvantage). Optional: every other existing
+   * caller ignores it and behaves exactly as before. */
+  onRoll?: (roll: DiceRoll) => void;
 }
 
 /**
@@ -55,6 +60,7 @@ export function DiceRoller({
   encounterId,
   triggerLabel = 'Roll',
   className = '',
+  onRoll,
 }: DiceRollerProps) {
   const { campaignId } = useCampaignShell();
   const [keep, setKeep] = useState<DiceRollKeep>('normal');
@@ -73,7 +79,10 @@ export function DiceRoller({
         monsterInstanceId,
         encounterId,
       }),
-    onSuccess: (data) => setResult(data.roll),
+    onSuccess: (data) => {
+      setResult(data.roll);
+      onRoll?.(data.roll);
+    },
   });
 
   return (

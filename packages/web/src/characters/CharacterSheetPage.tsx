@@ -31,6 +31,7 @@ import { SkillsPanel } from './SkillsPanel';
 import { ClassSummaryPanel } from './ClassSummaryPanel';
 import { SpellcastingPanel } from './SpellcastingPanel';
 import { InventoryPanel } from './InventoryPanel';
+import { CharacterAttacksPanel } from './CharacterAttacksPanel';
 import { ResourcePoolPanel } from './ResourcePoolPanel';
 import { CharacterEffectsPanel } from './CharacterEffectsPanel';
 import { RevealToggle } from '../components/RevealToggle';
@@ -469,6 +470,8 @@ export function CharacterSheetPage() {
           editable={editable}
         />
       )}
+
+      <CharacterAttacksPanel characterId={characterId} editable={editable} />
 
       <InventoryPanel
         characterId={characterId}
