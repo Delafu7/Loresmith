@@ -11,7 +11,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const from = (location.state as { from?: string } | null)?.from ?? '/';
+  const from = (location.state as { from?: string } | null)?.from ?? '/home';
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
+import { notFound } from '../middleware/errors.js';
 import { monsterQuerySchema } from '../schemas/catalog.js';
 import {
   createMonsterInstanceSchema,
@@ -32,6 +33,20 @@ monsterCatalogRouter.get('/', async (req, res) => {
     await requireMembership(pool, query.campaignId, req.user!.id);
   }
   res.json({ monsters: await catalogService.listMonsters(pool, query) });
+});
+
+// Own endpoint for a single creature (REFACTOR-PLAN.md §1: /creature/:id on
+// the web side). A global row (owning_campaign_id NULL) is readable by any
+// authenticated user, same as the unfiltered list above; a homebrew row
+// additionally requires membership in its owning campaign — never leaks
+// existence of another campaign's homebrew creature to a non-member.
+monsterCatalogRouter.get('/:id', async (req, res) => {
+  const monster = await catalogService.getMonsterById(pool, Number(req.params.id));
+  if (!monster) throw notFound('Monster');
+  if (monster.owning_campaign_id !== null) {
+    await requireMembership(pool, monster.owning_campaign_id as number, req.user!.id);
+  }
+  res.json({ monster });
 });
 
 // Mounted at /campaigns/:id/monsters — the first write access to a catalog

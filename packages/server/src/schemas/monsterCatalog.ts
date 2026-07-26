@@ -71,6 +71,12 @@ const homebrewMonsterShape = {
   // service-layer check, same "app-layer, not declarative" precedent as
   // services/assets.ts's authorizeAssetUpload characterId check.
   artAssetId: z.number().int().positive().optional().nullable(),
+  // REFACTOR-PLAN.md §1.1: a plain URL, distinct from artAssetId (which only
+  // works for homebrew rows uploaded into a campaign's own asset library) —
+  // this one also works for global/seeded monsters that have no campaign to
+  // upload into. When both are set, the client prefers artAssetId (a real
+  // uploaded asset) and falls back to imageUrl, then the placeholder.
+  imageUrl: z.string().url().max(2000).optional().nullable(),
 };
 
 export const createHomebrewMonsterSchema = z.object(homebrewMonsterShape);

@@ -16,6 +16,11 @@ export const monsterQuerySchema = editionQuerySchema.extend({
   // MUST be gated behind requireMembership at the route (see
   // routes/catalog.ts) — never trust this query param alone.
   campaignId: z.coerce.number().int().positive().optional(),
+  // REFACTOR-PLAN.md §1: powers /bestiary/campaign/:id (campaign-specific
+  // creatures only, no global-catalog union) — requires campaignId; ignored
+  // otherwise. The default (no flag) keeps today's "global + this campaign's
+  // homebrew" union behavior for every existing caller.
+  homebrewOnly: z.coerce.boolean().optional(),
 });
 export type MonsterQuery = z.infer<typeof monsterQuerySchema>;
 

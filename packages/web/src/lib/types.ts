@@ -196,6 +196,9 @@ export interface MonsterCatalogEntry {
   // Catalog-level: caps monster_instances at 1 per campaign for this stat
   // block (named legendary villains etc.) — see services/monsters.ts.
   is_unique: boolean;
+  // REFACTOR-PLAN.md §1.1: plain-URL image, works for global AND homebrew
+  // rows (unlike art_asset_id, which needs a campaign_assets upload).
+  image_url: string | null;
 }
 
 // Shared shape for stat-block entries (traits/actions/legendaryActions/
@@ -324,6 +327,9 @@ export interface SnapshotParticipant {
   // speed_ft comment) — null if neither the character's speed column nor
   // the monster's speed.walk resolved to a usable number.
   speedFt: number | null;
+  // Null for character participants. REFACTOR-PLAN.md §1: the map view only
+  // renders a token for status='alive' monster instances.
+  monsterInstanceStatus: 'alive' | 'dead' | 'fled' | 'captured' | null;
 }
 
 // ---- Phase 2: spells/items/resources/effects (packages/server/src/routes/

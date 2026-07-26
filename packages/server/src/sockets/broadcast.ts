@@ -592,6 +592,7 @@ export async function buildFullStateSyncPayload(
       dashUsed: p.dash_used,
       movementUsedFt: p.movement_used_ft,
       speedFt: p.speed_ft,
+      monsterInstanceStatus: p.monster_instance_status,
     };
     const targetEffects = effectsByTarget.get(effectTargetKey(p.character_id, p.monster_instance_id)) ?? [];
     const dmEffects = targetEffects.map(formatEffectForWire);

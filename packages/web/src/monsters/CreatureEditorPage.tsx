@@ -277,6 +277,7 @@ function previewMonster(form: FormState): MonsterCatalogEntry {
     owning_campaign_id: null,
     art_asset_id: payload.artAssetId,
     is_unique: payload.isUnique,
+    image_url: null,
   };
 }
 

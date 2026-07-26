@@ -56,8 +56,13 @@ export function BattleMap({
     // hpMutation/applyEffectMutation.
   });
 
-  const placed = participants.filter((p) => p.posX != null && p.posY != null);
-  const unplaced = participants.filter((p) => p.posX == null || p.posY == null);
+  // REFACTOR-PLAN.md §1: "on map load, spawn the creature instances assigned
+  // to that map only if alive." Character participants (monsterInstanceStatus
+  // null) are unaffected; a dead/fled/captured monster instance stays in the
+  // initiative roster but never renders a token, placed or not.
+  const spawnable = participants.filter((p) => p.monsterInstanceStatus === null || p.monsterInstanceStatus === 'alive');
+  const placed = spawnable.filter((p) => p.posX != null && p.posY != null);
+  const unplaced = spawnable.filter((p) => p.posX == null || p.posY == null);
 
   if (!map) {
     return (

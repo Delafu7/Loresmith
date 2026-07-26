@@ -100,6 +100,19 @@ export async function getEncounter(pool: Pool, campaignId: number, encounterId: 
   return { ...encounter, participants, map: formatMapForWire(map) };
 }
 
+// Flat lookup by encounter id alone (REFACTOR-PLAN.md §1: /maps/:mapId — a
+// standalone full-screen route with no campaignId in its URL, since
+// encounter_maps is 1:1 with encounters and this app has no separate
+// campaign-level map entity). Membership is derived from the encounter row
+// itself, same pattern as requireEncounterDm in routes/encounters.ts, except
+// read access here only needs membership, not the DM role.
+export async function getEncounterFlat(pool: Pool, userId: number, encounterId: number) {
+  const encounter = await fetchEncounterById(pool, encounterId);
+  const role = await requireMembership(pool, encounter.campaign_id, userId);
+  const full = await getEncounter(pool, encounter.campaign_id, encounterId);
+  return { ...full, myRole: role };
+}
+
 // ---- Battle map (Phase 3.3) ----
 //
 // One optional encounter_maps row per encounter — same "separate optional
@@ -399,6 +412,12 @@ export interface CombatSnapshotParticipant {
   reaction_used: boolean;
   dash_used: boolean;
   movement_used_ft: number;
+  // Null for character participants; a monster instance's alive/dead/fled/
+  // captured status. REFACTOR-PLAN.md §1: the map view only spawns a token
+  // for status='alive' instances — a dead monster stays in the initiative
+  // roster (so its turn can still be skipped/removed deliberately) but
+  // shouldn't visually reappear on the board.
+  monster_instance_status: 'alive' | 'dead' | 'fled' | 'captured' | null;
   // Base walking speed in feet, used purely to DISPLAY a movement budget
   // (speed, doubled if dash_used) client-side — never enforced server-side
   // as a hard cap (matches this app's existing "display-only, DM
@@ -429,6 +448,7 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             COALESCE(c.hp_temp, mi.hp_temp) AS hp_temp,
             COALESCE(c.armor_class, mi.armor_class_override, m.armor_class) AS armor_class,
             c.is_pc,
+            mi.status AS monster_instance_status,
             COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id

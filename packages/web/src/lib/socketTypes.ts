@@ -113,6 +113,7 @@ export interface FullStateSyncEvent extends Envelope {
     dashUsed: boolean;
     movementUsedFt: number;
     speedFt: number | null;
+    monsterInstanceStatus: 'alive' | 'dead' | 'fled' | 'captured' | null;
   }>;
   map: MapConfig | null;
 }

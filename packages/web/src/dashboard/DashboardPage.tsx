@@ -18,11 +18,11 @@ function relativeTime(iso: string): string {
 }
 
 /**
- * Landing page after login (Phase 3.6) — aggregates GET /me/dashboard into
- * four panels: the user's characters, the campaigns those characters (and
- * any DM'd campaigns) belong to, notes the user wrote themselves, and recent
- * notes from across those campaigns. Previously there was no home view at
- * all — root `/` went straight to the campaign list.
+ * Post-auth hub (Phase 3.6; moved to /home in REFACTOR-PLAN.md §8 — `/` is
+ * now the public landing/intro transition, not this page) — aggregates
+ * GET /me/dashboard into four panels: the user's characters, the campaigns
+ * those characters (and any DM'd campaigns) belong to, notes the user wrote
+ * themselves, and recent notes from across those campaigns.
  */
 export function DashboardPage() {
   const { user, logout } = useAuth();
@@ -35,10 +35,19 @@ export function DashboardPage() {
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <h1 className="text-xl font-semibold">Home</h1>
         <div className="flex items-center gap-4 text-sm text-stone-400">
           <Link to="/campaigns" className="hover:text-stone-200">
             All campaigns
+          </Link>
+          <Link to="/bestiary" className="hover:text-stone-200">
+            Bestiary
+          </Link>
+          <Link to="/maps" className="hover:text-stone-200">
+            Maps
+          </Link>
+          <Link to="/notes" className="hover:text-stone-200">
+            Notes
           </Link>
           <ThemePicker />
           <span>{user?.displayName}</span>

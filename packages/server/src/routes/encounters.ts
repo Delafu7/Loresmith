@@ -108,6 +108,14 @@ async function requireOwnParticipantOrDm(req: Request, _res: Response, next: Nex
 export const encountersRouter = Router();
 encountersRouter.use(requireAuth);
 
+// Flat read (REFACTOR-PLAN.md §1: powers /maps/:mapId, a standalone
+// full-screen route reached with only an encounter id, no campaignId in the
+// URL). Membership-gated, not DM-only — players need to view the map too.
+encountersRouter.get('/:id', async (req, res) => {
+  const encounter = await encountersService.getEncounterFlat(pool, req.user!.id, Number(req.params.id));
+  res.json({ encounter });
+});
+
 encountersRouter.post('/:id/start', requireEncounterDm, async (req, res) => {
   const encounter = await encountersService.startEncounter(pool, Number(req.params.id));
   broadcastCombatStarted(getIo(req.app), encounter);

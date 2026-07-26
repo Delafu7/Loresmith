@@ -47,8 +47,8 @@ export function CampaignShell() {
       <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col md:flex-row">
         <nav className="md:w-56 border-b md:border-b-0 md:border-r border-stone-800 px-4 py-4 md:min-h-screen">
           <div className="mb-4">
-            <NavLink to="/" className="text-xs text-stone-500 hover:text-stone-300">
-              ← Dashboard
+            <NavLink to="/home" className="text-xs text-stone-500 hover:text-stone-300">
+              ← Home
             </NavLink>
             <NavLink to="/campaigns" className="text-xs text-stone-500 hover:text-stone-300 ml-2">
               All campaigns
@@ -59,7 +59,7 @@ export function CampaignShell() {
           <ul className="flex md:flex-col gap-1 flex-wrap">
             <NavItem to="characters" label="Characters" />
             {isDm && <NavItem to="monsters" label="Bestiary" />}
-            <NavItem to="turns" label="Turns" />
+            <NavItem to="session" label="Session" />
             <NavItem to="maps" label="Maps" />
             <NavItem to="notes" label="Notes" />
             <NavItem to="dice-rolls" label="Dice Rolls" />

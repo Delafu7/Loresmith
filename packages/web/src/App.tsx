@@ -6,6 +6,7 @@ import { SocketProvider } from './lib/SocketContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { LoginPage } from './auth/LoginPage';
 import { RegisterPage } from './auth/RegisterPage';
+import { LandingPage } from './landing/LandingPage';
 import { DashboardPage } from './dashboard/DashboardPage';
 import { CampaignListPage } from './campaigns/CampaignListPage';
 import { CampaignShell } from './campaigns/CampaignShell';
@@ -17,6 +18,13 @@ import { EncountersPage } from './encounters/EncountersPage';
 import { MapsPage } from './encounters/MapsPage';
 import { NotesPage } from './notes/NotesPage';
 import { DiceRollHistoryPage } from './dice/DiceRollHistoryPage';
+import { BestiaryLayout } from './bestiary/BestiaryLayout';
+import { BestiaryBasicPage } from './bestiary/BestiaryBasicPage';
+import { BestiaryCampaignPage, BestiaryCampaignPickerPage } from './bestiary/BestiaryCampaignPage';
+import { CreatureSheetPage } from './bestiary/CreatureSheetPage';
+import { MapsIndexPage } from './maps/MapsIndexPage';
+import { FullscreenMapPage } from './maps/FullscreenMapPage';
+import { NotesIndexPage } from './notes/NotesIndexPage';
 
 function App() {
   return (
@@ -25,11 +33,13 @@ function App() {
         <SocketProvider>
           <BrowserRouter>
             <Routes>
+              {/* Public: opening transition, then /login or /home (REFACTOR-PLAN.md §8). */}
+              <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
 
               <Route
-                path="/"
+                path="/home"
                 element={
                   <RequireAuth>
                     <DashboardPage />
@@ -42,6 +52,58 @@ function App() {
                 element={
                   <RequireAuth>
                     <CampaignListPage />
+                  </RequireAuth>
+                }
+              />
+
+              {/* Global bestiary (REFACTOR-PLAN.md §1) — cross-campaign, distinct
+                  from the per-campaign Bestiary tab inside CampaignShell below. */}
+              <Route
+                path="/bestiary"
+                element={
+                  <RequireAuth>
+                    <BestiaryLayout />
+                  </RequireAuth>
+                }
+              >
+                <Route index element={<Navigate to="basic" replace />} />
+                <Route path="basic" element={<BestiaryBasicPage />} />
+                <Route path="campaign" element={<BestiaryCampaignPickerPage />} />
+                <Route path="campaign/:id" element={<BestiaryCampaignPage />} />
+              </Route>
+              <Route
+                path="/creature/:id"
+                element={
+                  <RequireAuth>
+                    <CreatureSheetPage />
+                  </RequireAuth>
+                }
+              />
+
+              {/* Cross-campaign maps index + standalone full-screen map view
+                  (REFACTOR-PLAN.md §1/§3). */}
+              <Route
+                path="/maps"
+                element={
+                  <RequireAuth>
+                    <MapsIndexPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/maps/:mapId"
+                element={
+                  <RequireAuth>
+                    <FullscreenMapPage />
+                  </RequireAuth>
+                }
+              />
+
+              <Route
+                path="/notes"
+                element={
+                  <RequireAuth>
+                    <NotesIndexPage />
                   </RequireAuth>
                 }
               />
@@ -60,7 +122,10 @@ function App() {
                 <Route path="monsters" element={<MonstersPage />} />
                 <Route path="monsters/new" element={<CreatureEditorPage />} />
                 <Route path="monsters/:monsterId/edit" element={<CreatureEditorPage />} />
-                <Route path="turns" element={<EncountersPage />} />
+                {/* "session" per REFACTOR-PLAN.md §1 (renamed from "turns") — this
+                    is the live-session view; it becomes battle mode automatically
+                    once an encounter goes active (see EncountersPage/BattleMode). */}
+                <Route path="session" element={<EncountersPage />} />
                 <Route path="maps" element={<MapsPage />} />
                 <Route path="notes" element={<NotesPage />} />
                 <Route path="dice-rolls" element={<DiceRollHistoryPage />} />

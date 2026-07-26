@@ -151,7 +151,10 @@ export async function listMonsters(pool: Pool, query: MonsterQuery) {
   // With no campaignId this clause is exactly `owning_campaign_id IS NULL`,
   // so the no-campaignId case is unchanged from before homebrew existed —
   // it must never leak a stray homebrew row.
-  if (query.campaignId !== undefined) {
+  if (query.campaignId !== undefined && query.homebrewOnly) {
+    values.push(query.campaignId);
+    clauses.push(`(is_homebrew AND owning_campaign_id = $${values.length})`);
+  } else if (query.campaignId !== undefined) {
     values.push(query.campaignId);
     clauses.push(`(owning_campaign_id IS NULL OR owning_campaign_id = $${values.length})`);
   } else {
@@ -161,6 +164,16 @@ export async function listMonsters(pool: Pool, query: MonsterQuery) {
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
   const result = await pool.query(`SELECT * FROM monsters ${where} ORDER BY challenge_rating ASC, name ASC`, values);
   return result.rows;
+}
+
+// Single-creature fetch (REFACTOR-PLAN.md §1: /creature/:id, its own route
+// rather than only reachable via the list). A homebrew row's membership check
+// is the caller's responsibility (see routes/catalog.ts) — this just 404s if
+// the id doesn't exist at all, same "don't leak existence" posture as
+// fetchHomebrewMonsterOrThrow in services/monsterCatalog.ts.
+export async function getMonsterById(pool: Pool, id: number) {
+  const result = await pool.query(`SELECT * FROM monsters WHERE id = $1`, [id]);
+  return result.rows[0] ?? null;
 }
 
 // ---- Added for Phase 2 UI: spells/items/effect-definitions browse ----
