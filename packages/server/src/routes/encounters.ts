@@ -11,6 +11,7 @@ import {
   createEncounterSchema,
   rollInitiativeSchema,
   setInitiativeSchema,
+  setParticipantFactionSchema,
   setParticipantPositionSchema,
   updateEncounterSchema,
   upsertEncounterMapSchema,
@@ -30,6 +31,7 @@ import {
   broadcastEffectExpired,
   broadcastMapUpdated,
   broadcastTokenMoved,
+  broadcastParticipantFactionChanged,
   broadcastActionEconomyChanged,
   broadcastDiceRolled,
   broadcastFullStateResync,
@@ -207,6 +209,17 @@ encountersRouter.patch('/:id/participants/:pid/position', requireEncounterDm, as
 // Per-turn action economy (Phase 3.6). Unlike every other combat_participants
 // mutation in this file, this ONE route also allows the owning player (battle
 // mode, REVISION-PLAN.md §10.2) — see requireOwnParticipantOrDm above.
+// REFACTOR-PLAN.md §3: DM-only (requireEncounterDm, same as position/map) —
+// board-readability metadata, not a player action.
+encountersRouter.patch('/:id/participants/:pid/faction', requireEncounterDm, async (req, res) => {
+  const input = setParticipantFactionSchema.parse(req.body);
+  const { encounter, participant } = await encountersService.setParticipantFaction(
+    pool, Number(req.params.id), Number(req.params.pid), input,
+  );
+  broadcastParticipantFactionChanged(getIo(req.app), encounter, participant);
+  res.json({ participant });
+});
+
 encountersRouter.patch('/:id/participants/:pid/action-economy', requireOwnParticipantOrDm, async (req, res) => {
   const input = applyActionEconomySchema.parse(req.body);
   const { encounter, participant } = await encountersService.applyActionEconomy(

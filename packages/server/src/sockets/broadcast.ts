@@ -231,6 +231,20 @@ export function broadcastTokenMoved(
   });
 }
 
+// REFACTOR-PLAN.md §3 — same no-visibility-split shape as TOKEN_MOVED above
+// (faction isn't HP-sensitive info).
+export function broadcastParticipantFactionChanged(
+  io: Server,
+  encounter: EncounterLike,
+  participant: { id: number; faction: 'player' | 'ally' | 'enemy' | 'neutral' },
+): void {
+  io.to(encounterRoom(encounter.id)).emit('PARTICIPANT_FACTION_CHANGED', {
+    ...envelope(encounter),
+    participantId: participant.id,
+    faction: participant.faction,
+  });
+}
+
 // ---- ACTION_ECONOMY_CHANGED (Phase 3.6) ----
 //
 // Same "no DM/player visibility split" reasoning as MAP_UPDATED/TOKEN_MOVED
@@ -593,6 +607,8 @@ export async function buildFullStateSyncPayload(
       movementUsedFt: p.movement_used_ft,
       speedFt: p.speed_ft,
       monsterInstanceStatus: p.monster_instance_status,
+      size: p.size,
+      faction: p.faction,
     };
     const targetEffects = effectsByTarget.get(effectTargetKey(p.character_id, p.monster_instance_id)) ?? [];
     const dmEffects = targetEffects.map(formatEffectForWire);

@@ -14,12 +14,18 @@ export type UpdateEncounterInput = z.infer<typeof updateEncounterSchema>;
 
 export const hpVisibilityEnum = z.enum(['exact', 'banded', 'hidden']);
 
+// REFACTOR-PLAN.md §3: board-readability faction, distinct from hpVisibility.
+export const participantFactionEnum = z.enum(['player', 'ally', 'enemy', 'neutral']);
+
 export const addParticipantSchema = z
   .object({
     characterId: z.number().int().positive().optional(),
     monsterInstanceId: z.number().int().positive().optional(),
     initiativeRoll: z.number().int().optional(), // omit to roll later via /roll-initiative
     hpVisibility: hpVisibilityEnum.optional(),
+    // Omit to default player/enemy by character-vs-monster-instance, same as
+    // hpVisibility's own default derivation just above.
+    faction: participantFactionEnum.optional(),
   })
   .refine((v) => (v.characterId != null) !== (v.monsterInstanceId != null), {
     message: 'Exactly one of characterId or monsterInstanceId must be provided',
@@ -36,6 +42,11 @@ export const setInitiativeSchema = z.object({
   initiativeTiebreak: z.number().int().optional().nullable(),
 });
 export type SetInitiativeInput = z.infer<typeof setInitiativeSchema>;
+
+export const setParticipantFactionSchema = z.object({
+  faction: participantFactionEnum,
+});
+export type SetParticipantFactionInput = z.infer<typeof setParticipantFactionSchema>;
 
 // All fields optional — a DM might just want to change grid size without
 // touching the background, or vice versa. Upsert only overwrites fields that

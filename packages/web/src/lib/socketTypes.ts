@@ -114,8 +114,16 @@ export interface FullStateSyncEvent extends Envelope {
     movementUsedFt: number;
     speedFt: number | null;
     monsterInstanceStatus: 'alive' | 'dead' | 'fled' | 'captured' | null;
+    size: string;
+    faction: 'player' | 'ally' | 'enemy' | 'neutral';
   }>;
   map: MapConfig | null;
+}
+
+// REFACTOR-PLAN.md §3 — DM override for a participant's board faction.
+export interface ParticipantFactionChangedEvent extends Envelope {
+  participantId: number;
+  faction: 'player' | 'ally' | 'enemy' | 'neutral';
 }
 
 // No DM/player visibility split on either event (see sockets/broadcast.ts) —
@@ -229,6 +237,7 @@ export interface ServerToClientEvents {
   MAP_UPDATED: (payload: MapUpdatedEvent) => void;
   TOKEN_MOVED: (payload: TokenMovedEvent) => void;
   PARTICIPANT_AC_CHANGED: (payload: ParticipantAcChangedEvent) => void;
+  PARTICIPANT_FACTION_CHANGED: (payload: ParticipantFactionChangedEvent) => void;
   ACTION_ECONOMY_CHANGED: (payload: ActionEconomyChangedEvent) => void;
   DICE_ROLLED: (payload: DiceRolledEvent) => void;
 }

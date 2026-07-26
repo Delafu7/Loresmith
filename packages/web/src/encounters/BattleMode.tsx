@@ -65,6 +65,7 @@ export function BattleMode({
           participants={live.participants}
           activeParticipantId={live.activeParticipantId}
           isDm={isDm}
+          showRoster={false}
         />
       </div>
       <div className="lg:w-80 flex-shrink-0">

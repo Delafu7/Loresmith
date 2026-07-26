@@ -330,6 +330,11 @@ export interface SnapshotParticipant {
   // Null for character participants. REFACTOR-PLAN.md §1: the map view only
   // renders a token for status='alive' monster instances.
   monsterInstanceStatus: 'alive' | 'dead' | 'fled' | 'captured' | null;
+  // REFACTOR-PLAN.md §3 — see docs/rules/creature-sizes.md. Free-text catalog
+  // string ('Medium' fallback for character participants); normalize before
+  // using as a lookup key (see encounters/creatureSize.ts).
+  size: string;
+  faction: 'player' | 'ally' | 'enemy' | 'neutral';
 }
 
 // ---- Phase 2: spells/items/resources/effects (packages/server/src/routes/

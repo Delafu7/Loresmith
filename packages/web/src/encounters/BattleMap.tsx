@@ -5,30 +5,59 @@
 // PATCH .../position and broadcast as TOKEN_MOVED. Firing that mutation on
 // every pointermove tick would be a write/broadcast storm; this component
 // (and Token.tsx) are built specifically to avoid that.
+//
+// REFACTOR-PLAN.md §3 extends this with: coordinate labels, a free (not
+// preset-only) cell size, a roster side panel two-way synced with the map
+// (hover/select), and zoom + center-on-active. Movement legality/cost
+// (REFACTOR-PLAN.md §4) is explicitly NOT this component's job yet — dragging
+// a token here still has no distance/budget validation.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { CampaignAsset, SnapshotParticipant } from '../lib/types';
+import { isExactHp } from '../lib/types';
 import type { MapConfig } from '../lib/socketTypes';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Token } from './Token';
 
-const CELL_SIZE_PRESETS = [
-  { label: 'Small', value: 32 },
-  { label: 'Medium', value: 50 },
-  { label: 'Large', value: 70 },
-];
-
 const GRID_MIN = 5;
 const GRID_MAX = 50;
+const CELL_SIZE_MIN = 20;
+const CELL_SIZE_MAX = 150;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2;
+const ZOOM_STEP = 0.25;
 
 function clamp(n: number, min: number, max: number): number {
   if (Number.isNaN(n)) return min;
   return Math.min(Math.max(Math.round(n), min), max);
 }
+
+/** 0-indexed column -> spreadsheet-style letter(s): 0='A', 25='Z', 26='AA'. */
+function columnLabel(x: number): string {
+  let col = '';
+  let n = x;
+  do {
+    col = String.fromCharCode(65 + (n % 26)) + col;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return col;
+}
+
+/** "A1" style coordinate label — column letter(s) + 1-indexed row number. */
+function cellLabel(x: number, y: number): string {
+  return `${columnLabel(x)}${y + 1}`;
+}
+
+const FACTION_OPTIONS: Array<{ value: SnapshotParticipant['faction']; label: string }> = [
+  { value: 'player', label: 'Player' },
+  { value: 'ally', label: 'Ally' },
+  { value: 'enemy', label: 'Enemy' },
+  { value: 'neutral', label: 'Neutral' },
+];
 
 export function BattleMap({
   encounterId,
@@ -37,6 +66,7 @@ export function BattleMap({
   participants,
   activeParticipantId,
   isDm,
+  showRoster = true,
 }: {
   encounterId: number;
   campaignId: number;
@@ -44,8 +74,19 @@ export function BattleMap({
   participants: SnapshotParticipant[];
   activeParticipantId: number | null;
   isDm: boolean;
+  /** BattleMode.tsx already renders its own DM/player side panel (HP,
+   * effects, dice — action-oriented tools) alongside this component, so it
+   * turns this off to avoid two participant lists competing for the same
+   * strip of screen; the standalone /maps/:mapId route (which has no other
+   * side panel) leaves it on. Known gap either way: BattleMode's own panels
+   * don't show coordinates or two-way hover-sync with the map — only this
+   * panel does. */
+  showRoster?: boolean;
 }) {
   const [showSetup, setShowSetup] = useState(false);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const positionMutation = useMutation({
     mutationFn: ({ participantId, x, y }: { participantId: number; x: number | null; y: number | null }) =>
@@ -56,6 +97,11 @@ export function BattleMap({
     // hpMutation/applyEffectMutation.
   });
 
+  const factionMutation = useMutation({
+    mutationFn: ({ participantId, faction }: { participantId: number; faction: SnapshotParticipant['faction'] }) =>
+      api.patch(`/encounters/${encounterId}/participants/${participantId}/faction`, { faction }),
+  });
+
   // REFACTOR-PLAN.md §1: "on map load, spawn the creature instances assigned
   // to that map only if alive." Character participants (monsterInstanceStatus
   // null) are unaffected; a dead/fled/captured monster instance stays in the
@@ -63,6 +109,20 @@ export function BattleMap({
   const spawnable = participants.filter((p) => p.monsterInstanceStatus === null || p.monsterInstanceStatus === 'alive');
   const placed = spawnable.filter((p) => p.posX != null && p.posY != null);
   const unplaced = spawnable.filter((p) => p.posX == null || p.posY == null);
+
+  function centerOnActive() {
+    const container = scrollRef.current;
+    if (!container || !map || activeParticipantId == null) return;
+    const active = placed.find((p) => p.participantId === activeParticipantId);
+    if (!active || active.posX == null || active.posY == null) return;
+    const centerX = (active.posX + 0.5) * map.cellSizePx * zoom;
+    const centerY = (active.posY + 0.5) * map.cellSizePx * zoom;
+    container.scrollTo({
+      left: centerX - container.clientWidth / 2,
+      top: centerY - container.clientHeight / 2,
+      behavior: 'smooth',
+    });
+  }
 
   if (!map) {
     return (
@@ -79,12 +139,52 @@ export function BattleMap({
     );
   }
 
+  const mapWidthPx = map.gridColumns * map.cellSizePx;
+  const mapHeightPx = map.gridRows * map.cellSizePx;
+
   return (
     <div className="space-y-4">
       {positionMutation.isError && <ErrorBanner message={errorMessage(positionMutation.error)} />}
+      {factionMutation.isError && <ErrorBanner message={errorMessage(factionMutation.error)} />}
 
-      {isDm && (
-        <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setZoom((z) => clamp10(z - ZOOM_STEP))}
+            disabled={zoom <= ZOOM_MIN}
+            aria-label="Zoom out"
+            className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
+          >
+            −
+          </button>
+          <span className="text-xs text-stone-400 w-12 text-center">{Math.round(zoom * 100)}%</span>
+          <button
+            type="button"
+            onClick={() => setZoom((z) => clamp10(z + ZOOM_STEP))}
+            disabled={zoom >= ZOOM_MAX}
+            aria-label="Zoom in"
+            className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(1)}
+            className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-xs text-stone-400 hover:bg-stone-800"
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            onClick={centerOnActive}
+            disabled={activeParticipantId == null}
+            className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 disabled:opacity-40"
+          >
+            Center on active
+          </button>
+        </div>
+        {isDm && (
           <button
             type="button"
             onClick={() => setShowSetup((s) => !s)}
@@ -92,51 +192,100 @@ export function BattleMap({
           >
             {showSetup ? 'Hide map settings' : 'Reconfigure map'}
           </button>
-        </div>
-      )}
+        )}
+      </div>
       {isDm && showSetup && (
         <MapSetupPanel campaignId={campaignId} encounterId={encounterId} map={map} onDone={() => setShowSetup(false)} />
       )}
 
-      <div className="overflow-auto rounded-lg border border-stone-800 bg-stone-950 p-3">
-        <div className="relative" style={{ width: map.gridColumns * map.cellSizePx, height: map.gridRows * map.cellSizePx }}>
-          {map.backgroundFileUrl && (
-            <img
-              src={map.backgroundFileUrl}
-              alt="Battle map background"
-              draggable={false}
-              className="absolute inset-0 h-full w-full object-fill pointer-events-none select-none"
-            />
-          )}
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div ref={scrollRef} className="flex-1 min-w-0 overflow-auto rounded-lg border border-stone-800 bg-stone-950 p-3">
+          <div style={{ width: mapWidthPx * zoom, height: mapHeightPx * zoom }}>
+            <div className="flex" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
+              {/* Row-number column */}
+              <div className="flex flex-col flex-shrink-0" style={{ marginTop: 18 }}>
+                {Array.from({ length: map.gridRows }, (_, y) => (
+                  <div
+                    key={y}
+                    className="flex items-center justify-end pr-1 text-[10px] text-stone-500 select-none"
+                    style={{ height: map.cellSizePx, width: 18 }}
+                  >
+                    {y + 1}
+                  </div>
+                ))}
+              </div>
 
-          {/* Grid-line overlay — CSS grid purely for the visual cell divisions;
-              tokens are positioned separately below via left/top math so their
-              in-drag pixel offset isn't constrained to whole-cell steps. */}
-          <div
-            className="absolute inset-0 grid pointer-events-none"
-            style={{
-              gridTemplateColumns: `repeat(${map.gridColumns}, 1fr)`,
-              gridTemplateRows: `repeat(${map.gridRows}, 1fr)`,
-            }}
-          >
-            {Array.from({ length: map.gridColumns * map.gridRows }, (_, i) => (
-              <div key={i} className="border border-stone-700/40" />
-            ))}
+              <div>
+                {/* Column-letter row */}
+                <div className="flex" style={{ height: 18 }}>
+                  {Array.from({ length: map.gridColumns }, (_, x) => (
+                    <div
+                      key={x}
+                      className="flex items-center justify-center text-[10px] text-stone-500 select-none"
+                      style={{ width: map.cellSizePx }}
+                    >
+                      {columnLabel(x)}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="relative" style={{ width: mapWidthPx, height: mapHeightPx }}>
+                  {map.backgroundFileUrl && (
+                    <img
+                      src={map.backgroundFileUrl}
+                      alt="Battle map background"
+                      draggable={false}
+                      className="absolute inset-0 h-full w-full object-fill pointer-events-none select-none"
+                    />
+                  )}
+
+                  {/* Grid-line overlay — CSS grid purely for the visual cell divisions;
+                      tokens are positioned separately below via left/top math so their
+                      in-drag pixel offset isn't constrained to whole-cell steps. */}
+                  <div
+                    className="absolute inset-0 grid pointer-events-none"
+                    style={{
+                      gridTemplateColumns: `repeat(${map.gridColumns}, 1fr)`,
+                      gridTemplateRows: `repeat(${map.gridRows}, 1fr)`,
+                    }}
+                  >
+                    {Array.from({ length: map.gridColumns * map.gridRows }, (_, i) => (
+                      <div key={i} className="border border-stone-700/40" />
+                    ))}
+                  </div>
+
+                  {placed.map((p) => (
+                    <Token
+                      key={p.participantId}
+                      participant={p}
+                      cellSizePx={map.cellSizePx}
+                      gridColumns={map.gridColumns}
+                      gridRows={map.gridRows}
+                      isActive={p.participantId === activeParticipantId}
+                      isDraggable={isDm}
+                      isSelected={p.participantId === selectedId}
+                      onMove={(x, y) => positionMutation.mutate({ participantId: p.participantId, x, y })}
+                      onSelect={() => setSelectedId((cur) => (cur === p.participantId ? null : p.participantId))}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-
-          {placed.map((p) => (
-            <Token
-              key={p.participantId}
-              participant={p}
-              cellSizePx={map.cellSizePx}
-              gridColumns={map.gridColumns}
-              gridRows={map.gridRows}
-              isActive={p.participantId === activeParticipantId}
-              isDraggable={isDm}
-              onMove={(x, y) => positionMutation.mutate({ participantId: p.participantId, x, y })}
-            />
-          ))}
         </div>
+
+        {showRoster && (
+          <RosterPanel
+            participants={placed}
+            activeParticipantId={activeParticipantId}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            isDm={isDm}
+            onChangeFaction={
+              isDm ? (participantId, faction) => factionMutation.mutate({ participantId, faction }) : undefined
+            }
+          />
+        )}
       </div>
 
       {isDm && unplaced.length > 0 && (
@@ -160,6 +309,87 @@ export function BattleMap({
         </div>
       )}
     </div>
+  );
+}
+
+function clamp10(n: number): number {
+  // Avoids float drift (0.1 + 0.2 !== 0.3) from repeated +/- ZOOM_STEP clicks.
+  return Math.round(clamp(Math.round(n * 100), ZOOM_MIN * 100, ZOOM_MAX * 100)) / 100;
+}
+
+// REFACTOR-PLAN.md §3: "side panel listing every participant with their
+// current coordinate, two-way synced with the board: hovering or selecting
+// in the list highlights the token and vice versa." Only lists PLACED
+// participants — an unplaced one has no coordinate to show, and already has
+// its own affordance below.
+function RosterPanel({
+  participants,
+  activeParticipantId,
+  selectedId,
+  onSelect,
+  isDm,
+  onChangeFaction,
+}: {
+  participants: SnapshotParticipant[];
+  activeParticipantId: number | null;
+  selectedId: number | null;
+  onSelect: (id: number | null) => void;
+  isDm: boolean;
+  onChangeFaction?: (participantId: number, faction: SnapshotParticipant['faction']) => void;
+}) {
+  return (
+    <aside className="lg:w-64 flex-shrink-0 rounded-lg border border-stone-800 bg-stone-900 p-3">
+      <h3 className="text-xs uppercase text-stone-500 mb-2">On the board</h3>
+      {participants.length === 0 && <EmptyState message="No one is placed on the map yet." />}
+      <ul className="space-y-1">
+        {participants.map((p) => {
+          const isActive = p.participantId === activeParticipantId;
+          const isSelected = p.participantId === selectedId;
+          return (
+            <li
+              key={p.participantId}
+              onMouseEnter={() => onSelect(p.participantId)}
+              onMouseLeave={() => onSelect(null)}
+              onClick={() => onSelect(isSelected ? null : p.participantId)}
+              className={`rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${
+                isSelected ? 'bg-amber-950/40 border border-amber-700' : 'border border-transparent hover:bg-stone-800'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className={`truncate ${isActive ? 'text-amber-400 font-semibold' : 'text-stone-200'}`}>
+                  {isActive && '▶ '}
+                  {p.name}
+                </span>
+                <span className="text-[10px] text-stone-500 flex-shrink-0">
+                  {p.posX != null && p.posY != null ? cellLabel(p.posX, p.posY) : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-0.5">
+                <span className="text-[10px] text-stone-500">
+                  {isExactHp(p.hp) ? `${p.hp.hpCurrent}/${p.hp.hpMax} HP` : p.hp.band}
+                </span>
+                {isDm && onChangeFaction ? (
+                  <select
+                    value={p.faction}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => onChangeFaction(p.participantId, e.target.value as SnapshotParticipant['faction'])}
+                    className="text-[10px] rounded border border-stone-700 bg-stone-800 text-stone-300 px-1 py-0.5"
+                  >
+                    {FACTION_OPTIONS.map((f) => (
+                      <option key={f.value} value={f.value}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-[10px] text-stone-500 capitalize">{p.faction}</span>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
   );
 }
 
@@ -235,25 +465,17 @@ function MapSetupPanel({
             className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 w-20"
           />
         </label>
-        <div className="flex flex-col gap-1 text-xs text-stone-400">
-          Cell size
-          <div className="flex gap-1">
-            {CELL_SIZE_PRESETS.map((preset) => (
-              <button
-                key={preset.value}
-                type="button"
-                onClick={() => setCellSizePx(preset.value)}
-                className={`rounded-md border px-2 py-1 text-xs ${
-                  cellSizePx === preset.value
-                    ? 'border-amber-600 bg-amber-950/30 text-amber-400'
-                    : 'border-stone-700 bg-stone-800 text-stone-300'
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <label className="flex flex-col gap-1 text-xs text-stone-400">
+          Cell size (px, 5 ft = 1 cell by default)
+          <input
+            type="number"
+            min={CELL_SIZE_MIN}
+            max={CELL_SIZE_MAX}
+            value={cellSizePx}
+            onChange={(e) => setCellSizePx(clamp(Number(e.target.value), CELL_SIZE_MIN, CELL_SIZE_MAX))}
+            className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 w-24"
+          />
+        </label>
       </div>
 
       <div>

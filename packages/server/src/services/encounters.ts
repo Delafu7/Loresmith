@@ -13,6 +13,7 @@ import type {
   ApplyActionEconomyInput,
   CreateEncounterInput,
   SetInitiativeInput,
+  SetParticipantFactionInput,
   SetParticipantPositionInput,
   UpdateEncounterInput,
   UpsertEncounterMapInput,
@@ -42,6 +43,7 @@ interface ParticipantRow {
   initiative_tiebreak: number | null;
   turn_order: number;
   hp_visibility: 'exact' | 'banded' | 'hidden';
+  faction: 'player' | 'ally' | 'enemy' | 'neutral';
   pos_x: number | null;
   pos_y: number | null;
   action_used: boolean;
@@ -274,6 +276,42 @@ export async function setParticipantPosition(
   }
 }
 
+// REFACTOR-PLAN.md §3: DM overrides a participant's board-readability faction
+// (player/ally/enemy/neutral) — same shape as setParticipantPosition just
+// above (bump sync_seq in the same transaction, broadcast room-wide, no
+// DM/player visibility split needed since faction isn't HP-sensitive info).
+export async function setParticipantFaction(
+  pool: Pool,
+  encounterId: number,
+  participantId: number,
+  input: SetParticipantFactionInput,
+): Promise<ParticipantMutationResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET faction = $1 WHERE id = $2 AND encounter_id = $3 RETURNING *`,
+      [input.faction, participantId, encounterId],
+    );
+    const participant = updated.rows[0];
+    if (!participant) throw notFound('Participant');
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participant };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Authorization for PATCH /encounters/:id/participants/:pid/action-economy
 // (battle mode, REVISION-PLAN.md §10.2): unlike every other combat_participants
 // mutation in this app (DM-only via requireEncounterDm in routes/encounters.ts),
@@ -418,6 +456,13 @@ export interface CombatSnapshotParticipant {
   // roster (so its turn can still be skipped/removed deliberately) but
   // shouldn't visually reappear on the board.
   monster_instance_status: 'alive' | 'dead' | 'fled' | 'captured' | null;
+  // REFACTOR-PLAN.md §3 (docs/rules/creature-sizes.md): monster catalog size
+  // string (free text, Title Case by seeded convention — 'Tiny'..'Gargantuan'
+  // — see that doc's normalization-gap note). Characters have no size column
+  // at all today, so PC/NPC-character participants always resolve to the
+  // 'Medium' fallback here rather than leaving the footprint undefined.
+  size: string;
+  faction: 'player' | 'ally' | 'enemy' | 'neutral';
   // Base walking speed in feet, used purely to DISPLAY a movement budget
   // (speed, doubled if dash_used) client-side — never enforced server-side
   // as a hard cap (matches this app's existing "display-only, DM
@@ -449,6 +494,8 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             COALESCE(c.armor_class, mi.armor_class_override, m.armor_class) AS armor_class,
             c.is_pc,
             mi.status AS monster_instance_status,
+            COALESCE(m.size, 'Medium') AS size,
+            cp.faction,
             COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id
@@ -551,17 +598,21 @@ export async function addParticipant(
     // monster instances — looked up rather than assumed from "is this a
     // character row at all", since the characters table holds NPCs too.
     let defaultVisibility: 'exact' | 'banded' = 'banded';
+    let defaultFaction: 'player' | 'enemy' = 'enemy';
     if (input.characterId != null) {
       const pcRes = await client.query<{ is_pc: boolean }>(`SELECT is_pc FROM characters WHERE id = $1`, [input.characterId]);
-      if (pcRes.rows[0]?.is_pc) defaultVisibility = 'exact';
+      if (pcRes.rows[0]?.is_pc) {
+        defaultVisibility = 'exact';
+        defaultFaction = 'player';
+      }
     }
 
     let participant: ParticipantRow;
     try {
       const result = await client.query<ParticipantRow>(
         `INSERT INTO combat_participants
-           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, hp_visibility)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, hp_visibility, faction)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          RETURNING *`,
         [
           encounterId,
@@ -572,6 +623,7 @@ export async function addParticipant(
           turnOrder,
           joinedRound,
           input.hpVisibility ?? defaultVisibility,
+          input.faction ?? defaultFaction,
         ],
       );
       participant = result.rows[0]!;

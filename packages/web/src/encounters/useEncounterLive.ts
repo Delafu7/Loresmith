@@ -20,6 +20,7 @@ import type {
   MapConfig,
   MapUpdatedEvent,
   ParticipantAcChangedEvent,
+  ParticipantFactionChangedEvent,
   ParticipantJoinedEvent,
   ParticipantLeftEvent,
   RevealChangedEvent,
@@ -302,6 +303,19 @@ export function useEncounterLive(encounterId: number | undefined) {
       });
     }
 
+    function onParticipantFactionChanged(payload: ParticipantFactionChangedEvent) {
+      if (payload.encounterId !== encounterId) return;
+      withSeqCheck(payload.seq, () => {
+        patch((prev) => ({
+          ...prev,
+          seq: payload.seq,
+          participants: prev.participants.map((p) =>
+            p.participantId === payload.participantId ? { ...p, faction: payload.faction } : p,
+          ),
+        }));
+      });
+    }
+
     function onParticipantAcChanged(payload: ParticipantAcChangedEvent) {
       if (payload.encounterId !== encounterId) return;
       withSeqCheck(payload.seq, () => {
@@ -346,6 +360,7 @@ export function useEncounterLive(encounterId: number | undefined) {
     socket.on('MAP_UPDATED', onMapUpdated);
     socket.on('TOKEN_MOVED', onTokenMoved);
     socket.on('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
+    socket.on('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
     socket.on('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);
     socket.on('REVEAL_CHANGED', onRevealChanged);
 
@@ -366,6 +381,7 @@ export function useEncounterLive(encounterId: number | undefined) {
       socket.off('MAP_UPDATED', onMapUpdated);
       socket.off('TOKEN_MOVED', onTokenMoved);
       socket.off('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
+      socket.off('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
       socket.off('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);
       socket.off('REVEAL_CHANGED', onRevealChanged);
     };
