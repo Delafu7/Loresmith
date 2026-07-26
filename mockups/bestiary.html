@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mockup — /bestiary</title>
+<style>
+  :root { --ink:#16120F; --parchment:#F3E9DC; --ember:#E2542A; --dusk:#574B44; --card:#211A15; }
+  body { margin:0; font-family:'Inter',system-ui,sans-serif; background:var(--ink); color:var(--parchment); }
+  header { border-bottom:1px solid var(--dusk); padding:1rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
+  header a { color:var(--dusk); font-size:0.75rem; text-decoration:none; margin-right:1rem; }
+  h1 { font-family:'Fraunces',Georgia,serif; font-size:1.25rem; margin:0; display:inline; }
+  nav.tabs { display:flex; gap:0.25rem; }
+  nav.tabs span { padding:0.4rem 0.75rem; border-radius:6px; font-size:0.8rem; }
+  nav.tabs .active { background:var(--ember); color:var(--ink); font-weight:600; }
+  nav.tabs .inactive { color:var(--dusk); }
+  main { max-width:72rem; margin:0 auto; padding:2rem 1rem; }
+  .filters { display:flex; gap:0.5rem; margin-bottom:1.25rem; }
+  .filters input, .filters select { background:var(--card); border:1px solid var(--dusk); color:var(--parchment); padding:0.4rem 0.6rem; border-radius:6px; font-size:0.85rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:1rem; }
+  .card { background:var(--card); border:1px solid var(--dusk); border-radius:10px; overflow:hidden; }
+  .card .art { aspect-ratio:1; background:linear-gradient(135deg,#3a2a20,#211a15); display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:2rem; color:var(--ember); }
+  .card .info { padding:0.6rem; }
+  .card .name { font-weight:600; font-size:0.9rem; }
+  .card .meta { font-size:0.7rem; color:var(--dusk); }
+</style>
+</head>
+<body>
+  <header>
+    <div><a href="#">← Home</a><h1>Bestiary</h1></div>
+    <nav class="tabs"><span class="active">Basic creatures</span><span class="inactive">Campaign-specific</span></nav>
+  </header>
+  <main>
+    <div class="filters">
+      <input placeholder="Search creatures…">
+      <select><option>All types</option></select>
+      <input placeholder="CR min" style="width:5rem">
+      <input placeholder="CR max" style="width:5rem">
+    </div>
+    <div class="grid">
+      <div class="card"><div class="art">G</div><div class="info"><div class="name">Goblin</div><div class="meta">CR 1/4 · humanoid</div></div></div>
+      <div class="card"><div class="art">W</div><div class="info"><div class="name">Wolf</div><div class="meta">CR 1/4 · beast</div></div></div>
+      <div class="card"><div class="art">S</div><div class="info"><div class="name">Skeleton</div><div class="meta">CR 1/4 · undead</div></div></div>
+      <div class="card"><div class="art">O</div><div class="info"><div class="name">Orc</div><div class="meta">CR 1/2 · humanoid</div></div></div>
+    </div>
+  </main>
+  <p style="text-align:center;color:var(--dusk);font-size:0.7rem;margin-top:2rem;">
+    Mockup only. Implemented: packages/web/src/bestiary/BestiaryBasicPage.tsx + BestiaryCampaignPage.tsx.
+  </p>
+</body>
+</html>

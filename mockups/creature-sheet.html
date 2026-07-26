@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mockup — /creature/:id</title>
+<style>
+  :root { --ink:#16120F; --parchment:#F3E9DC; --ember:#E2542A; --dusk:#574B44; --card:#211A15; }
+  body { margin:0; font-family:'Inter',system-ui,sans-serif; background:var(--ink); color:var(--parchment); }
+  header { border-bottom:1px solid var(--dusk); padding:1rem 1.5rem; }
+  header a { color:var(--dusk); font-size:0.75rem; text-decoration:none; }
+  main { max-width:48rem; margin:0 auto; padding:2rem 1rem; }
+  .top { display:flex; gap:1rem; align-items:center; margin-bottom:1.5rem; }
+  .portrait { width:96px; height:96px; border-radius:10px; background:linear-gradient(135deg,#3a2a20,#211a15); display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:2.5rem; color:var(--ember); }
+  h1 { font-family:'Fraunces',Georgia,serif; margin:0 0 0.25rem; }
+  .sub { color:var(--dusk); font-size:0.85rem; }
+  .statblock { background:var(--card); border:1px solid var(--dusk); border-radius:10px; padding:1.25rem; }
+  .abilities { display:grid; grid-template-columns:repeat(6,1fr); gap:0.5rem; margin-bottom:1rem; text-align:center; }
+  .abilities div { background:var(--ink); border-radius:6px; padding:0.5rem 0; }
+  .abilities .label { font-size:0.65rem; color:var(--dusk); text-transform:uppercase; }
+  .abilities .score { font-weight:700; }
+  .row { display:flex; justify-content:space-between; padding:0.35rem 0; border-bottom:1px solid #2a221c; font-size:0.85rem; }
+  .actions h3 { font-family:'Fraunces',serif; font-size:1rem; color:var(--ember); margin:1rem 0 0.4rem; }
+</style>
+</head>
+<body>
+  <header><a href="#">← Bestiary</a></header>
+  <main>
+    <div class="top">
+      <div class="portrait">G</div>
+      <div><h1>Goblin</h1><div class="sub">Small humanoid (goblinoid), neutral evil</div></div>
+    </div>
+    <div class="statblock">
+      <div class="abilities">
+        <div><div class="label">STR</div><div class="score">8 (-1)</div></div>
+        <div><div class="label">DEX</div><div class="score">14 (+2)</div></div>
+        <div><div class="label">CON</div><div class="score">10 (+0)</div></div>
+        <div><div class="label">INT</div><div class="score">10 (+0)</div></div>
+        <div><div class="label">WIS</div><div class="score">8 (-1)</div></div>
+        <div><div class="label">CHA</div><div class="score">8 (-1)</div></div>
+      </div>
+      <div class="row"><span>Armor Class</span><span>15</span></div>
+      <div class="row"><span>Hit Points</span><span>7 (2d6)</span></div>
+      <div class="row"><span>Speed</span><span>30 ft</span></div>
+      <div class="actions">
+        <h3>Actions</h3>
+        <div class="row"><span>Scimitar. Melee Weapon Attack: +4 to hit</span><span>1d6+2 slashing</span></div>
+      </div>
+    </div>
+  </main>
+  <p style="text-align:center;color:var(--dusk);font-size:0.7rem;margin-top:2rem;">
+    Mockup only. Implemented: packages/web/src/bestiary/CreatureSheetPage.tsx (reuses the existing StatBlock component).
+  </p>
+</body>
+</html>

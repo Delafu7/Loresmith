@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mockup — /maps/:mapId</title>
+<style>
+  :root { --ink:#16120F; --parchment:#F3E9DC; --ember:#E2542A; --dusk:#574B44; --card:#211A15; --verdigris:#4E8C7C; }
+  body { margin:0; font-family:'Inter',system-ui,sans-serif; background:var(--ink); color:var(--parchment); height:100vh; display:flex; flex-direction:column; }
+  header { border-bottom:1px solid var(--dusk); padding:0.5rem 1rem; font-size:0.75rem; color:var(--dusk); flex-shrink:0; }
+  .body { flex:1; display:flex; min-height:0; }
+  .map-area { flex:1; padding:1rem; overflow:auto; }
+  .toolbar { display:flex; gap:0.5rem; margin-bottom:0.75rem; font-size:0.75rem; }
+  .toolbar button { background:var(--card); border:1px solid var(--dusk); color:var(--parchment); border-radius:6px; padding:0.3rem 0.6rem; }
+  .grid-wrap { display:inline-block; border:1px solid var(--dusk); background:var(--card); padding:0.75rem; border-radius:8px; }
+  .grid { display:grid; grid-template-columns:repeat(10,32px); grid-template-rows:repeat(8,32px); position:relative; }
+  .cell { border:1px solid #3a2a20; }
+  .token { position:absolute; width:28px; height:28px; border-radius:50%; background:var(--ember); border:2px solid var(--verdigris); display:flex; align-items:center; justify-content:center; font-size:0.7rem; font-weight:700; color:var(--ink); }
+  .token.active { box-shadow:0 0 0 3px #E2542A88; }
+  .roster { width:220px; border-left:1px solid var(--dusk); padding:1rem; font-size:0.8rem; }
+  .roster h3 { font-family:'Fraunces',serif; color:var(--ember); font-size:0.85rem; margin-top:0; }
+  .roster .row { display:flex; justify-content:space-between; padding:0.35rem 0.5rem; border-radius:6px; margin-bottom:0.25rem; background:var(--card); }
+</style>
+</head>
+<body>
+  <header>← Encounter name — full-screen map</header>
+  <div class="body">
+    <div class="map-area">
+      <div class="toolbar">
+        <button>−</button><span>100%</span><button>+</button><button>Reset</button><button>Center on active</button>
+        <button>Paint terrain</button>
+      </div>
+      <div class="grid-wrap">
+        <div class="grid" id="g"></div>
+      </div>
+    </div>
+    <div class="roster">
+      <h3>On the board</h3>
+      <div class="row"><span>▶ Brenna (A3)</span><span>18/28</span></div>
+      <div class="row"><span>Goblin 1 (C5)</span><span>Healthy</span></div>
+      <div class="row"><span>Goblin 2 (D5)</span><span>Bloodied</span></div>
+    </div>
+  </div>
+  <p style="text-align:center;color:var(--dusk);font-size:0.7rem;padding:0.5rem;">
+    Mockup only (static grid, no drag). Implemented: packages/web/src/maps/FullscreenMapPage.tsx +
+    packages/web/src/encounters/BattleMap.tsx (coordinate labels, zoom, terrain overlay, reachable-cell highlight, roster sync).
+  </p>
+  <script>
+    const g = document.getElementById('g');
+    for (let i = 0; i < 80; i++) { const c = document.createElement('div'); c.className = 'cell'; g.appendChild(c); }
+    const t1 = document.createElement('div'); t1.className = 'token active'; t1.textContent = 'B'; t1.style.left = '32px'; t1.style.top = '64px'; g.appendChild(t1);
+    const t2 = document.createElement('div'); t2.className = 'token'; t2.textContent = 'G'; t2.style.left = '128px'; t2.style.top = '128px'; g.appendChild(t2);
+  </script>
+</body>
+</html>

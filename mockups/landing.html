@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mockup — Landing / intro transition</title>
+<style>
+  :root {
+    --ink: #16120F; --parchment: #F3E9DC; --ember: #E2542A; --dusk: #574B44;
+  }
+  body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: var(--ink); color: var(--parchment); }
+  .screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; cursor: pointer; }
+  h1 { font-family: 'Fraunces', Georgia, serif; font-size: 3rem; color: var(--ember); letter-spacing: 0.02em; margin: 0; }
+  p.tag { text-transform: uppercase; letter-spacing: 0.35em; font-size: 0.75rem; color: var(--dusk); margin-top: 0.75rem; }
+  .hint { position: fixed; bottom: 1.5rem; font-size: 0.7rem; color: var(--dusk); }
+</style>
+</head>
+<body>
+  <div class="screen">
+    <h1>Loresmith</h1>
+    <p class="tag">Forge the campaign</p>
+  </div>
+  <p class="hint">Mockup only — real behavior: fades in over ~1.1s, any click/keypress skips immediately,
+    and the whole animation is skipped outright under prefers-reduced-motion. Then routes to /login or /home.
+    Implemented: packages/web/src/landing/LandingPage.tsx.</p>
+</body>
+</html>

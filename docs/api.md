@@ -59,6 +59,9 @@ Generated from the real route files under `packages/server/src/routes/` (not asp
 | POST | `/characters/:id/resources/:key/spend` \| `/recover` | |
 | GET \| POST | `/characters/:id/effects` | Apply outside combat |
 | GET \| PATCH | `/characters/:id/reveals` | DM-only writes — reveal engine |
+| GET \| POST | `/characters/:id/attacks` | Owner-or-DM writes — structured, selectable attack list (REFACTOR-PLAN.md §6) |
+| PATCH \| DELETE | `/characters/:id/attacks/:attackId` | Owner-or-DM |
+| POST | `/characters/:id/apply-damage` | Owner-or-DM. Rolls damage dice server-side (doubled on `isCritical`), applies the target's real `damage_resistances/vulnerabilities/immunities`, then updates HP — sibling to `PATCH .../hp`, not a replacement (REFACTOR-PLAN.md §6) |
 
 ## Monsters / bestiary (`/catalog/monsters`, `/campaigns/:id/monsters`, `/campaigns/:id/monster-instances`, flat `/monster-instances`)
 
@@ -72,6 +75,7 @@ Generated from the real route files under `packages/server/src/routes/` (not asp
 | PATCH | `/monster-instances/:id/hp` | Signed delta |
 | GET \| POST | `/monster-instances/:id/effects` | POST DM-only |
 | GET \| PATCH | `/monster-instances/:id/reveals` | PATCH DM-only |
+| POST | `/monster-instances/:id/apply-damage` | DM-only — see `/characters/:id/apply-damage` above for the mechanism (REFACTOR-PLAN.md §6) |
 
 ## Encounters & combat (`/campaigns/:id/encounters`, flat `/encounters`)
 
@@ -86,9 +90,14 @@ Generated from the real route files under `packages/server/src/routes/` (not asp
 | PATCH | `/encounters/:id/participants/:pid/initiative` | DM-only |
 | POST | `/encounters/:id/roll-initiative` | DM-only, server rolls |
 | POST | `/encounters/:id/advance-turn` | DM-only |
-| PUT | `/encounters/:id/map` | DM-only — grid/background config |
-| PATCH | `/encounters/:id/participants/:pid/position` | DM-only |
-| PATCH | `/encounters/:id/participants/:pid/action-economy` | Owning player OR DM |
+| PUT | `/encounters/:id/map` | DM-only — grid/background config (also accepts `feetPerCell`, distinct from the pixel-only `cellSizePx` — REFACTOR-PLAN.md §4) |
+| GET | `/encounters/:id/map/cell-overrides` | DM-only — terrain (`difficult`/`impassable`/`special`) painted onto the grid (REFACTOR-PLAN.md §4) |
+| PUT \| DELETE | `/encounters/:id/map/cell-overrides/:x/:y` | DM-only |
+| PATCH | `/encounters/:id/participants/:pid/position` | DM-only. Server-validated during active combat: rejects (`409`, `details.reason`) a move exceeding the mover's remaining budget or blocked by terrain/occupancy; free/unconditional outside active combat or for initial placement (REFACTOR-PLAN.md §4) |
+| GET | `/encounters/:id/participants/:pid/reachable` | Owning player OR DM — server-computed reachable-cell set for the mover's remaining budget (REFACTOR-PLAN.md §4) |
+| PATCH | `/encounters/:id/participants/:pid/faction` | DM-only — board-readability faction (player/ally/enemy/neutral), REFACTOR-PLAN.md §3 |
+| PATCH | `/encounters/:id/participants/:pid/action-economy` | Owning player OR DM. `spend` now also accepts `'object_interaction'` (REFACTOR-PLAN.md §5) |
+| POST | `/encounters/:id/participants/:pid/action-economy/undo` | DM-only — reverts exactly the last `action-economy` mutation (REFACTOR-PLAN.md §5) |
 | POST | `/encounters/:id/participants/:pid/shove` | DM-only, contested roll |
 | GET \| POST | `/encounters/:id/effects` | POST DM-only |
 | DELETE | `/effects/:id` | |
@@ -127,11 +136,6 @@ Generated from the real route files under `packages/server/src/routes/` (not asp
 
 ---
 
-## Not-yet-built endpoints referenced by `REFACTOR-PLAN.md`
+## Non-HTTP tooling referenced by `REFACTOR-PLAN.md`
 
-These are planned in later phases of that document, not yet implemented — listed here so this file stays the single source of truth for "does this endpoint exist":
-
-- Movement pathfinding (§4): reachable-cell query, server-side move validation on `PATCH .../participants/:pid/position`.
-- Action-economy undo (§5).
-- Structured attack/damage resolution with resistance/vulnerability/immunity (§6).
-- Duplicate-report script output (§2) is a CLI script, not an HTTP endpoint — see `packages/server/src/db/scripts/reportUniqueDuplicates.ts`.
+- Duplicate-report script (§2) is a CLI script, not an HTTP endpoint — `npm run report:unique-duplicates --workspace=@dnd/server` (`packages/server/src/db/scripts/reportUniqueDuplicates.ts`), read-only.
