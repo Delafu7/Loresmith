@@ -96,11 +96,10 @@ export async function getMonsterInstance(pool: Pool, campaignId: number, instanc
 
 // Locks the catalog `monsters` row for the duration of the check+insert so
 // two concurrent spawns of the same is_unique monster can't both pass the
-// "no existing instance yet" check before either commits (the row lock
-// serializes the second caller behind the first). The lock is on the shared
-// catalog row, not the campaign's instances, but since campaignId is part of
-// the count query the lock only ever gates spawns of THIS monster, not
-// unrelated concurrent activity.
+// "no living instance yet" check before either commits (the row lock
+// serializes the second caller behind the first). Global (all campaigns
+// share one lock on this row), which is exactly what a system-wide
+// uniqueness check needs — see the uniqueLiving query below.
 export async function createMonsterInstance(
   pool: Pool,
   campaignId: number,
@@ -117,20 +116,42 @@ export async function createMonsterInstance(
     const monster = monsterResult.rows[0];
     if (!monster) throw notFound('Monster');
 
-    const existingCount = await client.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM monster_instances WHERE campaign_id = $1 AND monster_id = $2`,
-      [campaignId, input.monsterId],
-    );
-    const count = Number(existingCount.rows[0]!.count);
-
-    if (monster.is_unique && count > 0) {
-      throw new AppError('CONFLICT', `${monster.name} is unique and already has an active instance in this campaign`);
+    // REFACTOR-PLAN.md §2 fix: this used to be scoped `campaign_id = $1` and
+    // count every status, which had it backwards on both axes — a dead
+    // unique NPC in THIS campaign wrongly blocked a legitimate respawn, while
+    // the same named boss could still exist simultaneously in a DIFFERENT
+    // campaign. "Unique" means unique across the whole system, among LIVING
+    // instances only.
+    if (monster.is_unique) {
+      const uniqueLiving = await client.query<{ campaign_id: number; campaign_name: string }>(
+        `SELECT mi.campaign_id, c.name AS campaign_name
+         FROM monster_instances mi
+         JOIN campaigns c ON c.id = mi.campaign_id
+         WHERE mi.monster_id = $1 AND mi.status = 'alive'
+         LIMIT 1`,
+        [input.monsterId],
+      );
+      const existing = uniqueLiving.rows[0];
+      if (existing) {
+        throw new AppError(
+          'CONFLICT',
+          `${monster.name} is unique and already has a living instance in campaign "${existing.campaign_name}" (id ${existing.campaign_id})`,
+          { existingCampaignId: existing.campaign_id },
+        );
+      }
     }
 
     // Auto-label duplicates ("Goblin 1", "Goblin 2", ...) only when the
-    // caller didn't supply a name — a unique monster never needs numbering
-    // since count is always 0 at this point.
-    const customName = input.customName ?? (monster.is_unique ? null : `${monster.name} ${count + 1}`);
+    // caller didn't supply a name — scoped to THIS campaign (unrelated to the
+    // system-wide uniqueness check above; numbering across campaigns
+    // wouldn't mean anything to the DM reading it). A unique monster never
+    // needs numbering, so this count is never consulted for one.
+    const existingInCampaign = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM monster_instances WHERE campaign_id = $1 AND monster_id = $2`,
+      [campaignId, input.monsterId],
+    );
+    const countInCampaign = Number(existingInCampaign.rows[0]!.count);
+    const customName = input.customName ?? (monster.is_unique ? null : `${monster.name} ${countInCampaign + 1}`);
 
     const result = await client.query(
       `INSERT INTO monster_instances
@@ -173,7 +194,7 @@ export async function updateMonsterInstance(
   instanceId: number,
   input: UpdateMonsterInstanceInput,
 ) {
-  await fetchScopedInstanceOrThrow(pool, campaignId, instanceId);
+  const current = await fetchScopedInstanceOrThrow(pool, campaignId, instanceId);
 
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -186,6 +207,59 @@ export async function updateMonsterInstance(
     values.push(value);
   }
   if (sets.length === 0) return fetchScopedInstanceOrThrow(pool, campaignId, instanceId);
+
+  // REFACTOR-PLAN.md §2: the same system-wide "at most one living instance"
+  // invariant createMonsterInstance enforces on spawn also has to hold on
+  // update — otherwise flipping a dead unique instance's status back to
+  // 'alive' (undo a mistaken kill, a homebrew "revive," etc.) is an
+  // unguarded second door into the exact bug this phase fixes. Only runs
+  // when the update actually targets 'alive' and the instance isn't already
+  // alive (a no-op re-save of an already-living instance never needs the
+  // check — it can't newly collide with itself).
+  if (input.status === 'alive' && current.status !== 'alive') {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const monsterResult = await client.query<{ id: number; name: string; is_unique: boolean }>(
+        `SELECT m.id, m.name, m.is_unique FROM monsters m
+         JOIN monster_instances mi ON mi.monster_id = m.id
+         WHERE mi.id = $1 FOR UPDATE OF m`,
+        [instanceId],
+      );
+      const monster = monsterResult.rows[0];
+      if (monster?.is_unique) {
+        const uniqueLiving = await client.query<{ campaign_id: number; campaign_name: string }>(
+          `SELECT mi.campaign_id, c.name AS campaign_name
+           FROM monster_instances mi
+           JOIN campaigns c ON c.id = mi.campaign_id
+           WHERE mi.monster_id = $1 AND mi.status = 'alive' AND mi.id != $2
+           LIMIT 1`,
+          [monster.id, instanceId],
+        );
+        const existing = uniqueLiving.rows[0];
+        if (existing) {
+          throw new AppError(
+            'CONFLICT',
+            `${monster.name} is unique and already has a living instance in campaign "${existing.campaign_name}" (id ${existing.campaign_id})`,
+            { existingCampaignId: existing.campaign_id },
+          );
+        }
+      }
+
+      values.push(instanceId);
+      const result = await client.query(
+        `UPDATE monster_instances SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`,
+        values,
+      );
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 
   values.push(instanceId);
   const result = await pool.query(`UPDATE monster_instances SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`, values);

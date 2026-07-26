@@ -11,6 +11,7 @@
     "migrate:down": "dotenv -e ../../.env -- node-pg-migrate --config-file .node-pg-migraterc.json down",
     "migrate:create": "node-pg-migrate create --config-file .node-pg-migraterc.json",
     "seed": "dotenv -e ../../.env -- tsx src/db/seeds/run.ts",
+    "report:unique-duplicates": "dotenv -e ../../.env -- tsx src/db/scripts/reportUniqueDuplicates.ts",
     "test": "dotenv -e ../../.env -- vitest run"
   },
   "dependencies": {
