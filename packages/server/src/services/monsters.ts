@@ -3,11 +3,22 @@ import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm, type CampaignRole } from './authz.js';
 import { applyHpDeltaWithTempAbsorption } from './hp.js';
 import { redactHpFields, resolveHpVisibility } from './hpVisibility.js';
+import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
+import { MONSTER_INSTANCE_STAT_BLOCK_SQL } from '../domain/revealFields.js';
 import type {
   CreateMonsterInstanceInput,
   MonsterInstanceHpDeltaInput,
   UpdateMonsterInstanceInput,
 } from '../schemas/monsters.js';
+
+// Reveal-gated stat-block fields (MONSTER_INSTANCE_REVEALABLE_FIELDS) live
+// on the shared `monsters` catalog row, not on `monster_instances` —
+// PLAN.md §3.1's catalog/instance split. Neither list/get query below
+// selected them at all before the reveal engine (only name/slug/
+// challenge_rating/hit_point_average were joined in for display), so both
+// now join the full stat block in per-instance via the shared SQL fragment
+// (see its comment in domain/revealFields.ts for why it lives there).
+const MONSTER_STAT_BLOCK_JOIN = MONSTER_INSTANCE_STAT_BLOCK_SQL;
 
 interface MonsterInstanceRow {
   id: number;
@@ -44,7 +55,8 @@ async function fetchInstanceOrThrow(pool: Pool, instanceId: number): Promise<Mon
 // exact). See services/hpVisibility.ts.
 export async function listMonsterInstances(pool: Pool, campaignId: number, role: CampaignRole) {
   const result = await pool.query(
-    `SELECT mi.*, m.name AS monster_name, m.slug AS monster_slug, m.challenge_rating, m.hit_point_average
+    `SELECT mi.*, m.name AS monster_name, m.slug AS monster_slug, m.challenge_rating, m.hit_point_average,
+            ${MONSTER_STAT_BLOCK_JOIN}
      FROM monster_instances mi
      JOIN monsters m ON m.id = mi.monster_id
      WHERE mi.campaign_id = $1
@@ -56,7 +68,9 @@ export async function listMonsterInstances(pool: Pool, campaignId: number, role:
     result.rows.map(async (row) => {
       const effectiveMax = row.hp_max_override ?? row.hit_point_average;
       const visibility = await resolveHpVisibility(pool, { monsterInstanceId: row.id });
-      return redactHpFields({ ...row, hp_max: effectiveMax }, visibility);
+      const hpRedacted = redactHpFields({ ...row, hp_max: effectiveMax }, visibility);
+      const revealState = await resolveReveals(pool, campaignId, 'monster_instance', { monsterInstanceId: row.id });
+      return redactEntityFields(hpRedacted, 'monster_instance', revealState);
     }),
   );
 }
@@ -67,14 +81,17 @@ export async function listMonsterInstances(pool: Pool, campaignId: number, role:
 
 export async function getMonsterInstance(pool: Pool, campaignId: number, instanceId: number, role: CampaignRole) {
   const instance = await fetchScopedInstanceOrThrow(pool, campaignId, instanceId);
-  if (role === 'dm') return { ...instance, hp_band: null };
-  const effectiveMaxRow = await pool.query<{ hp_max: number }>(
-    `SELECT COALESCE(mi.hp_max_override, m.hit_point_average) AS hp_max
+  const statBlockRow = await pool.query(
+    `SELECT COALESCE(mi.hp_max_override, m.hit_point_average) AS hp_max, ${MONSTER_STAT_BLOCK_JOIN}
      FROM monster_instances mi JOIN monsters m ON m.id = mi.monster_id WHERE mi.id = $1`,
     [instanceId],
   );
+  const statBlock = statBlockRow.rows[0]!;
+  if (role === 'dm') return { ...instance, ...statBlock, hp_band: null };
   const visibility = await resolveHpVisibility(pool, { monsterInstanceId: instanceId });
-  return redactHpFields({ ...instance, hp_max: effectiveMaxRow.rows[0]!.hp_max }, visibility);
+  const hpRedacted = redactHpFields({ ...instance, ...statBlock }, visibility);
+  const revealState = await resolveReveals(pool, campaignId, 'monster_instance', { monsterInstanceId: instanceId });
+  return redactEntityFields(hpRedacted, 'monster_instance', revealState);
 }
 
 // Locks the catalog `monsters` row for the duration of the check+insert so

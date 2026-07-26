@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Campaign, CampaignRole } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
@@ -59,10 +59,12 @@ export function CampaignShell() {
           <ul className="flex md:flex-col gap-1 flex-wrap">
             <NavItem to="characters" label="Characters" />
             {isDm && <NavItem to="monsters" label="Bestiary" />}
-            <NavItem to="encounters" label="Encounter" />
+            <NavItem to="turns" label="Turns" />
+            <NavItem to="maps" label="Maps" />
             <NavItem to="notes" label="Notes" />
             <NavItem to="dice-rolls" label="Dice Rolls" />
           </ul>
+          {isDm && <HideEverythingButton campaignId={campaignId} />}
           <ThemePicker className="mt-4" />
         </nav>
         <main className="flex-1 min-w-0">
@@ -70,6 +72,34 @@ export function CampaignShell() {
         </main>
       </div>
     </CampaignShellContext.Provider>
+  );
+}
+
+// Always-visible panic button (PLAN.md §2.1/§11.5) — deliberately lives in
+// the persistent nav, not tucked inside a settings page or the Encounter
+// tab, since a DM needs it reachable in one click from wherever they
+// currently are mid-session, not after navigating away from whatever they're
+// looking at. Confirms first (same convention as CharacterSheetPage's
+// delete button) since it's broad — it re-hides every reveal across the
+// whole campaign, not just the current view.
+function HideEverythingButton({ campaignId }: { campaignId: number }) {
+  const mutation = useMutation({
+    mutationFn: () => api.post<void>(`/campaigns/${campaignId}/reveals/hide-all`),
+  });
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (confirm('Hide everything from players? This re-hides every revealed field, HP band, and effect across the whole campaign.')) {
+          mutation.mutate();
+        }
+      }}
+      disabled={mutation.isPending}
+      title="Re-hide every revealed field, HP, and effect across the whole campaign"
+      className="mt-4 w-full rounded-md border border-red-900 bg-red-950/40 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-red-400 hover:bg-red-950/70 disabled:opacity-50"
+    >
+      Hide everything
+    </button>
   );
 }
 

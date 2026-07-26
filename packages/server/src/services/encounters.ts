@@ -7,6 +7,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
+import { requireMembership, requireOwnerOrDm, type CampaignRole } from './authz.js';
 import type {
   AddParticipantInput,
   ApplyActionEconomyInput,
@@ -260,6 +261,43 @@ export async function setParticipantPosition(
   }
 }
 
+// Authorization for PATCH /encounters/:id/participants/:pid/action-economy
+// (battle mode, REVISION-PLAN.md §10.2): unlike every other combat_participants
+// mutation in this app (DM-only via requireEncounterDm in routes/encounters.ts),
+// a player must be able to spend their OWN character's action-economy slots.
+// Resolves campaign_id + the participant's owning character (if any) via a
+// single join, then applies the same "DM, or owner" shape as
+// services/characters.ts's authorizeCharacterMutation/requireOwnerOrDm —
+// pulled out as its own service function (rather than inlined in the route
+// middleware) so this authorization boundary is directly testable without
+// spinning up Express, matching this file's existing pure-function
+// precedent (e.g. computeNextTurn).
+export async function authorizeParticipantAction(
+  pool: Pool,
+  actorId: number,
+  encounterId: number,
+  participantId: number,
+): Promise<CampaignRole> {
+  const result = await pool.query<{ campaign_id: number; owner_user_id: number | null }>(
+    `SELECT e.campaign_id, c.owner_user_id
+       FROM combat_participants cp
+       JOIN encounters e ON e.id = cp.encounter_id
+       LEFT JOIN characters c ON c.id = cp.character_id
+      WHERE cp.id = $1 AND cp.encounter_id = $2`,
+    [participantId, encounterId],
+  );
+  const row = result.rows[0];
+  if (!row) throw notFound('Participant');
+
+  const role = await requireMembership(pool, row.campaign_id, actorId);
+  // row.owner_user_id is NULL both for NPC characters (no owning player) and
+  // for monster-instance participants (the LEFT JOIN finds no characters
+  // row at all) — requireOwnerOrDm treats a null owner as "no non-DM may
+  // touch this", which is exactly right for both cases.
+  requireOwnerOrDm(role, row.owner_user_id, actorId);
+  return role;
+}
+
 // Per-turn action economy (Phase 3.6). Locks the participant row so a
 // double-click can't spend the same slot twice via a race — the CONFLICT
 // check and the write happen against the same locked row within one
@@ -347,6 +385,11 @@ export interface CombatSnapshotParticipant {
   hp_max: number;
   hp_temp: number;
   armor_class: number;
+  // NULL for monster-instance participants (no `characters` row to join) —
+  // PLAN.md §11.6's armorClass redaction exempts PCs the same way
+  // services/characters.ts already exempts them from HP redaction (`row.
+  // is_pc`), so this needs to travel with the snapshot row too.
+  is_pc: boolean | null;
   pos_x: number | null;
   pos_y: number | null;
   // Phase 3.6: per-turn 5e action economy — reset by advanceTurn for
@@ -385,6 +428,7 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             COALESCE(c.hp_max, mi.hp_max_override, m.hit_point_average) AS hp_max,
             COALESCE(c.hp_temp, mi.hp_temp) AS hp_temp,
             COALESCE(c.armor_class, mi.armor_class_override, m.armor_class) AS armor_class,
+            c.is_pc,
             COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id

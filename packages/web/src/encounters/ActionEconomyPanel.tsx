@@ -9,7 +9,7 @@ import type { ShoveResult, SnapshotParticipant } from '../lib/types';
 
 type AbilityScores = Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>;
 
-function EconomyPip({ label, used }: { label: string; used: boolean }) {
+export function EconomyPip({ label, used }: { label: string; used: boolean }) {
   return (
     <span
       className={`text-[10px] uppercase rounded px-1.5 py-0.5 border ${

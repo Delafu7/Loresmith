@@ -3,6 +3,7 @@ import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm, requireOwnerOrDm, type CampaignRole } from './authz.js';
 import { applyHpDeltaWithTempAbsorption, type HpState } from './hp.js';
 import { redactHpFields, resolveHpVisibility } from './hpVisibility.js';
+import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
@@ -61,6 +62,10 @@ export async function authorizeCharacterMutation(
 // always shown exact, matching PLAN.md §5.3's "exact for PCs" default and
 // the fact that there's no mechanism (or reason) to hide a player's own
 // party's HP from other players.
+// NPCs are also the only characters subject to entity_field_reveals
+// redaction (AC/speed/senses/languages/notes) — same "PCs are always fully
+// visible to the whole party" reasoning as the HP skip just below, so this
+// reuses the identical `row.is_pc` branch rather than a separate check.
 export async function listCharacters(pool: Pool, campaignId: number, role: CampaignRole) {
   const result = await pool.query<CharacterRow>(`SELECT * FROM characters WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
   if (role === 'dm') return result.rows.map((row) => ({ ...row, hp_band: null }));
@@ -68,7 +73,9 @@ export async function listCharacters(pool: Pool, campaignId: number, role: Campa
     result.rows.map(async (row) => {
       if (row.is_pc) return { ...row, hp_band: null };
       const visibility = await resolveHpVisibility(pool, { characterId: row.id as number });
-      return redactHpFields(row as unknown as { hp_current: number; hp_max: number; hp_temp: number } & CharacterRow, visibility);
+      const hpRedacted = redactHpFields(row as unknown as { hp_current: number; hp_max: number; hp_temp: number } & CharacterRow, visibility);
+      const revealState = await resolveReveals(pool, campaignId, 'character', { characterId: row.id as number });
+      return redactEntityFields(hpRedacted, 'character', revealState);
     }),
   );
 }
@@ -78,7 +85,9 @@ export async function getCharacter(pool: Pool, actorId: number, characterId: num
   const role = await requireMembership(pool, character.campaign_id, actorId); // any role may read
   if (role === 'dm' || character.is_pc) return { ...character, hp_band: null };
   const visibility = await resolveHpVisibility(pool, { characterId });
-  return redactHpFields(character as unknown as { hp_current: number; hp_max: number; hp_temp: number } & CharacterRow, visibility);
+  const hpRedacted = redactHpFields(character as unknown as { hp_current: number; hp_max: number; hp_temp: number } & CharacterRow, visibility);
+  const revealState = await resolveReveals(pool, character.campaign_id, 'character', { characterId });
+  return redactEntityFields(hpRedacted, 'character', revealState);
 }
 
 export async function createCharacter(

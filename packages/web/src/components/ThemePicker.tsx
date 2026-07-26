@@ -2,6 +2,7 @@ import { useAuth } from '../auth/AuthContext';
 import type { UiTheme } from '../lib/types';
 
 const THEME_LABELS: Record<UiTheme, string> = {
+  ember: 'Ember',
   crimson: 'Crimson',
   amber: 'Amber',
 };

@@ -14,6 +14,7 @@ import { CharacterSheetPage } from './characters/CharacterSheetPage';
 import { MonstersPage } from './monsters/MonstersPage';
 import { CreatureEditorPage } from './monsters/CreatureEditorPage';
 import { EncountersPage } from './encounters/EncountersPage';
+import { MapsPage } from './encounters/MapsPage';
 import { NotesPage } from './notes/NotesPage';
 import { DiceRollHistoryPage } from './dice/DiceRollHistoryPage';
 
@@ -59,7 +60,8 @@ function App() {
                 <Route path="monsters" element={<MonstersPage />} />
                 <Route path="monsters/new" element={<CreatureEditorPage />} />
                 <Route path="monsters/:monsterId/edit" element={<CreatureEditorPage />} />
-                <Route path="encounters" element={<EncountersPage />} />
+                <Route path="turns" element={<EncountersPage />} />
+                <Route path="maps" element={<MapsPage />} />
                 <Route path="notes" element={<NotesPage />} />
                 <Route path="dice-rolls" element={<DiceRollHistoryPage />} />
               </Route>

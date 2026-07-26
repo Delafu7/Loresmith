@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // after login/register/refresh) — every `amber-*`/`stone-*` Tailwind class
   // anywhere in the app re-colors via index.css's [data-theme] overrides, no
   // per-component change needed. Logged-out visitors (login/register pages)
-  // get the default :root values (crimson), matching "red theme as default".
+  // get the default :root values (ember), matching "ember theme as default".
   useEffect(() => {
     if (meQuery.data?.user) {
       document.documentElement.dataset.theme = meQuery.data.user.uiTheme;

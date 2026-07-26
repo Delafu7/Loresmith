@@ -11,7 +11,7 @@ export interface AuthedUser {
   id: number;
   email: string;
   displayName: string;
-  uiTheme: 'crimson' | 'amber';
+  uiTheme: 'crimson' | 'amber' | 'ember';
 }
 
 declare global {
@@ -29,7 +29,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     throw new AppError('UNAUTHENTICATED', 'You must be logged in to do that');
   }
 
-  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' }>(
+  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
     `SELECT id, email, display_name, ui_theme FROM users WHERE id = $1`,
     [userId],
   );

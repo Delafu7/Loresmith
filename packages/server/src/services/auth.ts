@@ -9,7 +9,7 @@ export interface UserRow {
   id: number;
   email: string;
   displayName: string;
-  uiTheme: 'crimson' | 'amber';
+  uiTheme: 'crimson' | 'amber' | 'ember';
 }
 
 export interface MembershipSummary {
@@ -25,7 +25,7 @@ export async function register(pool: Pool, input: RegisterInput): Promise<UserRo
   }
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' }>(
+  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
     `INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3)
      RETURNING id, email, display_name, ui_theme`,
     [input.email, input.displayName, passwordHash],
@@ -36,7 +36,7 @@ export async function register(pool: Pool, input: RegisterInput): Promise<UserRo
 
 export async function login(pool: Pool, input: LoginInput): Promise<UserRow> {
   const result = await pool.query<
-    { id: number; email: string; display_name: string; password_hash: string; ui_theme: 'crimson' | 'amber' }
+    { id: number; email: string; display_name: string; password_hash: string; ui_theme: 'crimson' | 'amber' | 'ember' }
   >(
     `SELECT id, email, display_name, password_hash, ui_theme FROM users WHERE email = $1`,
     [input.email],
@@ -55,7 +55,7 @@ export async function login(pool: Pool, input: LoginInput): Promise<UserRow> {
 }
 
 export async function updateTheme(pool: Pool, userId: number, input: UpdateThemeInput): Promise<UserRow> {
-  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' }>(
+  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
     `UPDATE users SET ui_theme = $1 WHERE id = $2 RETURNING id, email, display_name, ui_theme`,
     [input.uiTheme, userId],
   );

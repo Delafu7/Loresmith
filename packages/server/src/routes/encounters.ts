@@ -18,6 +18,7 @@ import {
 import { performShoveSchema } from '../schemas/shove.js';
 import * as encountersService from '../services/encounters.js';
 import { performShove } from '../services/shove.js';
+import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import {
   getIo,
   broadcastCombatStarted,
@@ -31,6 +32,7 @@ import {
   broadcastTokenMoved,
   broadcastActionEconomyChanged,
   broadcastDiceRolled,
+  broadcastFullStateResync,
   pushEncounterRoomJoinForOwner,
 } from '../sockets/broadcast.js';
 
@@ -84,6 +86,25 @@ async function requireEncounterDm(req: Request, _res: Response, next: NextFuncti
   next();
 }
 
+// Player-or-DM gate for /participants/:pid/action-economy ONLY (battle mode,
+// REVISION-PLAN.md §10.2) — every other route in this file stays
+// requireEncounterDm-gated exactly as before. A player needs to spend their
+// OWN character's action-economy slots during their turn; the DM still needs
+// to be able to act on any participant (e.g. running an NPC's turn). The
+// resolve-participant + membership + owner-or-DM check itself lives in
+// services/encounters.ts's authorizeParticipantAction so it's testable
+// without Express, matching requireEncounterDm's own "thin wrapper around a
+// services/authz.ts call" shape just above.
+async function requireOwnParticipantOrDm(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const encounterId = Number(req.params.id);
+  const participantId = Number(req.params.pid);
+  if (!Number.isInteger(encounterId) || !Number.isInteger(participantId)) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid encounter or participant id');
+  }
+  await encountersService.authorizeParticipantAction(pool, req.user!.id, encounterId, participantId);
+  next();
+}
+
 export const encountersRouter = Router();
 encountersRouter.use(requireAuth);
 
@@ -97,6 +118,16 @@ encountersRouter.post('/:id/end', requireEncounterDm, async (req, res) => {
   const encounter = await encountersService.endEncounter(pool, Number(req.params.id));
   broadcastCombatEnded(getIo(req.app), encounter);
   res.json({ encounter });
+});
+
+// "Reset reveals for this encounter" (PLAN.md §11.5) — scoped to entities
+// currently seated in it. Same "push a full resync instead of a pile of
+// per-field events" reasoning as /campaigns/:id/reveals/hide-all.
+encountersRouter.post('/:id/reveals/reset', requireEncounterDm, async (req, res) => {
+  const encounterId = Number(req.params.id);
+  const { campaignId } = await entityFieldRevealService.resetRevealsForEncounter(pool, req.user!.id, encounterId);
+  await broadcastFullStateResync(getIo(req.app), encounterId, campaignId);
+  res.status(204).send();
 });
 
 encountersRouter.post('/:id/participants', requireEncounterDm, async (req, res) => {
@@ -165,10 +196,10 @@ encountersRouter.patch('/:id/participants/:pid/position', requireEncounterDm, as
   res.json({ participant });
 });
 
-// Per-turn action economy (Phase 3.6). Same requireEncounterDm guard as
-// every other combat_participants mutation in this file — combat control is
-// a DM tool throughout this app, not something a player mutates directly.
-encountersRouter.patch('/:id/participants/:pid/action-economy', requireEncounterDm, async (req, res) => {
+// Per-turn action economy (Phase 3.6). Unlike every other combat_participants
+// mutation in this file, this ONE route also allows the owning player (battle
+// mode, REVISION-PLAN.md §10.2) — see requireOwnParticipantOrDm above.
+encountersRouter.patch('/:id/participants/:pid/action-economy', requireOwnParticipantOrDm, async (req, res) => {
   const input = applyActionEconomySchema.parse(req.body);
   const { encounter, participant } = await encountersService.applyActionEconomy(
     pool, Number(req.params.id), Number(req.params.pid), input,

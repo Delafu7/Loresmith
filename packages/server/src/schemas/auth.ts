@@ -17,7 +17,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 // rather than folding into a generic profile PATCH (this app has no such
 // endpoint yet), matching the armor-class-mode/exhaustion precedent for a
 // single-field toggle.
-export const uiThemeEnum = z.enum(['crimson', 'amber']);
+export const uiThemeEnum = z.enum(['crimson', 'amber', 'ember']);
 export const updateThemeSchema = z.object({
   uiTheme: uiThemeEnum,
 });

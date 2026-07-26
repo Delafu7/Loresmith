@@ -103,7 +103,10 @@ export interface FullStateSyncEvent extends Envelope {
     effects: ActiveEffectSummary[];
     posX: number | null;
     posY: number | null;
-    armorClass: number;
+    // null for a non-PC participant whose armorClass reveal isn't currently
+    // revealed to this socket's role (PLAN.md §11.6) — PCs are always the
+    // true value, same exemption HP redaction already gives them.
+    armorClass: number | null;
     actionUsed: boolean;
     bonusActionUsed: boolean;
     reactionUsed: boolean;
@@ -167,6 +170,21 @@ export interface EffectAppliedEvent extends Envelope {
 
 export type EffectExpiredEvent = EffectAppliedEvent;
 
+// REVEAL_CHANGED (PLAN.md §11.6) — one event per field per encounter sync,
+// same "not batched" reasoning as EFFECT_APPLIED/EFFECT_EXPIRED above.
+// `value` is already fully resolved server-side for this socket's role
+// (true value for DM, override-or-true-value for a revealed player, null
+// for a still-hidden one) — never branch on `revealed` client-side to
+// decide what to render, just render `value` as-is.
+export interface RevealChangedEvent extends Envelope {
+  participantId: number;
+  characterId: number | null;
+  monsterInstanceId: number | null;
+  fieldKey: string;
+  revealed: boolean;
+  value: unknown;
+}
+
 // DICE_ROLLED (Phase 3.4) — deliberately does NOT extend `Envelope`: a dice
 // roll isn't part of any encounter's turn-sequencing state, so there's no
 // `seq` at all (this event is not routed through useEncounterLive.ts's
@@ -205,6 +223,7 @@ export interface ServerToClientEvents {
   HP_CHANGED: (payload: HpChangedEvent) => void;
   EFFECT_APPLIED: (payload: EffectAppliedEvent) => void;
   EFFECT_EXPIRED: (payload: EffectExpiredEvent) => void;
+  REVEAL_CHANGED: (payload: RevealChangedEvent) => void;
   FULL_STATE_SYNC: (payload: FullStateSyncEvent) => void;
   MAP_UPDATED: (payload: MapUpdatedEvent) => void;
   TOKEN_MOVED: (payload: TokenMovedEvent) => void;

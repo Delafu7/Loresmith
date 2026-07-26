@@ -16,17 +16,20 @@ import { createCharacterItemSchema, updateCharacterItemSchema } from '../schemas
 import { createCharacterSpellSchema, spellRowQuerySchema, updateCharacterSpellSchema } from '../schemas/characterSpells.js';
 import { applyTargetEffectSchema } from '../schemas/effects.js';
 import { resourceAmountSchema } from '../schemas/resources.js';
+import { updateRevealsSchema } from '../schemas/reveals.js';
 import * as charactersService from '../services/characters.js';
 import * as characterItemsService from '../services/characterItems.js';
 import * as characterSpellsService from '../services/characterSpells.js';
 import * as effectsService from '../services/effects.js';
 import * as resourcePoolsService from '../services/resourcePools.js';
+import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import {
   getIo,
   broadcastHpChanged,
   broadcastEffectApplied,
   broadcastEffectExpired,
   broadcastArmorClassChanged,
+  broadcastRevealChanged,
 } from '../sockets/broadcast.js';
 import type { Server } from 'socket.io';
 import type { ArmorClassEncounterSync } from '../services/armorClass.js';
@@ -291,4 +294,38 @@ charactersRouter.post('/:id/effects', async (req, res) => {
     await broadcastEffectApplied(io, sync, effect, effectDefinitionName);
   }
   res.status(201).json({ effect });
+});
+
+// ---- Reveal engine (PLAN.md §11) — DM-only, entity_field_reveals ----
+
+charactersRouter.get('/:id/reveals', async (req, res) => {
+  const fields = await entityFieldRevealService.getCharacterReveals(pool, req.user!.id, Number(req.params.id));
+  res.json({ fields });
+});
+
+charactersRouter.patch('/:id/reveals', async (req, res) => {
+  const input = updateRevealsSchema.parse(req.body);
+  const characterId = Number(req.params.id);
+  const result = await entityFieldRevealService.updateCharacterReveals(pool, req.user!.id, characterId, input);
+
+  const fieldKeys = result.fields.map((f) => f.fieldKey);
+  const trueValues = await entityFieldRevealService.getTrueFieldValues(pool, 'character', { characterId }, fieldKeys);
+  const io = getIo(req.app);
+  for (const sync of result.encounterSyncs) {
+    for (const field of result.fields) {
+      await broadcastRevealChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId,
+        monsterInstanceId: null,
+        fieldKey: field.fieldKey,
+        revealed: field.revealed,
+        playerOverride: field.playerOverride,
+        trueValue: trueValues[field.fieldKey],
+      });
+    }
+  }
+  res.json({ fields: result.fields });
 });

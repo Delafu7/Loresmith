@@ -21,7 +21,14 @@ Phase 3.6 layered on eight more improvements:
 - **Searchable comboboxes** replace plain `<select>`s for spells, items, and the combat tracker's participant picker.
 - **Dashboard/home view**: the new landing page (`/`) aggregates a user's characters, campaigns, and notes (their own plus recent campaign notes) via `GET /me/dashboard`; the plain campaign list moved to `/campaigns`.
 
-The encounter builder (CR/XP budgeting), session timeline, and handouts remain unbuilt per `PLAN.md`'s roadmap.
+**Phase 6 (reveal engine generalization, PLAN.md §11)** generalizes the DM/player redaction pattern `hp_visibility` already proved out to arbitrary NPC/monster-instance stat-block fields (AC, speed, senses, languages, notes, saving throws, skills, resistances/immunities, traits, actions, legendary actions, reactions):
+
+- `entity_field_reveals` (per-entity, per-field `revealed`/`playerOverride`, campaign-scoped `reveal_defaults` allowlist) — `hp_visibility` and `active_effects.visible_to_players` are deliberately left as their own separate mechanisms, not folded in.
+- `GET`/`PATCH .../reveals` on both `/characters/:id` and `/monster-instances/:id` (DM-only), plus `POST /campaigns/:id/reveals/hide-all` (the panic button — also flips every live `hp_visibility` to `hidden` and every `active_effects.visible_to_players` to `false`) and `POST /encounters/:id/reveals/reset`.
+- A `REVEAL_CHANGED` socket event (same DM-true/player-redacted-or-override split as `HP_CHANGED`), folded into `FULL_STATE_SYNC` for `armorClass` specifically since that's the one reveal-gated field the combat-tracker snapshot already carries.
+- Frontend: a reusable `useReveals`/`RevealToggle` pair, wired into the combat tracker's per-participant AC toggle, an NPC-only "Reveal to players" panel on the character sheet, an always-visible "Hide everything" button in the campaign nav, and a "Reset reveals" button on the encounter view.
+
+The encounter builder (CR/XP budgeting), session timeline, handouts, and a campaign-settings UI for editing `reveal_defaults` itself (currently DB-default only, no editor) remain unbuilt per `PLAN.md`'s roadmap.
 
 ## Stack
 

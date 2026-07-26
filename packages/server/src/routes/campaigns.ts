@@ -11,7 +11,9 @@ import {
   updateSessionLogSchema,
 } from '../schemas/campaigns.js';
 import * as campaignsService from '../services/campaigns.js';
+import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import { rollAbilityScores } from '../services/abilityScoreRoll.js';
+import { getIo, broadcastFullStateResync } from '../sockets/broadcast.js';
 
 export const campaignsRouter = Router();
 
@@ -56,6 +58,27 @@ campaignsRouter.delete('/:id', requireCampaignMember(), requireRole('dm'), async
 // session-tracking state nobody asked for.
 campaignsRouter.post('/:id/roll-ability-scores', requireCampaignMember(), async (_req, res) => {
   res.json({ sets: rollAbilityScores() });
+});
+
+// ---- Reveal engine panic button (PLAN.md §11.5) ----
+//
+// Cross-cutting by design (see hideAllForCampaign's own comment) — a single
+// per-field REVEAL_CHANGED per affected entity would be a lot of noise for
+// what's meant to be an instant, all-at-once "get me out of trouble" action,
+// so this pushes a fresh FULL_STATE_SYNC to every non-completed encounter's
+// room instead, same as resetRevealsForEncounter below.
+campaignsRouter.post('/:id/reveals/hide-all', requireCampaignMember(), requireRole('dm'), async (req, res) => {
+  await entityFieldRevealService.hideAllForCampaign(pool, req.user!.id, req.campaignId!);
+
+  const encountersRes = await pool.query<{ id: number }>(
+    `SELECT id FROM encounters WHERE campaign_id = $1 AND status != 'completed'`,
+    [req.campaignId],
+  );
+  const io = getIo(req.app);
+  for (const row of encountersRes.rows) {
+    await broadcastFullStateResync(io, row.id, req.campaignId!);
+  }
+  res.status(204).send();
 });
 
 // ---- Members ----

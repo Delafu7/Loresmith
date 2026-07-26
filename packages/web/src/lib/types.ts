@@ -6,7 +6,7 @@
 
 export type CampaignRole = 'dm' | 'player';
 
-export type UiTheme = 'crimson' | 'amber';
+export type UiTheme = 'crimson' | 'amber' | 'ember';
 
 export interface User {
   id: number;
@@ -306,11 +306,13 @@ export interface SnapshotParticipant {
   // offsets. Null means the DM hasn't placed this participant on the map yet.
   posX: number | null;
   posY: number | null;
-  // Phase 3.5: always present, non-null — server-side COALESCE of
-  // character.armor_class / monster_instance.armor_class_override /
-  // monster.armor_class (see FULL_STATE_SYNC's participants shape). No
-  // DM/player visibility split (AC isn't HP-sensitive).
-  armorClass: number;
+  // Phase 3.5: server-side COALESCE of character.armor_class /
+  // monster_instance.armor_class_override / monster.armor_class (see
+  // FULL_STATE_SYNC's participants shape). Reveal-gated for non-PC
+  // participants as of the reveal engine (PLAN.md §11.6) — null means this
+  // socket's role currently can't see it (a still-hidden NPC/monster AC);
+  // PCs are exempt and always get the true value.
+  armorClass: number | null;
   // Phase 3.6: per-turn 5e action economy — reset server-side whenever this
   // participant's turn starts (see services/encounters.ts's advanceTurn).
   actionUsed: boolean;

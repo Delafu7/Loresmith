@@ -21,6 +21,7 @@ import { pool } from '../db/pool.js';
 import { campaignRoom, encounterRoom } from './roomNames.js';
 import type { SocketData } from './types.js';
 import { buildHpVariants, type HpVisibility } from '../services/hpVisibility.js';
+import { resolveFieldRevealBatch } from '../services/entityFieldReveal.js';
 import { getEncounterCombatSnapshot, getEncounterMap, formatMapForWire } from '../services/encounters.js';
 import type { EncounterMapRow } from '../services/encounters.js';
 import type { CampaignRole } from '../services/authz.js';
@@ -338,6 +339,56 @@ export async function broadcastHpChanged(io: Server, target: HpChangeTarget): Pr
   }
 }
 
+// ---- REVEAL_CHANGED (PLAN.md §11.6) ----
+//
+// One event per field per encounter sync — same batching choice as
+// EFFECT_APPLIED/EFFECT_EXPIRED just below, for the same two reasons: (1) a
+// single reveals PATCH can touch several fields, and per-field events keep
+// this function reusable for both that case and a future single-field
+// toggle with no second payload shape; (2) DM/player payload splitting
+// stays trivial per-event instead of needing to partition a mixed
+// revealed/hidden array per recipient. DM sockets always get the true
+// value; player sockets get it only when revealed=true, with playerOverride
+// substituted in when the DM set one — never a client-side flag, same
+// discipline as HP_CHANGED above.
+
+export interface RevealChangeTarget {
+  encounterId: number;
+  campaignId: number;
+  seq: number;
+  participantId: number;
+  characterId: number | null;
+  monsterInstanceId: number | null;
+  fieldKey: string;
+  revealed: boolean;
+  playerOverride: string | null;
+  trueValue: unknown;
+}
+
+export async function broadcastRevealChanged(io: Server, target: RevealChangeTarget): Promise<void> {
+  const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, target.campaignId, encounterRoom(target.encounterId));
+
+  const base = {
+    encounterId: target.encounterId,
+    campaignId: target.campaignId,
+    seq: target.seq,
+    serverTimestamp: Date.now(),
+    participantId: target.participantId,
+    characterId: target.characterId,
+    monsterInstanceId: target.monsterInstanceId,
+    fieldKey: target.fieldKey,
+    revealed: target.revealed,
+  };
+
+  if (dmSocketIds.length > 0) {
+    io.to(dmSocketIds).emit('REVEAL_CHANGED', { ...base, value: target.trueValue });
+  }
+  if (playerSocketIds.length > 0) {
+    const value = target.revealed ? (target.playerOverride ?? target.trueValue) : null;
+    io.to(playerSocketIds).emit('REVEAL_CHANGED', { ...base, value });
+  }
+}
+
 // ---- EFFECT_APPLIED / EFFECT_EXPIRED ----
 //
 // Deferred from Phase 1 (PLAN.md §5.2 lists them, but `active_effects` didn't
@@ -514,6 +565,14 @@ export async function buildFullStateSyncPayload(
     effectsByTarget.set(key, list);
   }
 
+  // armorClass is the one entity_field_reveals-gated field this row shape
+  // already carries (PLAN.md §11.6) — batch-resolved once for the whole
+  // encounter rather than per-participant, same N+1-avoidance reasoning as
+  // effectsRes above. PCs are exempt, same "no reason to hide a party
+  // member's own stats from the rest of the party" precedent HP redaction
+  // already uses (services/characters.ts).
+  const acReveals = await resolveFieldRevealBatch(poolOrClient, campaignId, 'armor_class', characterIds, monsterInstanceIds);
+
   const rows = participants.map((p) => {
     const { dmPayload, playerPayload } = buildHpVariants(p.hp_visibility, p.hp_current, p.hp_max, p.hp_temp);
     const common = {
@@ -525,7 +584,6 @@ export async function buildFullStateSyncPayload(
       initiativeTiebreak: p.initiative_tiebreak,
       turnOrder: p.turn_order,
       hpVisibility: p.hp_visibility,
-      armorClass: p.armor_class,
       posX: p.pos_x,
       posY: p.pos_y,
       actionUsed: p.action_used,
@@ -538,13 +596,24 @@ export async function buildFullStateSyncPayload(
     const targetEffects = effectsByTarget.get(effectTargetKey(p.character_id, p.monster_instance_id)) ?? [];
     const dmEffects = targetEffects.map(formatEffectForWire);
     const playerEffects = targetEffects.filter((e) => e.visible_to_players).map(formatEffectForWire);
-    return { common, dmPayload, playerPayload, dmEffects, playerEffects };
+
+    let playerArmorClass: number | string | null;
+    if (p.is_pc) {
+      playerArmorClass = p.armor_class;
+    } else {
+      const acState = p.character_id != null ? acReveals.characters.get(p.character_id) : acReveals.monsterInstances.get(p.monster_instance_id as number);
+      playerArmorClass = acState?.revealed ? (acState.playerOverride ?? p.armor_class) : null;
+    }
+
+    return { common, dmPayload, playerPayload, dmEffects, playerEffects, dmArmorClass: p.armor_class, playerArmorClass };
   });
 
   const participantsOut =
     role === 'dm'
-      ? rows.map((r) => ({ ...r.common, hp: r.dmPayload, effects: r.dmEffects }))
-      : rows.filter((r) => r.playerPayload !== null).map((r) => ({ ...r.common, hp: r.playerPayload, effects: r.playerEffects }));
+      ? rows.map((r) => ({ ...r.common, armorClass: r.dmArmorClass, hp: r.dmPayload, effects: r.dmEffects }))
+      : rows
+          .filter((r) => r.playerPayload !== null)
+          .map((r) => ({ ...r.common, armorClass: r.playerArmorClass, hp: r.playerPayload, effects: r.playerEffects }));
 
   // No DM/player split for map config — same as the MAP_UPDATED/TOKEN_MOVED
   // broadcasts, this isn't HP-sensitive info.
@@ -564,6 +633,24 @@ export async function buildFullStateSyncPayload(
     participants: participantsOut,
     map: formatMapForWire(map),
   };
+}
+
+// Pushes a fresh FULL_STATE_SYNC to every currently-connected socket in an
+// encounter room, split by role like every other DM/player event in this
+// file — used after a campaign-/encounter-wide reveal reset (hide-all,
+// reset-for-encounter) where many fields changed at once and a pile of
+// individual REVEAL_CHANGED events would be noisier than just resyncing.
+export async function broadcastFullStateResync(io: Server, encounterId: number, campaignId: number): Promise<void> {
+  const room = encounterRoom(encounterId);
+  const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, campaignId, room);
+  if (dmSocketIds.length > 0) {
+    const dmPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'dm');
+    io.to(dmSocketIds).emit('FULL_STATE_SYNC', dmPayload);
+  }
+  if (playerSocketIds.length > 0) {
+    const playerPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player');
+    io.to(playerSocketIds).emit('FULL_STATE_SYNC', playerPayload);
+  }
 }
 
 // ---- DICE_ROLLED (Phase 3.4) ----

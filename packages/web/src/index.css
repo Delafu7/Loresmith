@@ -1,6 +1,41 @@
 @import "tailwindcss";
 
 /*
+ * Typography (REVISION-PLAN.md §10.3). Fraunces (display serif, headings) +
+ * Inter (body/UI sans), self-hosted via @fontsource (see main.tsx for the
+ * CSS imports) rather than a Google Fonts CDN link, matching this repo's
+ * no-external-runtime-dependency posture (local Postgres/Redis, local file
+ * uploads — see README).
+ *
+ * `--font-sans` is Tailwind v4's own token name for its default body/UI
+ * font (see node_modules/tailwindcss/theme.css's `@theme default` block and
+ * preflight.css's `--default-font-family`) — overriding it here both makes
+ * the `font-sans` utility resolve to Inter AND makes Inter the default body
+ * font via Tailwind's own preflight, with no extra `body { font-family }`
+ * rule needed. `--font-display` is a new project-defined token (Tailwind has
+ * no built-in equivalent) applied globally to heading elements below.
+ *
+ * Tailwind's default `--text-*` scale (theme.css) already matches the
+ * smaller end of the target 12/14/16/20/26/34/44px scale exactly — xs=12,
+ * sm=14, base=16, xl=20 — so it's left as-is rather than overridden; only
+ * the larger heading sizes drift from the target (2xl=24/3xl=30/4xl=36/
+ * 5xl=48 vs. target 26/34/44), which is close enough not to fight.
+ */
+@theme {
+  --font-display: 'Fraunces', ui-serif, serif;
+  --font-sans: 'Inter', ui-sans-serif, sans-serif;
+}
+
+/* Headings get the display serif globally — zero per-component class edits.
+   :where() keeps specificity at zero so any component-level font-family
+   utility (none currently exist) would still win outright. Preflight resets
+   h1-h6's font-size/font-weight to `inherit` but not font-family, so this
+   doesn't fight that reset. */
+body :where(h1, h2, h3) {
+  font-family: var(--font-display);
+}
+
+/*
  * Per-user color themes (Phase 3.9). Every component in this app is styled
  * with plain Tailwind `amber-*`/`stone-*` utility classes — rather than
  * rewriting all of them to new semantic token names, this overrides the
@@ -10,22 +45,48 @@
  * re-colors automatically based on which theme is active, with zero
  * component changes.
  *
- * "Crimson" is the default (Visual Redesign — Red Theme) and always wins
- * with no `data-theme` attribute present, so a not-yet-loaded user
- * preference never flashes the old amber look. "Amber" reproduces Tailwind's
- * exact original amber/stone values (oklch, copied from theme.css) as the
- * one alternate theme a user can switch back to (Customizable Styles per
- * Role — see auth/ThemeContext.tsx for how `data-theme` gets set from the
- * logged-in user's persisted `ui_theme` column).
+ * "Ember" (REVISION-PLAN.md §10.3's palette: `ember` #E2542A accent, `ink`
+ * #16120F darkest bg, `parchment` #F3E9DC lightest bg) is now the default
+ * and always wins with no `data-theme` attribute present, so a not-yet-
+ * loaded user preference never flashes an old theme. "Crimson" (Visual
+ * Redesign — Red Theme) and "Amber" (Tailwind's original amber/stone,
+ * copied verbatim from theme.css) remain selectable alternates a user can
+ * switch to (Customizable Styles per Role — see auth/AuthContext.tsx for
+ * how `data-theme` gets set from the logged-in user's persisted `ui_theme`
+ * column).
  *
  * All shades below were picked/verified against WCAG AA (4.5:1 normal text)
  * for every actual foreground/background pairing used in the app — see the
- * PR description for the contrast table. One known gap: `stone-700` on
- * `stone-800` (input/card borders) sits around 1.7:1, short of the 3:1
- * non-text contrast guideline — tightening it further broke the rest of the
- * ramp's ordering, so borders stay subtle rather than fully AA in this pass.
+ * PR description for the contrast table. Two known gaps, both consistent
+ * with pre-existing gaps in the crimson ramp (not new regressions):
+ * `stone-700` on `stone-800` (input/card borders) sits around 1.8:1 (was
+ * ~1.7:1 in crimson), and `amber-700` on `stone-800`/`stone-900` (badge/
+ * hover borders, e.g. MonstersPage's homebrew badge) sits around 1.8-2.1:1
+ * (was ~2.3-2.7:1 in crimson) — both short of the 3:1 non-text contrast
+ * guideline. Tightening either further broke the rest of the ramp's
+ * ordering, so borders stay subtle rather than fully AA in this pass, same
+ * tradeoff the crimson theme already made.
  */
 :root,
+:root[data-theme="ember"] {
+  --color-amber-400: #ef7854;
+  --color-amber-500: #e66139;
+  --color-amber-600: #e2542a;
+  --color-amber-700: #90391e;
+  --color-amber-950: #220d07;
+
+  --color-stone-100: #f3e9dc;
+  --color-stone-200: #ead9c5;
+  --color-stone-300: #d7bb9b;
+  --color-stone-400: #c19b72;
+  --color-stone-500: #b68e65;
+  --color-stone-600: #886645;
+  --color-stone-700: #6b523b;
+  --color-stone-800: #422b18;
+  --color-stone-900: #341c08;
+  --color-stone-950: #16120f;
+}
+
 :root[data-theme="crimson"] {
   --color-amber-400: #f87171;
   --color-amber-500: #f25454;
@@ -62,4 +123,38 @@
   --color-stone-800: oklch(26.8% 0.007 34.298);
   --color-stone-900: oklch(21.6% 0.006 56.043);
   --color-stone-950: oklch(14.7% 0.004 49.25);
+}
+
+/*
+ * Accessibility pass (REVISION-PLAN.md §9). Two global rules, deliberately
+ * applied once here rather than touched per-component — an audit found ~20
+ * component files with buttons/links carrying no explicit focus style at
+ * all (form inputs already had one, via `focus:outline-none focus:ring-2
+ * focus:ring-amber-600`; buttons, toggles, and nav links didn't), and no
+ * `prefers-reduced-motion` handling anywhere. Fixing both at the component
+ * level would mean editing every one of those files with the same class
+ * string; a global rule guarantees every future control gets it for free
+ * too, including react-router `NavLink`s (which render a plain `<a>`, not
+ * something any of this app's own components control the markup of).
+ */
+
+/* :focus-visible only (not :focus) so a mouse click never shows the ring —
+   :where() keeps specificity at zero so any component-level focus style
+   (the form-input ring above) still wins outright if the two ever overlap,
+   rather than fighting over cascade order. */
+:where(button, a, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--color-amber-600);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

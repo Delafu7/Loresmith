@@ -1042,6 +1042,9 @@ Encounter builder with CR/XP budgeting (`encounter_templates`), session timeline
 **Phase 5 — Hardening**
 Edition-compatibility trigger/service-layer enforcement (flagged in §3.3 as a known gap), permission edge-case audit (sole-DM demotion, orphaned resources on member removal), load-test the Socket.io room fan-out under multiple concurrent encounters, integration test suite for the authorization matrix (every DM/player × every resource area).
 
+**Phase 6 — Reveal engine generalization** (§11 below)
+Generalizes the per-field DM/player redaction pattern that `hp_visibility` and `active_effects.visible_to_players` already prove out, to arbitrary character/monster-instance stat-block fields (AC, speed, senses, traits, actions, resistances/immunities). `hp_visibility` and `visible_to_players` are kept as-is, not folded into the new mechanism — both already work and are exercised by existing combat/effects code paths.
+
 ---
 
 ## 9. Verification Plan
@@ -1058,6 +1061,7 @@ Once implementation begins, verify each phase end-to-end rather than relying on 
 - **Phase 3.5 (armor)**: switch a character to `armor_class_mode='auto'`, equip/unequip a shield and confirm AC updates by exactly +2/-2; equip heavy armor on a low-Dex and a high-Dex character and confirm AC is identical for both (no Dex bonus applied); confirm switching back to `'manual'` leaves the last computed value editable as a plain number again.
 - **Phase 4**: run the encounter builder against a known party size/level and cross-check the XP budget math against the DMG multiplier table by hand for one example.
 - **Phase 5**: two DM browser tabs racing to advance the same encounter's turn while a player submits damage — confirm exactly one succeeds and the other gets a clean `409 STALE_TURN`, not corrupted state.
+- **Phase 6 (reveal engine)**: as DM, reveal a monster instance's `damageResistances` mid-encounter and confirm the player tab receives it within ~200ms via `REVEAL_CHANGED` with no page refresh; confirm a field with `player_override` set (e.g. `armorClass` → "Heavily armored") sends the override string to players and the true value to the DM in the same `FULL_STATE_SYNC`; hit `POST /campaigns/:id/reveals/hide-all` and confirm it also flips every live `combat_participants.hp_visibility` to `hidden` and every `active_effects.visible_to_players` to `false`, not just `entity_field_reveals` rows; confirm a raw `GET /monster-instances/:id` as a player-role session never contains an unrevealed field's true value in the JSON body, even before any WebSocket involvement.
 
 ---
 
@@ -1066,3 +1070,88 @@ Once implementation begins, verify each phase end-to-end rather than relying on 
 - Exact hosting/deployment target (not asked — infra choice can be made independently of this design).
 - Whether "Player can create their own notes" is allowed by table convention or DM-only (the API design flagged this as a per-campaign convention, not a hardcoded rule — worth a product decision before Phase 1's notes UI ships).
 - ~~Image/asset storage backend (local disk vs. S3-compatible) for `campaign_assets.file_url`~~ — **resolved in §3.5**: local disk under `packages/server/uploads/`, served via `express.static`. Matches the project's existing no-cloud-dependency posture; revisit if this ever needs multi-instance/horizontal deployment.
+
+---
+
+## 11. Reveal Engine Generalization (Phase 6)
+
+**Decisions locked in for this section:**
+- `hp_visibility` (`combat_participants`) and `visible_to_players` (`active_effects`, `campaign_assets`, `notes`) stay exactly as they are — separate mechanisms, not folded into the table below. Both already give the DM the true value and players the redacted/absent value via the existing `splitSocketsByRole` two-payload discipline; there's no correctness gap to fix, only a scope gap (they don't cover arbitrary stat-block fields).
+- v1 is **whole-field** granularity only (`armorClass`, `traits`, `damageResistances` as atomic units) — not per-array-item (`actions.0` vs `actions.1`). The schema doesn't preclude adding item-level keys later if a DM workflow needs it.
+
+### 11.1 Scope
+
+Covers `characters` (PCs and NPCs — NPCs are `is_pc = false` characters, no separate table) and `monster_instances`. Locations/factions/quests are out of scope until those tables exist.
+
+### 11.2 Schema
+
+Follows the project's existing convention for "attaches to a character OR a monster instance" — a dual-nullable-FK + `CHECK(num_nonnulls(...)=1)`, the same pattern used by `active_effects`, `character_items`, and `combat_participants` — rather than a polymorphic `entity_type`/`entity_id` pair:
+
+```sql
+CREATE TABLE entity_field_reveals (
+  id                  BIGSERIAL PRIMARY KEY,
+  character_id        BIGINT REFERENCES characters(id) ON DELETE CASCADE,
+  monster_instance_id BIGINT REFERENCES monster_instances(id) ON DELETE CASCADE,
+  field_key           TEXT NOT NULL,   -- validated against a per-entity-type field registry in app code, not a DB CHECK
+  revealed            BOOLEAN NOT NULL DEFAULT false,
+  player_override     TEXT,
+  revealed_at         TIMESTAMPTZ,
+  revealed_by_user_id BIGINT REFERENCES users(id),
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (num_nonnulls(character_id, monster_instance_id) = 1)
+);
+CREATE UNIQUE INDEX ON entity_field_reveals (character_id, field_key) WHERE character_id IS NOT NULL;
+CREATE UNIQUE INDEX ON entity_field_reveals (monster_instance_id, field_key) WHERE monster_instance_id IS NOT NULL;
+
+ALTER TABLE campaigns ADD COLUMN reveal_defaults JSONB NOT NULL DEFAULT
+  '{"character": ["name","portraitAssetId"], "monster_instance": ["name","size","creatureType","portraitAssetId"]}';
+```
+
+A missing row for a given `(entity, field_key)` means "use `campaigns.reveal_defaults`," not "hidden by construction" — this is what lets a campaign-wide allowlist (name/image/size/type visible by default, per the product requirement) work without pre-seeding a row per field per entity.
+
+### 11.3 Field registry
+
+App-owned TS const per entity type, mirroring the existing `homebrewMonsterShape`/`sharedCharacterShape` field lists rather than duplicating them into the DB layer:
+
+```ts
+// src/domain/revealFields.ts
+export const MONSTER_INSTANCE_REVEALABLE_FIELDS = [
+  'armorClass', 'speed', 'savingThrows', 'skills',
+  'damageVulnerabilities', 'damageResistances', 'damageImmunities',
+  'senses', 'traits', 'actions', 'legendaryActions', 'reactions',
+] as const;
+export const CHARACTER_REVEALABLE_FIELDS = [
+  'armorClass', 'speed', 'senses', 'languages', 'notes',
+] as const;
+```
+
+### 11.4 Server-side redaction core
+
+New `services/entityFieldReveal.ts`, mirroring `services/hpVisibility.ts`'s shape:
+- `resolveReveals(pool, {characterId}|{monsterInstanceId}): Promise<Map<FieldKey, {revealed, playerOverride}>>` — one query, left-joined against `campaigns.reveal_defaults` for unset fields.
+- `redactEntityFields<T>(row, revealMap, registry): T` — strips each registered field to `null` unless revealed, substituting `playerOverride` when set. Same shape as `redactHpFields`.
+- Wired into the existing read paths in `services/characters.ts` and `services/monsters.ts`, right alongside their current `resolveHpVisibility`/`redactHpFields` calls. List endpoints batch-load with `WHERE character_id = ANY($ids)`, the same pattern `buildFullStateSyncPayload`'s `effectsRes` query already uses, to avoid N+1.
+
+### 11.5 REST API
+
+DM-only writes, default-deny per the existing authz layering (`middleware/campaign.ts` / `services/authz.ts`):
+- `GET /characters/:id/reveals`, `GET /monster-instances/:id/reveals` — current state for every registered field.
+- `PATCH /characters/:id/reveals`, `PATCH /monster-instances/:id/reveals` — body `{ fields: [{ fieldKey, revealed, playerOverride? }] }`, one transaction, upsert per field.
+- `POST /campaigns/:id/reveals/hide-all` — the panic button. Cross-cutting by design: sets `entity_field_reveals.revealed = false` for the campaign's entities, **and** every live `combat_participants.hp_visibility` to `'hidden'`, **and** every `active_effects.visible_to_players` to `false`. Scoping it to only the new table would make "hide everything" false advertising.
+- `POST /encounters/:id/reveals/reset` — same idea scoped to the entities currently in that encounter (via `combat_participants`), for "reset reveals for this encounter."
+
+### 11.6 Realtime
+
+New `REVEAL_CHANGED` event, built the same way `broadcastHpChanged` is built: `splitSocketsByRole`, DM sockets get the true value + override unconditionally, player sockets get it only when `revealed = true` (with `playerOverride` substituted if set). Folded into `buildFullStateSyncPayload`'s per-participant rows so a reconnect gets current reveal state for free, consistent with §5.5's "reconciliation via full state sync, not merge."
+
+### 11.7 Frontend
+
+- `useReveal(entityType, entityId, fieldKey)` hook — TanStack Query + a `REVEAL_CHANGED` listener patching the cache, same pattern as the existing `useEncounterLive.ts`.
+- `<RevealToggle>` — eye icon, optimistic `PATCH`.
+- `StatBlock.tsx` gains a `role` prop: DM branch renders every registered field wrapped in a `<RevealToggle>`; player branch renders only revealed fields/overrides. No CSS-based hiding, per the leakage rule already enforced for HP.
+- Campaign settings: a `reveal_defaults` editor + "Hide everything" button. "Reset reveals for this encounter" lives wherever combat currently lives (`EncountersPage`/`CombatTracker`) since there's no dedicated Session tab yet.
+
+### 11.8 Testing
+
+- Unit tests for `redactEntityFields`/`resolveReveals` (registry default vs. explicit row vs. override precedence, "hidden sends nothing"). Note: `hpVisibility.ts` has no dedicated unit test file today despite being the reference implementation — add one alongside this work rather than compounding the gap.
+- One integration test (matching `encounters.initiative.integration.test.ts`'s real-Postgres style) proving a player-role `FULL_STATE_SYNC` and a player-role `GET` never contain an unrevealed field's true value.
