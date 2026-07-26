@@ -285,6 +285,7 @@ export function useEncounterLive(encounterId: number | undefined) {
             gridColumns: payload.gridColumns,
             gridRows: payload.gridRows,
             cellSizePx: payload.cellSizePx,
+            feetPerCell: payload.feetPerCell,
           },
         }));
       });

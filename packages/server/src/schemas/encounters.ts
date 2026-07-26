@@ -48,6 +48,18 @@ export const setParticipantFactionSchema = z.object({
 });
 export type SetParticipantFactionInput = z.infer<typeof setParticipantFactionSchema>;
 
+// REFACTOR-PLAN.md §4 / docs/rules/movement.md §2.1 — 'normal' is
+// deliberately not a valid value here; a normal cell is the absence of a
+// row (see map_cell_overrides' own "sparse table" comment), so removing an
+// override (DELETE) is how a cell goes back to normal, not a PUT with this value.
+export const upsertCellOverrideSchema = z.object({
+  costType: z.enum(['difficult', 'impassable', 'special']),
+  medium: z.enum(['ground', 'water', 'air', 'underground']).optional(),
+  specialCostFt: z.number().int().positive().optional().nullable(),
+  note: z.string().max(200).optional().nullable(),
+});
+export type UpsertCellOverrideInput = z.infer<typeof upsertCellOverrideSchema>;
+
 // All fields optional — a DM might just want to change grid size without
 // touching the background, or vice versa. Upsert only overwrites fields that
 // were actually supplied (see services/encounters.ts's upsertEncounterMap).
@@ -61,6 +73,11 @@ export const upsertEncounterMapSchema = z.object({
   gridColumns: z.number().int().min(5).max(50).optional(),
   gridRows: z.number().int().min(5).max(50).optional(),
   cellSizePx: z.number().int().min(10).max(200).optional(),
+  // REFACTOR-PLAN.md §4 — distinct from cellSizePx (a pixel rendering
+  // dimension, REFACTOR-PLAN.md §3's zoom work); this is the movement-math
+  // ratio. See docs/rules/movement.md §2.1 for why the two must never be
+  // conflated.
+  feetPerCell: z.number().int().min(1).max(50).optional(),
 });
 export type UpsertEncounterMapInput = z.infer<typeof upsertEncounterMapSchema>;
 

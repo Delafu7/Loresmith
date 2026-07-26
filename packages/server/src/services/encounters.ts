@@ -8,6 +8,19 @@ import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
 import { requireMembership, requireOwnerOrDm, type CampaignRole } from './authz.js';
+import {
+  computePathCost,
+  computeReachableSet,
+  sizeRankFor,
+  type CellOverride,
+  type CostType,
+  type DiagonalRule,
+  type Faction,
+  type Medium,
+  type MovementGrid,
+  type MoverProfile,
+  type Occupant,
+} from './movement.js';
 import type {
   AddParticipantInput,
   ApplyActionEconomyInput,
@@ -125,18 +138,20 @@ export async function getEncounterFlat(pool: Pool, userId: number, encounterId: 
 // never need a second assets fetch just to render the map background.
 
 export interface EncounterMapRow {
+  id: number;
   encounter_id: number;
   background_asset_id: number | null;
   background_file_url: string | null;
   grid_columns: number;
   grid_rows: number;
   cell_size_px: number;
+  feet_per_cell: number;
 }
 
 export async function getEncounterMap(pool: Pool | PoolClient, encounterId: number): Promise<EncounterMapRow | null> {
   const result = await pool.query<EncounterMapRow>(
-    `SELECT em.encounter_id, em.background_asset_id, ca.file_url AS background_file_url,
-            em.grid_columns, em.grid_rows, em.cell_size_px
+    `SELECT em.id, em.encounter_id, em.background_asset_id, ca.file_url AS background_file_url,
+            em.grid_columns, em.grid_rows, em.cell_size_px, em.feet_per_cell
      FROM encounter_maps em
      LEFT JOIN campaign_assets ca ON ca.id = em.background_asset_id
      WHERE em.encounter_id = $1`,
@@ -153,7 +168,115 @@ export function formatMapForWire(map: EncounterMapRow | null) {
     gridColumns: map.grid_columns,
     gridRows: map.grid_rows,
     cellSizePx: map.cell_size_px,
+    feetPerCell: map.feet_per_cell,
   };
+}
+
+// ---- Terrain cell overrides (REFACTOR-PLAN.md §4) ----
+//
+// Fetched via its own lightweight REST endpoint rather than threaded through
+// FULL_STATE_SYNC/MAP_UPDATED's payload — terrain changes far less often
+// than combat state, so a client refetches this once on map load and again
+// whenever MAP_UPDATED fires (already broadcast on any map-related change),
+// instead of every socket consumer growing a new payload field for
+// something most of them never render.
+
+export interface MapCellOverrideRow {
+  x: number;
+  y: number;
+  cost_type: CostType;
+  medium: Medium;
+  special_cost_ft: number | null;
+  note: string | null;
+}
+
+export async function listMapCellOverrides(pool: Pool, encounterId: number): Promise<MapCellOverrideRow[]> {
+  const map = await getEncounterMap(pool, encounterId);
+  if (!map) return [];
+  const result = await pool.query<MapCellOverrideRow>(
+    `SELECT x, y, cost_type, medium, special_cost_ft, note FROM map_cell_overrides WHERE encounter_map_id = $1 ORDER BY y, x`,
+    [map.id],
+  );
+  return result.rows;
+}
+
+export interface UpsertCellOverrideInput {
+  costType: CostType;
+  medium?: Medium;
+  specialCostFt?: number | null;
+  note?: string | null;
+}
+
+// Both mutations bump encounters.sync_seq in the same transaction and
+// return the updated row — same "every mutation that broadcasts also bumps
+// seq" discipline as every other combat_participants/encounter_maps writer
+// in this file (PLAN.md §5.2) — so the MAP_UPDATED broadcast the route
+// triggers carries a real, freshly-bumped seq instead of a stale one.
+
+export async function upsertMapCellOverride(
+  pool: Pool,
+  encounterId: number,
+  x: number,
+  y: number,
+  input: UpsertCellOverrideInput,
+): Promise<{ encounter: EncounterRow; map: EncounterMapRow }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const map = await getEncounterMap(client, encounterId);
+    if (!map) throw new AppError('CONFLICT', 'No map configured for this encounter yet');
+
+    await client.query(
+      `INSERT INTO map_cell_overrides (encounter_map_id, x, y, cost_type, medium, special_cost_ft, note, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+       ON CONFLICT (encounter_map_id, x, y) DO UPDATE SET
+         cost_type = EXCLUDED.cost_type, medium = EXCLUDED.medium,
+         special_cost_ft = EXCLUDED.special_cost_ft, note = EXCLUDED.note, updated_at = now()`,
+      [map.id, x, y, input.costType, input.medium ?? 'ground', input.specialCostFt ?? null, input.note ?? null],
+    );
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, map };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteMapCellOverride(
+  pool: Pool,
+  encounterId: number,
+  x: number,
+  y: number,
+): Promise<{ encounter: EncounterRow; map: EncounterMapRow } | null> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const map = await getEncounterMap(client, encounterId);
+    if (!map) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    await client.query(`DELETE FROM map_cell_overrides WHERE encounter_map_id = $1 AND x = $2 AND y = $3`, [map.id, x, y]);
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, map };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // Cross-campaign consistency check (backgroundAssetId's row must belong to
@@ -205,13 +328,14 @@ export async function upsertEncounterMap(
     // explicit boolean flag for background_asset_id since `null` is itself a
     // meaningful supplied value (clear it), not "leave it alone".
     await client.query(
-      `INSERT INTO encounter_maps (encounter_id, background_asset_id, grid_columns, grid_rows, cell_size_px, updated_at)
-       VALUES ($1, $2, COALESCE($3, 20), COALESCE($4, 20), COALESCE($5, 50), now())
+      `INSERT INTO encounter_maps (encounter_id, background_asset_id, grid_columns, grid_rows, cell_size_px, feet_per_cell, updated_at)
+       VALUES ($1, $2, COALESCE($3, 20), COALESCE($4, 20), COALESCE($5, 50), COALESCE($7, 5), now())
        ON CONFLICT (encounter_id) DO UPDATE SET
          background_asset_id = CASE WHEN $6 THEN $2 ELSE encounter_maps.background_asset_id END,
          grid_columns = COALESCE($3, encounter_maps.grid_columns),
          grid_rows = COALESCE($4, encounter_maps.grid_rows),
          cell_size_px = COALESCE($5, encounter_maps.cell_size_px),
+         feet_per_cell = COALESCE($7, encounter_maps.feet_per_cell),
          updated_at = now()`,
       [
         encounterId,
@@ -220,6 +344,7 @@ export async function upsertEncounterMap(
         input.gridRows ?? null,
         input.cellSizePx ?? null,
         backgroundAssetIdSupplied,
+        input.feetPerCell ?? null,
       ],
     );
 
@@ -244,6 +369,167 @@ export async function upsertEncounterMap(
   }
 }
 
+// REFACTOR-PLAN.md §4 / docs/rules/movement.md §2.3: shared grid+mover
+// loader for both the move-validation path (setParticipantPosition) and the
+// reachable-cells read endpoint (getParticipantReachableCells) — both need
+// the exact same context, and drifting the two loaders apart would risk a
+// reachable-cell highlight that doesn't match what the server would actually
+// accept. Returns null when there's no map or no usable speed data to
+// validate/compute against.
+async function loadMovementContext(
+  client: Pool | PoolClient,
+  encounter: EncounterRow,
+  participant: ParticipantRow,
+): Promise<{ grid: MovementGrid; mover: MoverProfile; speedFt: number; remainingFt: number } | null> {
+  const mapRes = await client.query<{ id: number; feet_per_cell: number; grid_columns: number; grid_rows: number }>(
+    `SELECT id, feet_per_cell, grid_columns, grid_rows FROM encounter_maps WHERE encounter_id = $1`,
+    [encounter.id],
+  );
+  const map = mapRes.rows[0];
+  if (!map) return null; // nothing configured to validate against yet
+
+  const moverRes = await client.query<{
+    speed_ft: number | null;
+    size: string;
+    alt_speeds: Record<string, number>;
+    is_prone: boolean;
+  }>(
+    `SELECT
+       COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft,
+       COALESCE(m.size, 'Medium') AS size,
+       COALESCE(c.alt_speeds, (m.speed - 'walk'), '{}'::jsonb) AS alt_speeds,
+       EXISTS (
+         SELECT 1 FROM active_effects ae
+         JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
+         WHERE ae.removed_at IS NULL AND LOWER(ed.name) = 'prone'
+           AND ((ae.character_id = $1 AND $1 IS NOT NULL) OR (ae.monster_instance_id = $2 AND $2 IS NOT NULL))
+       ) AS is_prone
+     FROM combat_participants cp
+     LEFT JOIN characters c ON c.id = cp.character_id
+     LEFT JOIN monster_instances mi ON mi.id = cp.monster_instance_id
+     LEFT JOIN monsters m ON m.id = mi.monster_id
+     WHERE cp.id = $3`,
+    [participant.character_id, participant.monster_instance_id, participant.id],
+  );
+  const mv = moverRes.rows[0];
+  if (!mv || mv.speed_ft == null) return null; // no usable speed data to validate against
+
+  const campaignRes = await client.query<{ diagonal_movement_rule: DiagonalRule; srd_edition: '2014' | '2024' }>(
+    `SELECT diagonal_movement_rule, srd_edition FROM campaigns WHERE id = $1`,
+    [encounter.campaign_id],
+  );
+  const campaign = campaignRes.rows[0]!;
+
+  const overridesRes = await client.query<{ x: number; y: number; cost_type: CostType; medium: Medium; special_cost_ft: number | null }>(
+    `SELECT x, y, cost_type, medium, special_cost_ft FROM map_cell_overrides WHERE encounter_map_id = $1`,
+    [map.id],
+  );
+  const overrides = new Map<string, CellOverride>();
+  for (const row of overridesRes.rows) {
+    overrides.set(`${row.x},${row.y}`, { costType: row.cost_type, medium: row.medium, specialCostFt: row.special_cost_ft });
+  }
+
+  const occupantsRes = await client.query<{ pos_x: number; pos_y: number; faction: Faction; size: string }>(
+    `SELECT cp.pos_x, cp.pos_y, cp.faction, COALESCE(m.size, 'Medium') AS size
+     FROM combat_participants cp
+     LEFT JOIN monster_instances mi ON mi.id = cp.monster_instance_id
+     LEFT JOIN monsters m ON m.id = mi.monster_id
+     WHERE cp.encounter_id = $1 AND cp.id != $2 AND cp.pos_x IS NOT NULL AND cp.pos_y IS NOT NULL`,
+    [encounter.id, participant.id],
+  );
+  const occupants = new Map<string, Occupant>();
+  for (const row of occupantsRes.rows) {
+    occupants.set(`${row.pos_x},${row.pos_y}`, { participantId: -1, faction: row.faction, sizeRank: sizeRankFor(row.size) });
+  }
+
+  const grid: MovementGrid = {
+    columns: map.grid_columns,
+    rows: map.grid_rows,
+    feetPerCell: map.feet_per_cell,
+    diagonalRule: campaign.diagonal_movement_rule,
+    edition: campaign.srd_edition,
+    overrides,
+    occupants,
+  };
+  const mover: MoverProfile = {
+    faction: participant.faction,
+    sizeRank: sizeRankFor(mv.size),
+    altSpeedsFt: mv.alt_speeds ?? {},
+    isProne: mv.is_prone,
+  };
+  const remainingFt = mv.speed_ft + (participant.dash_used ? mv.speed_ft : 0) - participant.movement_used_ft;
+
+  return { grid, mover, speedFt: mv.speed_ft, remainingFt };
+}
+
+// docs/rules/movement.md §2.4: validation only applies to an ACTUAL move of
+// an already-placed token during ACTIVE combat — not initial placement
+// (from null,null), not removal (to null,null), and not while the encounter
+// is 'preparing'/'paused'/'completed' (DM setup/rearrangement stays
+// unconditional, matching that doc's explicit recommendation to avoid
+// blocking ordinary token-placement drag-and-drop outside a live turn).
+// Returns null (no validation performed, move is free) when any of those
+// apply, or when loadMovementContext can't build a usable context — this
+// function never blocks a move it can't actually reason about.
+async function computeValidatedMoveCost(
+  client: PoolClient,
+  encounter: EncounterRow,
+  participant: ParticipantRow,
+  to: { x: number | null; y: number | null },
+): Promise<{ costFt: number } | null> {
+  if (to.x === null || to.y === null) return null; // removal from the map
+  if (participant.pos_x === null || participant.pos_y === null) return null; // initial placement
+  if (encounter.status !== 'active') return null;
+
+  const ctx = await loadMovementContext(client, encounter, participant);
+  if (!ctx) return null;
+
+  const path = computePathCost(ctx.grid, ctx.mover, { x: participant.pos_x, y: participant.pos_y }, { x: to.x, y: to.y });
+  if (!path) {
+    throw new AppError('CONFLICT', 'No legal path to that cell', { reason: 'BLOCKED_PATH' });
+  }
+  if (path.costFt > ctx.remainingFt) {
+    throw new AppError('CONFLICT', 'Move exceeds remaining movement', {
+      reason: 'INSUFFICIENT_MOVEMENT',
+      requiredFt: path.costFt,
+      remainingFt: ctx.remainingFt,
+    });
+  }
+
+  return { costFt: path.costFt };
+}
+
+// REFACTOR-PLAN.md §4: "selecting a character highlights reachable cells...
+// computed with pathfinding over actual terrain cost — server computes and
+// returns it." Read-only counterpart to computeValidatedMoveCost, sharing
+// the same loader so the highlight can never show a cell the write path
+// would then reject. Returns an empty set (not an error) when the
+// participant isn't placed, the encounter isn't active, or there's nothing
+// to validate against — an empty highlight is a reasonable "nothing to show
+// yet" rendering, not a failure.
+export async function getParticipantReachableCells(
+  pool: Pool,
+  encounterId: number,
+  participantId: number,
+): Promise<{ cells: string[]; remainingFt: number }> {
+  const encounter = await fetchEncounterById(pool, encounterId);
+  const participantRes = await pool.query<ParticipantRow>(
+    `SELECT * FROM combat_participants WHERE id = $1 AND encounter_id = $2`,
+    [participantId, encounterId],
+  );
+  const participant = participantRes.rows[0];
+  if (!participant) throw notFound('Participant');
+  if (participant.pos_x === null || participant.pos_y === null || encounter.status !== 'active') {
+    return { cells: [], remainingFt: 0 };
+  }
+
+  const ctx = await loadMovementContext(pool, encounter, participant);
+  if (!ctx) return { cells: [], remainingFt: 0 };
+
+  const reachable = computeReachableSet(ctx.grid, ctx.mover, { x: participant.pos_x, y: participant.pos_y }, ctx.remainingFt);
+  return { cells: [...reachable], remainingFt: ctx.remainingFt };
+}
+
 export async function setParticipantPosition(
   pool: Pool,
   encounterId: number,
@@ -254,12 +540,27 @@ export async function setParticipantPosition(
   try {
     await client.query('BEGIN');
 
-    const updated = await client.query<ParticipantRow>(
-      `UPDATE combat_participants SET pos_x = $1, pos_y = $2 WHERE id = $3 AND encounter_id = $4 RETURNING *`,
-      [input.x, input.y, participantId, encounterId],
+    // Locked for the duration of the validate+write so two rapid moves for
+    // the same participant can't both pass the budget check against the
+    // same stale movement_used_ft (docs/rules/movement.md §2.4's "today's
+    // endpoint never locks the row" gap).
+    const lockedRes = await client.query<ParticipantRow>(
+      `SELECT * FROM combat_participants WHERE id = $1 AND encounter_id = $2 FOR UPDATE`,
+      [participantId, encounterId],
     );
-    const participant = updated.rows[0];
-    if (!participant) throw notFound('Participant');
+    const locked = lockedRes.rows[0];
+    if (!locked) throw notFound('Participant');
+
+    const encounter = await fetchEncounterById(client, encounterId);
+    const validated = await computeValidatedMoveCost(client, encounter, locked, input);
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants
+       SET pos_x = $1, pos_y = $2, movement_used_ft = movement_used_ft + $3
+       WHERE id = $4 AND encounter_id = $5 RETURNING *`,
+      [input.x, input.y, validated?.costFt ?? 0, participantId, encounterId],
+    );
+    const participant = updated.rows[0]!;
 
     const encounterRes = await client.query<EncounterRow>(
       `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,

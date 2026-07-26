@@ -215,6 +215,7 @@ export function broadcastMapUpdated(io: Server, encounter: EncounterLike, map: E
     gridColumns: map.grid_columns,
     gridRows: map.grid_rows,
     cellSizePx: map.cell_size_px,
+    feetPerCell: map.feet_per_cell,
   });
 }
 

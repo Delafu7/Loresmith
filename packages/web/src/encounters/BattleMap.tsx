@@ -8,9 +8,13 @@
 //
 // REFACTOR-PLAN.md §3 extends this with: coordinate labels, a free (not
 // preset-only) cell size, a roster side panel two-way synced with the map
-// (hover/select), and zoom + center-on-active. Movement legality/cost
-// (REFACTOR-PLAN.md §4) is explicitly NOT this component's job yet — dragging
-// a token here still has no distance/budget validation.
+// (hover/select), and zoom + center-on-active. REFACTOR-PLAN.md §4 adds
+// server-validated movement cost: selecting a participant highlights the
+// server-computed reachable set (never a client-side re-derivation of the
+// cost math — see docs/rules/movement.md), and a DM "paint terrain" tool
+// for authoring map_cell_overrides. Movement is still DM-only end to end
+// today (the position PATCH route stays requireEncounterDm-gated), so the
+// reachable/paint UI below only activates for the DM.
 
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,6 +34,26 @@ const CELL_SIZE_MAX = 150;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2;
 const ZOOM_STEP = 0.25;
+
+type CostType = 'difficult' | 'impassable' | 'special';
+interface CellOverride {
+  x: number;
+  y: number;
+  cost_type: CostType;
+  medium: 'ground' | 'water' | 'air' | 'underground';
+  special_cost_ft: number | null;
+  note: string | null;
+}
+
+// Paint-mode cycle: normal -> difficult -> impassable -> normal. 'special'
+// (a DM-authored exact cost) is API-only for now, not reachable from this
+// minimal click tool — see OPEN_QUESTIONS.md #6.
+const PAINT_CYCLE: Array<CostType | null> = [null, 'difficult', 'impassable'];
+const OVERRIDE_TINT: Record<CostType, string> = {
+  difficult: 'bg-amber-700/30',
+  impassable: 'bg-red-900/50',
+  special: 'bg-purple-700/30',
+};
 
 function clamp(n: number, min: number, max: number): number {
   if (Number.isNaN(n)) return min;
@@ -86,7 +110,9 @@ export function BattleMap({
   const [showSetup, setShowSetup] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [paintMode, setPaintMode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
   const positionMutation = useMutation({
     mutationFn: ({ participantId, x, y }: { participantId: number; x: number | null; y: number | null }) =>
@@ -101,6 +127,45 @@ export function BattleMap({
     mutationFn: ({ participantId, faction }: { participantId: number; faction: SnapshotParticipant['faction'] }) =>
       api.patch(`/encounters/${encounterId}/participants/${participantId}/faction`, { faction }),
   });
+
+  // REFACTOR-PLAN.md §4: terrain overlay + the DM's paint tool. DM-only read
+  // (see routes/encounters.ts) — not refetched on every socket tick (terrain
+  // changes far less often than combat state); the paint mutation below
+  // invalidates it directly on success, which covers the single-DM-tab case
+  // this app is built around today.
+  const overridesQuery = useQuery({
+    queryKey: ['encounter', encounterId, 'cell-overrides'],
+    queryFn: () => api.get<{ overrides: CellOverride[] }>(`/encounters/${encounterId}/map/cell-overrides`),
+    enabled: isDm,
+  });
+  const overridesByCell = new Map((overridesQuery.data?.overrides ?? []).map((o) => [`${o.x},${o.y}`, o]));
+
+  const paintMutation = useMutation({
+    mutationFn: ({ x, y, costType }: { x: number; y: number; costType: CostType | null }) =>
+      costType === null
+        ? api.delete(`/encounters/${encounterId}/map/cell-overrides/${x}/${y}`)
+        : api.put(`/encounters/${encounterId}/map/cell-overrides/${x}/${y}`, { costType }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['encounter', encounterId, 'cell-overrides'] });
+    },
+  });
+
+  function handleCellPaint(x: number, y: number) {
+    const current = overridesByCell.get(`${x},${y}`)?.cost_type ?? null;
+    const next = PAINT_CYCLE[(PAINT_CYCLE.indexOf(current) + 1) % PAINT_CYCLE.length]!;
+    paintMutation.mutate({ x, y, costType: next });
+  }
+
+  // REFACTOR-PLAN.md §4: "selecting a character highlights reachable cells
+  // based on remaining speed, computed with pathfinding over actual terrain
+  // cost." Server-computed (never re-derived client-side) — see
+  // docs/rules/movement.md.
+  const reachableQuery = useQuery({
+    queryKey: ['encounter', encounterId, 'reachable', selectedId],
+    queryFn: () => api.get<{ cells: string[]; remainingFt: number }>(`/encounters/${encounterId}/participants/${selectedId}/reachable`),
+    enabled: isDm && selectedId != null,
+  });
+  const reachableCells = new Set(reachableQuery.data?.cells ?? []);
 
   // REFACTOR-PLAN.md §1: "on map load, spawn the creature instances assigned
   // to that map only if alive." Character participants (monsterInstanceStatus
@@ -183,16 +248,35 @@ export function BattleMap({
           >
             Center on active
           </button>
+          {isDm && selectedId != null && reachableQuery.data && (
+            <span className="text-xs text-stone-400 ml-2">
+              Remaining movement: <span className="text-amber-400 font-medium">{reachableQuery.data.remainingFt} ft</span>
+            </span>
+          )}
         </div>
-        {isDm && (
-          <button
-            type="button"
-            onClick={() => setShowSetup((s) => !s)}
-            className="text-xs text-stone-400 hover:text-stone-200 underline"
-          >
-            {showSetup ? 'Hide map settings' : 'Reconfigure map'}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {isDm && (
+            <button
+              type="button"
+              onClick={() => setPaintMode((p) => !p)}
+              title="Click a cell to cycle normal / difficult terrain / impassable"
+              className={`rounded-md border px-2 py-1 text-xs ${
+                paintMode ? 'border-amber-600 bg-amber-950/30 text-amber-400' : 'border-stone-700 bg-stone-900 text-stone-400 hover:bg-stone-800'
+              }`}
+            >
+              {paintMode ? 'Painting terrain (click cells)' : 'Paint terrain'}
+            </button>
+          )}
+          {isDm && (
+            <button
+              type="button"
+              onClick={() => setShowSetup((s) => !s)}
+              className="text-xs text-stone-400 hover:text-stone-200 underline"
+            >
+              {showSetup ? 'Hide map settings' : 'Reconfigure map'}
+            </button>
+          )}
+        </div>
       </div>
       {isDm && showSetup && (
         <MapSetupPanel campaignId={campaignId} encounterId={encounterId} map={map} onDone={() => setShowSetup(false)} />
@@ -252,6 +336,37 @@ export function BattleMap({
                     {Array.from({ length: map.gridColumns * map.gridRows }, (_, i) => (
                       <div key={i} className="border border-stone-700/40" />
                     ))}
+                  </div>
+
+                  {/* Terrain overlay (REFACTOR-PLAN.md §4): shows painted
+                      cost_type tints, and — when a participant is selected —
+                      the server-computed reachable set. Only the paint-mode
+                      layer is actually clickable; reachable/terrain shading
+                      alone stays pointer-events-none so it never blocks
+                      token dragging underneath. */}
+                  <div
+                    className={`absolute inset-0 grid ${paintMode ? '' : 'pointer-events-none'}`}
+                    style={{
+                      gridTemplateColumns: `repeat(${map.gridColumns}, 1fr)`,
+                      gridTemplateRows: `repeat(${map.gridRows}, 1fr)`,
+                    }}
+                  >
+                    {Array.from({ length: map.gridRows }, (_, y) =>
+                      Array.from({ length: map.gridColumns }, (_, x) => {
+                        const override = overridesByCell.get(`${x},${y}`);
+                        const isReachable = reachableCells.has(`${x},${y}`);
+                        return (
+                          <div
+                            key={`${x},${y}`}
+                            onClick={paintMode ? () => handleCellPaint(x, y) : undefined}
+                            title={paintMode ? `${cellLabel(x, y)}: click to cycle terrain` : override?.note ?? undefined}
+                            className={`${paintMode ? 'cursor-pointer hover:outline hover:outline-1 hover:outline-amber-500' : ''} ${
+                              override ? OVERRIDE_TINT[override.cost_type] : ''
+                            } ${isReachable && !override ? 'bg-emerald-600/15' : ''}`}
+                          />
+                        );
+                      }),
+                    )}
                   </div>
 
                   {placed.map((p) => (
@@ -413,6 +528,7 @@ function MapSetupPanel({
   const [gridColumns, setGridColumns] = useState(map?.gridColumns ?? 20);
   const [gridRows, setGridRows] = useState(map?.gridRows ?? 20);
   const [cellSizePx, setCellSizePx] = useState(map?.cellSizePx ?? 50);
+  const [feetPerCell, setFeetPerCell] = useState(map?.feetPerCell ?? 5);
   const [backgroundAssetId, setBackgroundAssetId] = useState<number | null>(map?.backgroundAssetId ?? null);
 
   const assetsQuery = useQuery({
@@ -428,7 +544,7 @@ function MapSetupPanel({
   }
 
   const saveMutation = useMutation({
-    mutationFn: () => api.put(`/encounters/${encounterId}/map`, { backgroundAssetId, gridColumns, gridRows, cellSizePx }),
+    mutationFn: () => api.put(`/encounters/${encounterId}/map`, { backgroundAssetId, gridColumns, gridRows, cellSizePx, feetPerCell }),
     // No cache write here either — MAP_UPDATED over the socket patches
     // useEncounterLive's cache (including for the DM's own change).
     onSuccess: onDone,
@@ -466,13 +582,24 @@ function MapSetupPanel({
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-stone-400">
-          Cell size (px, 5 ft = 1 cell by default)
+          Cell size (display px)
           <input
             type="number"
             min={CELL_SIZE_MIN}
             max={CELL_SIZE_MAX}
             value={cellSizePx}
             onChange={(e) => setCellSizePx(clamp(Number(e.target.value), CELL_SIZE_MIN, CELL_SIZE_MAX))}
+            className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 w-24"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-stone-400">
+          Feet per cell (movement math — separate from display size)
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={feetPerCell}
+            onChange={(e) => setFeetPerCell(clamp(Number(e.target.value), 1, 50))}
             className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 w-24"
           />
         </label>

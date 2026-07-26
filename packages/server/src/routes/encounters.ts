@@ -14,6 +14,7 @@ import {
   setParticipantFactionSchema,
   setParticipantPositionSchema,
   updateEncounterSchema,
+  upsertCellOverrideSchema,
   upsertEncounterMapSchema,
 } from '../schemas/encounters.js';
 import { performShoveSchema } from '../schemas/shove.js';
@@ -204,6 +205,40 @@ encountersRouter.patch('/:id/participants/:pid/position', requireEncounterDm, as
   );
   broadcastTokenMoved(getIo(req.app), encounter, participant);
   res.json({ participant });
+});
+
+// REFACTOR-PLAN.md §4: "selecting a character highlights reachable cells."
+// Membership-gated (not DM-only) via requireEncounterDm being swapped for a
+// plain membership check — a player should be able to see their OWN
+// reachable cells too, not just the DM. Reuses requireOwnParticipantOrDm's
+// shape (owner-or-DM), same as the action-economy route just below.
+encountersRouter.get('/:id/participants/:pid/reachable', requireOwnParticipantOrDm, async (req, res) => {
+  const result = await encountersService.getParticipantReachableCells(pool, Number(req.params.id), Number(req.params.pid));
+  res.json(result);
+});
+
+// Terrain cell overrides (REFACTOR-PLAN.md §4). DM-only, same guard as the
+// rest of the map-configuration surface above.
+encountersRouter.get('/:id/map/cell-overrides', requireEncounterDm, async (req, res) => {
+  const overrides = await encountersService.listMapCellOverrides(pool, Number(req.params.id));
+  res.json({ overrides });
+});
+
+encountersRouter.put('/:id/map/cell-overrides/:x/:y', requireEncounterDm, async (req, res) => {
+  const input = upsertCellOverrideSchema.parse(req.body);
+  const { encounter, map } = await encountersService.upsertMapCellOverride(
+    pool, Number(req.params.id), Number(req.params.x), Number(req.params.y), input,
+  );
+  broadcastMapUpdated(getIo(req.app), encounter, map);
+  res.status(204).send();
+});
+
+encountersRouter.delete('/:id/map/cell-overrides/:x/:y', requireEncounterDm, async (req, res) => {
+  const result = await encountersService.deleteMapCellOverride(
+    pool, Number(req.params.id), Number(req.params.x), Number(req.params.y),
+  );
+  if (result) broadcastMapUpdated(getIo(req.app), result.encounter, result.map);
+  res.status(204).send();
 });
 
 // Per-turn action economy (Phase 3.6). Unlike every other combat_participants

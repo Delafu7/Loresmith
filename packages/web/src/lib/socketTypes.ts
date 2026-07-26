@@ -81,6 +81,9 @@ export interface MapConfig {
   gridColumns: number;
   gridRows: number;
   cellSizePx: number;
+  // REFACTOR-PLAN.md §4 — movement-math ratio, distinct from cellSizePx
+  // (pixel rendering size). See docs/rules/movement.md §2.1.
+  feetPerCell: number;
 }
 
 export interface FullStateSyncEvent extends Envelope {
