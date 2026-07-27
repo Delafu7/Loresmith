@@ -34,8 +34,8 @@ export function FullscreenMapPage() {
   const encounter = encounterQuery.data?.encounter;
 
   return (
-    <div className="min-h-dvh bg-stone-950 text-stone-100 flex flex-col">
-      <header className="border-b border-stone-800 px-4 py-2 flex items-center gap-4 flex-shrink-0">
+    <div className="h-dvh bg-stone-950 text-stone-100 flex flex-col overflow-hidden">
+      <header className="border-b border-stone-800 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] flex items-center gap-4 flex-shrink-0">
         {encounter ? (
           <Link
             to={`/campaigns/${encounter.campaign_id}/maps`}
@@ -49,7 +49,12 @@ export function FullscreenMapPage() {
           </Link>
         )}
       </header>
-      <main className="flex-1 min-h-0 px-4 py-4 overflow-auto">
+      {/* Full-bleed on mobile — the map owns the viewport (Phase 3: "on
+          narrow screens the map goes full-bleed and owns the viewport").
+          No horizontal padding below sm: so the board runs edge to edge;
+          BattleMap's own internal scroll container handles the board's
+          scroll/pinch-zoom, this just stops double-scrollbars. */}
+      <main className="flex-1 min-h-0 px-0 py-2 sm:px-4 sm:py-4 overflow-y-auto pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {encounterQuery.isLoading && <Loading />}
         {encounterQuery.isError && <ErrorBanner message={errorMessage(encounterQuery.error)} />}
         {encounter && (

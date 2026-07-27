@@ -342,6 +342,33 @@ export function BattleMap({
         <MapSetupPanel campaignId={campaignId} encounterId={encounterId} map={map} onDone={() => setShowSetup(false)} />
       )}
 
+      {/* Mobile: the roster becomes a collapsible drawer ABOVE the map (not
+          a column squeezed below it — Phase 3: "side panels become bottom
+          sheets or a tab bar, not squeezed columns") so it's reachable
+          without scrolling past the board. lg+: unchanged inline side
+          column, rendered separately below. */}
+      {showRoster && (
+        <details className="lg:hidden rounded-md bg-stone-900 shadow-sm">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 text-xs uppercase text-stone-500">
+            Roster ({placed.length} on the board)
+            <span aria-hidden="true">▾</span>
+          </summary>
+          <div className="px-3 pb-3">
+            <RosterPanel
+              participants={placed}
+              activeParticipantId={activeParticipantId}
+              selectedId={selectedId}
+              onSelect={selectParticipant}
+              isDm={isDm}
+              onChangeFaction={
+                isDm ? (participantId, faction) => factionMutation.mutate({ participantId, faction }) : undefined
+              }
+              bare
+            />
+          </div>
+        </details>
+      )}
+
       <div className="flex flex-col lg:flex-row gap-4">
         <div
           ref={scrollRef}
@@ -350,7 +377,7 @@ export function BattleMap({
           onPointerUp={handleMapPointerUp}
           onPointerCancel={handleMapPointerUp}
           style={{ touchAction: 'pan-x pan-y' }}
-          className="flex-1 min-w-0 overflow-auto rounded-md bg-stone-950 shadow-sm p-3 overscroll-contain max-h-[70dvh] lg:max-h-none"
+          className="flex-1 min-w-0 overflow-auto bg-stone-950 shadow-sm p-1.5 sm:rounded-md sm:p-3 overscroll-contain max-h-[70dvh] lg:max-h-none"
         >
           <div style={{ width: mapWidthPx * zoom, height: mapHeightPx * zoom }}>
             <div className="flex" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
@@ -477,16 +504,18 @@ export function BattleMap({
         </div>
 
         {showRoster && (
-          <RosterPanel
-            participants={placed}
-            activeParticipantId={activeParticipantId}
-            selectedId={selectedId}
-            onSelect={selectParticipant}
-            isDm={isDm}
-            onChangeFaction={
-              isDm ? (participantId, faction) => factionMutation.mutate({ participantId, faction }) : undefined
-            }
-          />
+          <div className="max-lg:hidden lg:contents">
+            <RosterPanel
+              participants={placed}
+              activeParticipantId={activeParticipantId}
+              selectedId={selectedId}
+              onSelect={selectParticipant}
+              isDm={isDm}
+              onChangeFaction={
+                isDm ? (participantId, faction) => factionMutation.mutate({ participantId, faction }) : undefined
+              }
+            />
+          </div>
         )}
       </div>
 
@@ -566,6 +595,7 @@ function RosterPanel({
   onSelect,
   isDm,
   onChangeFaction,
+  bare = false,
 }: {
   participants: SnapshotParticipant[];
   activeParticipantId: number | null;
@@ -573,10 +603,14 @@ function RosterPanel({
   onSelect: (id: number | null) => void;
   isDm: boolean;
   onChangeFaction?: (participantId: number, faction: SnapshotParticipant['faction']) => void;
+  /** Skips the card shell + "On the board" heading — for embedding inside
+   * the mobile collapsible drawer, whose <summary> already labels it. */
+  bare?: boolean;
 }) {
+  const Wrapper = bare ? 'div' : 'aside';
   return (
-    <aside className="lg:w-64 flex-shrink-0 rounded-md bg-stone-900 shadow-sm p-3">
-      <h3 className="text-xs uppercase text-stone-500 mb-2">On the board</h3>
+    <Wrapper className={bare ? '' : 'lg:w-64 flex-shrink-0 rounded-md bg-stone-900 shadow-sm p-3'}>
+      {!bare && <h3 className="text-xs uppercase text-stone-500 mb-2">On the board</h3>}
       {participants.length === 0 && <EmptyState message="No one is placed on the map yet." />}
       <ul className="space-y-1">
         {participants.map((p) => {
@@ -626,7 +660,7 @@ function RosterPanel({
           );
         })}
       </ul>
-    </aside>
+    </Wrapper>
   );
 }
 
