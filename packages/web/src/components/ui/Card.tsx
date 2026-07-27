@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+import type { FormHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
 
 export type CardElevation = 'sm' | 'md' | 'lg';
 
@@ -14,24 +14,25 @@ const ELEVATION_CLASSES: Record<CardElevation, string> = {
  * shadow-* theme slots in index.css) rather than a border property — no
  * `border` class here on purpose, matching the source exactly.
  */
-export function Card({
-  elevation = 'sm',
-  interactive,
-  className = '',
-  children,
-  ...rest
-}: {
+type CardProps = {
   elevation?: CardElevation;
   interactive?: boolean;
   children?: ReactNode;
-} & HTMLAttributes<HTMLDivElement>) {
+} & ({ as: 'form' } & FormHTMLAttributes<HTMLFormElement> | ({ as?: 'div' } & HTMLAttributes<HTMLDivElement>));
+
+export function Card({ elevation = 'sm', interactive, className = '', children, as = 'div', ...rest }: CardProps) {
+  const classes = `flex flex-col gap-2 rounded-md bg-stone-900 p-4 ${ELEVATION_CLASSES[elevation]} ${
+    interactive ? 'cursor-pointer transition-colors hover:bg-stone-800/70' : ''
+  } ${className}`;
+  if (as === 'form') {
+    return (
+      <form className={classes} {...(rest as FormHTMLAttributes<HTMLFormElement>)}>
+        {children}
+      </form>
+    );
+  }
   return (
-    <div
-      className={`flex flex-col gap-2 rounded-md bg-stone-900 p-4 ${ELEVATION_CLASSES[elevation]} ${
-        interactive ? 'cursor-pointer transition-colors hover:bg-stone-800/70' : ''
-      } ${className}`}
-      {...rest}
-    >
+    <div className={classes} {...(rest as HTMLAttributes<HTMLDivElement>)}>
       {children}
     </div>
   );

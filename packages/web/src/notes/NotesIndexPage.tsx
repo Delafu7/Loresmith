@@ -28,13 +28,13 @@ export function NotesIndexPage() {
 
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 px-6 py-4 flex items-center gap-4">
+      <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] flex items-center gap-4 sm:px-6">
         <Link to="/home" className="text-xs text-stone-500 hover:text-stone-300">
           ← Home
         </Link>
-        <h1 className="text-xl font-semibold">Notes</h1>
+        <h1 className="font-display text-xl font-medium">Notes</h1>
       </header>
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-8">
+      <main className="max-w-3xl mx-auto px-4 py-6 space-y-8 sm:py-8">
         {dashboardQuery.isLoading && <Loading />}
         {dashboardQuery.isError && <ErrorBanner message={errorMessage(dashboardQuery.error)} />}
 
@@ -59,7 +59,7 @@ function NoteSection({ title, notes }: { title: string; notes: DashboardResponse
           <li key={n.id}>
             <Link
               to={`/campaigns/${n.campaign_id}/notes`}
-              className="block rounded-md border border-stone-800 bg-stone-900 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
+              className="block rounded-md bg-stone-900 shadow-sm hover:bg-stone-800/70 transition-colors px-4 py-3"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium text-stone-100 truncate">{n.title}</span>

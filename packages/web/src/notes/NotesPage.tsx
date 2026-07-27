@@ -5,6 +5,10 @@ import type { Note } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { Field, Input, Textarea } from '../components/ui/Field';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
 
 export function NotesPage() {
   const { campaignId, role } = useCampaignShell();
@@ -54,62 +58,36 @@ export function NotesPage() {
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Notes</h2>
-        <button
-          type="button"
-          onClick={() => setShowCreate((v) => !v)}
-          className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
-        >
+        <h2 className="font-display text-lg font-medium">Notes</h2>
+        <Button variant="primary" size="sm" onClick={() => setShowCreate((v) => !v)}>
           {showCreate ? 'Cancel' : 'New note'}
-        </button>
+        </Button>
       </div>
 
       {showCreate && (
-        <form onSubmit={handleCreate} className="mb-6 bg-stone-900 border border-stone-800 rounded-lg p-5 space-y-4">
-          <div>
-            <label htmlFor="noteTitle" className="block text-sm font-medium text-stone-300 mb-1">
-              Title
-            </label>
-            <input
-              id="noteTitle"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-md bg-stone-800 border border-stone-700 px-3 py-2 text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
-          </div>
-          <div>
-            <label htmlFor="noteBody" className="block text-sm font-medium text-stone-300 mb-1">
-              Body
-            </label>
-            <textarea
-              id="noteBody"
-              required
-              rows={5}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="w-full rounded-md bg-stone-800 border border-stone-700 px-3 py-2 text-stone-100"
-            />
-          </div>
+        <Card as="form" onSubmit={handleCreate} className="mb-6 gap-4">
+          <Field label="Title" htmlFor="noteTitle">
+            <Input id="noteTitle" required value={title} onChange={(e) => setTitle(e.target.value)} />
+          </Field>
+          <Field label="Body" htmlFor="noteBody">
+            <Textarea id="noteBody" required rows={5} value={body} onChange={(e) => setBody(e.target.value)} />
+          </Field>
           {role === 'dm' && (
-            <label className="flex items-center gap-2 text-sm text-stone-300">
+            <label className="flex min-h-11 items-center gap-2 text-sm text-stone-300">
               <input
                 type="checkbox"
                 checked={visibleToPlayers}
                 onChange={(e) => setVisibleToPlayers(e.target.checked)}
+                className="size-4"
               />
               Visible to players
             </label>
           )}
           {createMutation.isError && <ErrorBanner message={errorMessage(createMutation.error)} />}
-          <button
-            type="submit"
-            disabled={createMutation.isPending}
-            className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
-          >
+          <Button type="submit" variant="primary" disabled={createMutation.isPending}>
             {createMutation.isPending ? 'Saving…' : 'Save note'}
-          </button>
-        </form>
+          </Button>
+        </Card>
       )}
 
       {notesQuery.isLoading && <Loading />}
@@ -120,31 +98,29 @@ export function NotesPage() {
         {notesQuery.data?.notes.map((note) => {
           const canModify = role === 'dm' || note.author_user_id === user?.id;
           return (
-            <li key={note.id} className="rounded-lg border border-stone-800 bg-stone-900 p-4">
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="font-medium text-stone-100">{note.title}</h3>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {role === 'dm' && (
-                    <span
-                      className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
-                        note.visible_to_players ? 'bg-emerald-900 text-emerald-300' : 'bg-stone-800 text-stone-500'
-                      }`}
-                    >
-                      {note.visible_to_players ? 'Visible to players' : 'DM only'}
-                    </span>
-                  )}
-                  {canModify && (
-                    <button
-                      type="button"
-                      onClick={() => deleteMutation.mutate(note.id)}
-                      className="text-red-400 hover:text-red-300 text-xs"
-                    >
-                      Delete
-                    </button>
-                  )}
+            <li key={note.id}>
+              <Card>
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-medium text-stone-100">{note.title}</h3>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {role === 'dm' && (
+                      <Badge variant={note.visible_to_players ? 'accent' : 'neutral'}>
+                        {note.visible_to_players ? 'Visible to players' : 'DM only'}
+                      </Badge>
+                    )}
+                    {canModify && (
+                      <button
+                        type="button"
+                        onClick={() => deleteMutation.mutate(note.id)}
+                        className="min-h-11 px-1 text-red-400 hover:text-red-300 text-xs"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <p className="text-sm text-stone-300 mt-2 whitespace-pre-wrap">{note.body}</p>
+                <p className="text-sm text-stone-300 whitespace-pre-wrap">{note.body}</p>
+              </Card>
             </li>
           );
         })}
