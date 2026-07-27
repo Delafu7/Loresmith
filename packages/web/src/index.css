@@ -192,3 +192,21 @@ body :where(h1, h2, h3) {
     scroll-behavior: auto !important;
   }
 }
+
+/* Nocturne's signature rule (docs/design-tokens.md "Spacing, radius,
+   borders, shadows") — a freestanding divider that fades to transparent at
+   both ends instead of terminating in a hard line. components/ui/Table.tsx
+   reimplements this same gradient per-row; this is the freestanding <hr>-
+   equivalent for everywhere else. */
+.hr {
+  height: 1px;
+  margin: 1rem 0;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-stone-800) 48px,
+    var(--color-stone-800) calc(100% - 48px),
+    transparent
+  );
+}
