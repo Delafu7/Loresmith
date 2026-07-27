@@ -1,8 +1,12 @@
 import { useAuth } from '../auth/AuthContext';
 import type { UiTheme } from '../lib/types';
 
+// "Ember" now renders the Nocturne palette, not the old warm ember-orange
+// look (docs/design-tokens.md, OPEN_QUESTIONS.md #10) — the DB enum value
+// stays 'ember' (no schema change this pass), but the label a user actually
+// picks from is updated so it doesn't lie about what they're selecting.
 const THEME_LABELS: Record<UiTheme, string> = {
-  ember: 'Ember',
+  ember: 'Nocturne',
   crimson: 'Crimson',
   amber: 'Amber',
 };
@@ -24,7 +28,7 @@ export function ThemePicker({ className = '' }: { className?: string }) {
         value={user.uiTheme}
         disabled={themePending}
         onChange={(e) => setTheme(e.target.value as UiTheme)}
-        className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200 disabled:opacity-50"
+        className="min-h-11 rounded-md border border-stone-700 bg-stone-800 px-2 py-1 text-stone-200 disabled:opacity-50"
       >
         {(Object.keys(THEME_LABELS) as UiTheme[]).map((theme) => (
           <option key={theme} value={theme}>

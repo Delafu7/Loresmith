@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useJoinCampaign } from '../lib/useJoinCampaign';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { ThemePicker } from '../components/ThemePicker';
+import { Sidebar, NavItemList, NavItem } from '../components/ui/Nav';
 
 interface CampaignShellContextValue {
   campaignId: number;
@@ -45,28 +46,32 @@ export function CampaignShell() {
   return (
     <CampaignShellContext.Provider value={{ campaignId, campaign: campaignQuery.data.campaign, role }}>
       <div className="min-h-dvh bg-stone-950 text-stone-100 flex flex-col md:flex-row">
-        <nav className="md:w-56 border-b md:border-b-0 md:border-r border-stone-800 px-4 py-4 md:min-h-dvh">
-          <div className="mb-4">
-            <NavLink to="/home" className="text-xs text-stone-500 hover:text-stone-300">
-              ← Home
-            </NavLink>
-            <NavLink to="/campaigns" className="text-xs text-stone-500 hover:text-stone-300 ml-2">
-              All campaigns
-            </NavLink>
-            <h1 className="text-lg font-semibold mt-1 truncate">{campaignQuery.data.campaign.name}</h1>
+        <Sidebar className="pt-[max(1rem,env(safe-area-inset-top))]">
+          <div>
+            <div className="flex flex-wrap gap-x-2 text-xs text-stone-500">
+              <NavLink to="/home" className="hover:text-stone-300">
+                ← Home
+              </NavLink>
+              <NavLink to="/campaigns" className="hover:text-stone-300">
+                All campaigns
+              </NavLink>
+            </div>
+            <h1 className="font-display text-lg font-medium mt-1 truncate">{campaignQuery.data.campaign.name}</h1>
             <span className="text-xs uppercase tracking-wide text-amber-500">{role}</span>
           </div>
-          <ul className="flex md:flex-col gap-1 flex-wrap">
-            <NavItem to="characters" label="Characters" />
-            {isDm && <NavItem to="monsters" label="Bestiary" />}
-            <NavItem to="session" label="Session" />
-            <NavItem to="maps" label="Maps" />
-            <NavItem to="notes" label="Notes" />
-            <NavItem to="dice-rolls" label="Dice Rolls" />
-          </ul>
-          {isDm && <HideEverythingButton campaignId={campaignId} />}
-          <ThemePicker className="mt-4" />
-        </nav>
+          <NavItemList>
+            <NavItem to="characters">Characters</NavItem>
+            {isDm && <NavItem to="monsters">Bestiary</NavItem>}
+            <NavItem to="session">Session</NavItem>
+            <NavItem to="maps">Maps</NavItem>
+            <NavItem to="notes">Notes</NavItem>
+            <NavItem to="dice-rolls">Dice Rolls</NavItem>
+          </NavItemList>
+          <div className="mt-auto flex flex-col gap-3 max-md:flex-row max-md:flex-wrap max-md:items-center">
+            {isDm && <HideEverythingButton campaignId={campaignId} />}
+            <ThemePicker />
+          </div>
+        </Sidebar>
         <main className="flex-1 min-w-0">
           <Outlet />
         </main>
@@ -96,26 +101,9 @@ function HideEverythingButton({ campaignId }: { campaignId: number }) {
       }}
       disabled={mutation.isPending}
       title="Re-hide every revealed field, HP, and effect across the whole campaign"
-      className="mt-4 w-full rounded-md border border-red-900 bg-red-950/40 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-red-400 hover:bg-red-950/70 disabled:opacity-50"
+      className="min-h-11 w-full rounded-md border border-red-900 bg-red-950/40 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-red-400 hover:bg-red-950/70 disabled:opacity-50 md:w-auto"
     >
       Hide everything
     </button>
-  );
-}
-
-function NavItem({ to, label }: { to: string; label: string }) {
-  return (
-    <li>
-      <NavLink
-        to={to}
-        className={({ isActive }) =>
-          `block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-            isActive ? 'bg-amber-950 text-amber-400' : 'text-stone-300 hover:bg-stone-800'
-          }`
-        }
-      >
-        {label}
-      </NavLink>
-    </li>
   );
 }

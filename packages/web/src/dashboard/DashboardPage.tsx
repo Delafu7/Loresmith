@@ -38,10 +38,10 @@ export function DashboardPage() {
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="font-display text-xl font-medium">Home</h1>
-          <div className="flex items-center gap-3">
-            <ThemePicker className="max-sm:hidden" />
+          <div className="flex flex-wrap items-center gap-3">
+            <ThemePicker />
             <span className="hidden text-sm text-stone-400 sm:inline">{user?.displayName}</span>
             <Button variant="secondary" size="sm" onClick={() => void logout()}>
               Log out
