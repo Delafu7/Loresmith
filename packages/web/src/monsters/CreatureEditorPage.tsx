@@ -521,7 +521,7 @@ export function CreatureEditorPage() {
                 max={30}
                 value={form[key]}
                 onChange={(e) => update(key, e.target.value)}
-                className="w-full text-center bg-transparent text-xl font-bold text-stone-100 my-1 focus:outline-none focus:ring-1 focus:ring-amber-600 rounded"
+                className="w-full text-center bg-transparent text-xl font-bold text-stone-100 my-1 focus:outline-none focus:ring-1 focus:ring-amber-500 rounded"
               />
             </div>
           ))}

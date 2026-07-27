@@ -43,7 +43,7 @@ export function AbilityScoreGrid({
                 value={score}
                 onChange={(e) => onChange?.(key, Number(e.target.value))}
                 aria-label={`${label} score`}
-                className="w-full text-center bg-transparent text-2xl font-bold text-stone-100 my-1 focus:outline-none focus:ring-1 focus:ring-amber-600 rounded"
+                className="w-full text-center bg-transparent text-2xl font-bold text-stone-100 my-1 focus:outline-none focus:ring-1 focus:ring-amber-500 rounded"
               />
             ) : (
               <div className="text-2xl font-bold text-stone-100 my-1">{score}</div>

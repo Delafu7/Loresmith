@@ -106,7 +106,7 @@ export function Combobox({
           if (!open) setOpen(true);
         }}
         onKeyDown={handleKeyDown}
-        className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-600"
+        className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
       />
       {open && (
         <ul role="listbox" className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-md border border-stone-700 bg-stone-800 shadow-xl">

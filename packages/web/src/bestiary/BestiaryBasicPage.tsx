@@ -40,7 +40,7 @@ export function BestiaryBasicPage() {
           placeholder="Search creatures…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="rounded-md bg-stone-900 border border-stone-700 px-3 py-1.5 text-sm text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-600 min-w-[12rem]"
+          className="rounded-md bg-stone-900 border border-stone-700 px-3 py-1.5 text-sm text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500 min-w-[12rem]"
         />
         <select
           value={creatureType}
