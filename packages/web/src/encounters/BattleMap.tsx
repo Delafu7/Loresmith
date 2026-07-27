@@ -16,7 +16,7 @@
 // today (the position PATCH route stays requireEncounterDm-gated), so the
 // reachable/paint UI below only activates for the DM.
 
-import { useRef, useState } from 'react';
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { CampaignAsset, SnapshotParticipant } from '../lib/types';
@@ -25,6 +25,8 @@ import type { MapConfig } from '../lib/socketTypes';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { Field, Input } from '../components/ui/Field';
+import { Button } from '../components/ui/Button';
 import { Token } from './Token';
 
 const GRID_MIN = 5;
@@ -111,8 +113,54 @@ export function BattleMap({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
   const [paintMode, setPaintMode] = useState(false);
+  // Tap-to-move (docs/design-tokens.md mobile pass): "dragging is unreliable
+  // with a finger covering the target — tap to select, then tap-destination,
+  // then an explicit confirm control ... with an obvious cancel." Additive,
+  // not a replacement for drag — a DM can still drag on desktop; this is a
+  // second path to the same positionMutation below, for when a finger is in
+  // the way of precise dragging.
+  const [pendingMove, setPendingMove] = useState<{ x: number; y: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+
+  // Pinch-to-zoom (docs/design-tokens.md mobile pass: "pinch to zoom and
+  // drag to pan must feel native"). Tracked with raw Pointer Events (same
+  // primitive Token.tsx's drag already uses) rather than a gesture library —
+  // two concurrent pointers on the map area scale `zoom` from the distance
+  // between them; a single pointer is left alone so native one-finger
+  // scroll-panning (the container's own `overflow-auto`) keeps working
+  // untouched. `touch-action: pan-x pan-y` on the container (below) hands
+  // pinch gestures to this handler instead of the browser's page zoom,
+  // without disabling native single-finger panning.
+  const activePointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchStart = useRef<{ distance: number; zoom: number } | null>(null);
+
+  function pointerDistance(): number | null {
+    const pts = [...activePointers.current.values()];
+    if (pts.length < 2) return null;
+    const [a, b] = pts;
+    return Math.hypot(a!.x - b!.x, a!.y - b!.y);
+  }
+
+  function handleMapPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const distance = pointerDistance();
+    if (distance != null) pinchStart.current = { distance, zoom };
+  }
+
+  function handleMapPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!activePointers.current.has(e.pointerId)) return;
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!pinchStart.current) return;
+    const distance = pointerDistance();
+    if (distance == null || pinchStart.current.distance === 0) return;
+    setZoom(clamp10(pinchStart.current.zoom * (distance / pinchStart.current.distance)));
+  }
+
+  function handleMapPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    activePointers.current.delete(e.pointerId);
+    if (activePointers.current.size < 2) pinchStart.current = null;
+  }
 
   const positionMutation = useMutation({
     mutationFn: ({ participantId, x, y }: { participantId: number; x: number | null; y: number | null }) =>
@@ -121,6 +169,7 @@ export function BattleMap({
     // socket (which the DM's own action also triggers) is the single source
     // of truth for token position, same discipline as CombatTracker's
     // hpMutation/applyEffectMutation.
+    onSuccess: () => setPendingMove(null),
   });
 
   const factionMutation = useMutation({
@@ -166,6 +215,9 @@ export function BattleMap({
     enabled: isDm && selectedId != null,
   });
   const reachableCells = new Set(reachableQuery.data?.cells ?? []);
+  const moveTargetMode = isDm && !paintMode && selectedId != null;
+  const selectedParticipant = participants.find((p) => p.participantId === selectedId) ?? null;
+  const pendingMoveIsReachable = pendingMove != null && (reachableCells.size === 0 || reachableCells.has(`${pendingMove.x},${pendingMove.y}`));
 
   // REFACTOR-PLAN.md §1: "on map load, spawn the creature instances assigned
   // to that map only if alive." Character participants (monsterInstanceStatus
@@ -174,6 +226,11 @@ export function BattleMap({
   const spawnable = participants.filter((p) => p.monsterInstanceStatus === null || p.monsterInstanceStatus === 'alive');
   const placed = spawnable.filter((p) => p.posX != null && p.posY != null);
   const unplaced = spawnable.filter((p) => p.posX == null || p.posY == null);
+
+  function selectParticipant(id: number | null) {
+    setSelectedId(id);
+    setPendingMove(null);
+  }
 
   function centerOnActive() {
     const container = scrollRef.current;
@@ -213,13 +270,13 @@ export function BattleMap({
       {factionMutation.isError && <ErrorBanner message={errorMessage(factionMutation.error)} />}
 
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap">
           <button
             type="button"
             onClick={() => setZoom((z) => clamp10(z - ZOOM_STEP))}
             disabled={zoom <= ZOOM_MIN}
             aria-label="Zoom out"
-            className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
+            className="min-h-11 min-w-11 rounded-md bg-stone-900 shadow-sm text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
           >
             −
           </button>
@@ -229,14 +286,14 @@ export function BattleMap({
             onClick={() => setZoom((z) => clamp10(z + ZOOM_STEP))}
             disabled={zoom >= ZOOM_MAX}
             aria-label="Zoom in"
-            className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
+            className="min-h-11 min-w-11 rounded-md bg-stone-900 shadow-sm text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
           >
             +
           </button>
           <button
             type="button"
             onClick={() => setZoom(1)}
-            className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-xs text-stone-400 hover:bg-stone-800"
+            className="min-h-11 rounded-md bg-stone-900 shadow-sm px-3 text-xs text-stone-400 hover:bg-stone-800"
           >
             Reset
           </button>
@@ -244,7 +301,7 @@ export function BattleMap({
             type="button"
             onClick={centerOnActive}
             disabled={activeParticipantId == null}
-            className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 disabled:opacity-40"
+            className="min-h-11 rounded-md bg-stone-900 shadow-sm px-3 text-xs text-stone-400 hover:bg-stone-800 disabled:opacity-40"
           >
             Center on active
           </button>
@@ -254,24 +311,27 @@ export function BattleMap({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {isDm && (
             <button
               type="button"
-              onClick={() => setPaintMode((p) => !p)}
+              onClick={() => {
+                setPaintMode((p) => !p);
+                setPendingMove(null);
+              }}
               title="Click a cell to cycle normal / difficult terrain / impassable"
-              className={`rounded-md border px-2 py-1 text-xs ${
-                paintMode ? 'border-amber-600 bg-amber-950/30 text-amber-400' : 'border-stone-700 bg-stone-900 text-stone-400 hover:bg-stone-800'
+              className={`min-h-11 rounded-md px-3 text-xs ${
+                paintMode ? 'bg-amber-950/30 text-amber-400 outline outline-1 outline-amber-600' : 'bg-stone-900 shadow-sm text-stone-400 hover:bg-stone-800'
               }`}
             >
-              {paintMode ? 'Painting terrain (click cells)' : 'Paint terrain'}
+              {paintMode ? 'Painting terrain (tap cells)' : 'Paint terrain'}
             </button>
           )}
           {isDm && (
             <button
               type="button"
               onClick={() => setShowSetup((s) => !s)}
-              className="text-xs text-stone-400 hover:text-stone-200 underline"
+              className="min-h-11 px-2 text-xs text-stone-400 hover:text-stone-200 underline"
             >
               {showSetup ? 'Hide map settings' : 'Reconfigure map'}
             </button>
@@ -283,7 +343,15 @@ export function BattleMap({
       )}
 
       <div className="flex flex-col lg:flex-row gap-4">
-        <div ref={scrollRef} className="flex-1 min-w-0 overflow-auto rounded-lg border border-stone-800 bg-stone-950 p-3">
+        <div
+          ref={scrollRef}
+          onPointerDown={handleMapPointerDown}
+          onPointerMove={handleMapPointerMove}
+          onPointerUp={handleMapPointerUp}
+          onPointerCancel={handleMapPointerUp}
+          style={{ touchAction: 'pan-x pan-y' }}
+          className="flex-1 min-w-0 overflow-auto rounded-md bg-stone-950 shadow-sm p-3 overscroll-contain max-h-[70dvh] lg:max-h-none"
+        >
           <div style={{ width: mapWidthPx * zoom, height: mapHeightPx * zoom }}>
             <div className="flex" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
               {/* Row-number column */}
@@ -340,12 +408,15 @@ export function BattleMap({
 
                   {/* Terrain overlay (REFACTOR-PLAN.md §4): shows painted
                       cost_type tints, and — when a participant is selected —
-                      the server-computed reachable set. Only the paint-mode
-                      layer is actually clickable; reachable/terrain shading
-                      alone stays pointer-events-none so it never blocks
-                      token dragging underneath. */}
+                      the server-computed reachable set. Also doubles as the
+                      tap-destination layer for the mobile move flow (tap
+                      token to select, tap a cell here to propose a move,
+                      confirm in the bar below) when a DM has someone
+                      selected and isn't painting terrain. Reachable/terrain
+                      shading with neither mode active stays pointer-events-
+                      none so it never blocks token dragging underneath. */}
                   <div
-                    className={`absolute inset-0 grid ${paintMode ? '' : 'pointer-events-none'}`}
+                    className={`absolute inset-0 grid ${paintMode || moveTargetMode ? '' : 'pointer-events-none'}`}
                     style={{
                       gridTemplateColumns: `repeat(${map.gridColumns}, 1fr)`,
                       gridTemplateRows: `repeat(${map.gridRows}, 1fr)`,
@@ -355,14 +426,29 @@ export function BattleMap({
                       Array.from({ length: map.gridColumns }, (_, x) => {
                         const override = overridesByCell.get(`${x},${y}`);
                         const isReachable = reachableCells.has(`${x},${y}`);
+                        const isPending = pendingMove?.x === x && pendingMove?.y === y;
                         return (
                           <div
                             key={`${x},${y}`}
-                            onClick={paintMode ? () => handleCellPaint(x, y) : undefined}
-                            title={paintMode ? `${cellLabel(x, y)}: click to cycle terrain` : override?.note ?? undefined}
-                            className={`${paintMode ? 'cursor-pointer hover:outline hover:outline-1 hover:outline-amber-500' : ''} ${
+                            onClick={
+                              paintMode
+                                ? () => handleCellPaint(x, y)
+                                : moveTargetMode
+                                  ? () => setPendingMove({ x, y })
+                                  : undefined
+                            }
+                            title={
+                              paintMode
+                                ? `${cellLabel(x, y)}: click to cycle terrain`
+                                : moveTargetMode
+                                  ? `Move here (${cellLabel(x, y)})`
+                                  : (override?.note ?? undefined)
+                            }
+                            className={`${paintMode || moveTargetMode ? 'cursor-pointer hover:outline hover:outline-1 hover:outline-amber-500' : ''} ${
                               override ? OVERRIDE_TINT[override.cost_type] : ''
-                            } ${isReachable && !override ? 'bg-emerald-600/15' : ''}`}
+                            } ${isReachable && !override ? 'bg-emerald-600/15' : ''} ${
+                              isPending ? 'outline outline-2 outline-amber-400 bg-amber-500/25' : ''
+                            }`}
                           />
                         );
                       }),
@@ -376,11 +462,12 @@ export function BattleMap({
                       cellSizePx={map.cellSizePx}
                       gridColumns={map.gridColumns}
                       gridRows={map.gridRows}
+                      zoom={zoom}
                       isActive={p.participantId === activeParticipantId}
                       isDraggable={isDm}
                       isSelected={p.participantId === selectedId}
                       onMove={(x, y) => positionMutation.mutate({ participantId: p.participantId, x, y })}
-                      onSelect={() => setSelectedId((cur) => (cur === p.participantId ? null : p.participantId))}
+                      onSelect={() => selectParticipant(selectedId === p.participantId ? null : p.participantId)}
                     />
                   ))}
                 </div>
@@ -394,7 +481,7 @@ export function BattleMap({
             participants={placed}
             activeParticipantId={activeParticipantId}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={selectParticipant}
             isDm={isDm}
             onChangeFaction={
               isDm ? (participantId, faction) => factionMutation.mutate({ participantId, faction }) : undefined
@@ -403,10 +490,45 @@ export function BattleMap({
         )}
       </div>
 
+      {/* Tap-to-move confirm bar (docs/design-tokens.md mobile pass) — a
+          sticky bottom bar rather than inline, so it stays reachable without
+          scrolling back up on a tall mobile layout, with an equally-obvious
+          Cancel next to Confirm. */}
+      {pendingMove && selectedParticipant && (
+        <div className="sticky bottom-0 z-40 flex flex-wrap items-center justify-between gap-3 rounded-md bg-stone-900 p-3 shadow-lg pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="text-sm">
+            <span className="text-stone-100 font-medium">{selectedParticipant.name}</span>
+            <span className="text-stone-400"> → {cellLabel(pendingMove.x, pendingMove.y)}</span>
+            {!pendingMoveIsReachable && (
+              <span className="ml-2 text-xs text-amber-400">Outside remaining movement — may be rejected</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPendingMove(null)}
+              className="min-h-11 rounded-md border border-stone-600 px-4 text-sm text-stone-200 hover:bg-stone-100/5"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={positionMutation.isPending}
+              onClick={() =>
+                positionMutation.mutate({ participantId: selectedParticipant.participantId, x: pendingMove.x, y: pendingMove.y })
+              }
+              className="min-h-11 rounded-md border border-amber-500 px-4 text-sm font-semibold text-amber-500 hover:bg-amber-500/10 disabled:opacity-45"
+            >
+              {positionMutation.isPending ? 'Moving…' : 'Confirm move'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {isDm && unplaced.length > 0 && (
-        <div className="rounded-lg border border-stone-800 bg-stone-900 p-3">
+        <div className="rounded-md bg-stone-900 shadow-sm p-3">
           <p className="text-xs text-stone-500 mb-2">
-            Unplaced — click a name to drop it at the top-left corner, then drag it into position:
+            Unplaced — tap a name to drop it at the top-left corner, then move it into position:
           </p>
           <div className="flex flex-wrap gap-2">
             {unplaced.map((p) => (
@@ -415,7 +537,7 @@ export function BattleMap({
                 type="button"
                 disabled={positionMutation.isPending}
                 onClick={() => positionMutation.mutate({ participantId: p.participantId, x: 0, y: 0 })}
-                className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 px-2 py-1 text-xs text-stone-200 disabled:opacity-60"
+                className="min-h-11 rounded-md bg-stone-800 hover:bg-stone-700 px-3 text-xs text-stone-200 disabled:opacity-60"
               >
                 {p.name}
               </button>
@@ -453,7 +575,7 @@ function RosterPanel({
   onChangeFaction?: (participantId: number, faction: SnapshotParticipant['faction']) => void;
 }) {
   return (
-    <aside className="lg:w-64 flex-shrink-0 rounded-lg border border-stone-800 bg-stone-900 p-3">
+    <aside className="lg:w-64 flex-shrink-0 rounded-md bg-stone-900 shadow-sm p-3">
       <h3 className="text-xs uppercase text-stone-500 mb-2">On the board</h3>
       {participants.length === 0 && <EmptyState message="No one is placed on the map yet." />}
       <ul className="space-y-1">
@@ -466,8 +588,8 @@ function RosterPanel({
               onMouseEnter={() => onSelect(p.participantId)}
               onMouseLeave={() => onSelect(null)}
               onClick={() => onSelect(isSelected ? null : p.participantId)}
-              className={`rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${
-                isSelected ? 'bg-amber-950/40 border border-amber-700' : 'border border-transparent hover:bg-stone-800'
+              className={`min-h-11 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${
+                isSelected ? 'bg-amber-950/40 outline outline-1 outline-amber-700' : 'hover:bg-stone-800'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -488,7 +610,7 @@ function RosterPanel({
                     value={p.faction}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => onChangeFaction(p.participantId, e.target.value as SnapshotParticipant['faction'])}
-                    className="text-[10px] rounded border border-stone-700 bg-stone-800 text-stone-300 px-1 py-0.5"
+                    className="min-h-8 rounded border border-stone-700 bg-stone-800 text-stone-300 text-[10px] px-1"
                   >
                     {FACTION_OPTIONS.map((f) => (
                       <option key={f.value} value={f.value}>
@@ -553,56 +675,52 @@ function MapSetupPanel({
   const selectedAsset = assetsQuery.data?.assets.find((a) => a.id === backgroundAssetId);
 
   return (
-    <div className="rounded-lg border border-stone-800 bg-stone-900 p-4 space-y-4">
+    <div className="rounded-md bg-stone-900 shadow-sm p-4 space-y-4">
       <h3 className="text-xs uppercase text-stone-500">Map settings</h3>
 
       {saveMutation.isError && <ErrorBanner message={errorMessage(saveMutation.error)} />}
 
       <div className="flex flex-wrap gap-4">
-        <label className="flex flex-col gap-1 text-xs text-stone-400">
-          Columns
-          <input
+        <Field label="Columns" htmlFor="mapCols" className="w-24">
+          <Input
+            id="mapCols"
             type="number"
             min={GRID_MIN}
             max={GRID_MAX}
             value={gridColumns}
             onChange={(e) => setGridColumns(clamp(Number(e.target.value), GRID_MIN, GRID_MAX))}
-            className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 w-20"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-stone-400">
-          Rows
-          <input
+        </Field>
+        <Field label="Rows" htmlFor="mapRows" className="w-24">
+          <Input
+            id="mapRows"
             type="number"
             min={GRID_MIN}
             max={GRID_MAX}
             value={gridRows}
             onChange={(e) => setGridRows(clamp(Number(e.target.value), GRID_MIN, GRID_MAX))}
-            className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 w-20"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-stone-400">
-          Cell size (display px)
-          <input
+        </Field>
+        <Field label="Cell size (display px)" htmlFor="mapCellSize" className="w-28">
+          <Input
+            id="mapCellSize"
             type="number"
             min={CELL_SIZE_MIN}
             max={CELL_SIZE_MAX}
             value={cellSizePx}
             onChange={(e) => setCellSizePx(clamp(Number(e.target.value), CELL_SIZE_MIN, CELL_SIZE_MAX))}
-            className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 w-24"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-stone-400">
-          Feet per cell (movement math — separate from display size)
-          <input
+        </Field>
+        <Field label="Feet per cell (movement math — separate from display size)" htmlFor="mapFeetPerCell" className="w-28">
+          <Input
+            id="mapFeetPerCell"
             type="number"
             min={1}
             max={50}
             value={feetPerCell}
             onChange={(e) => setFeetPerCell(clamp(Number(e.target.value), 1, 50))}
-            className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 w-24"
           />
-        </label>
+        </Field>
       </div>
 
       <div>
@@ -645,16 +763,11 @@ function MapSetupPanel({
       </div>
 
       <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
-          className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
-        >
+        <Button variant="primary" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
           {saveMutation.isPending ? 'Saving…' : 'Save map settings'}
-        </button>
+        </Button>
         {map && (
-          <button type="button" onClick={onDone} className="text-sm text-stone-400 hover:text-stone-200 px-3 py-1.5">
+          <button type="button" onClick={onDone} className="min-h-11 text-sm text-stone-400 hover:text-stone-200 px-3">
             Cancel
           </button>
         )}

@@ -83,11 +83,32 @@ function TokenHpIndicator({ hp }: { hp: ParticipantHp }) {
   );
 }
 
+// Phase 3 mobile pass: "if token labels/HP/condition icons can't stay
+// legible at phone scale, define a simplified token rendering below a zoom
+// threshold rather than shrinking everything proportionally." Below this
+// on-screen size, a full Portrait + HP bar + condition dots stack becomes
+// illegible noise — swap to a flat colored dot with a 1-2 letter initial.
+const SIMPLIFIED_BELOW_PX = 30;
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+const FACTION_DOT: Record<SnapshotParticipant['faction'], string> = {
+  player: 'bg-sky-600',
+  ally: 'bg-emerald-600',
+  enemy: 'bg-red-700',
+  neutral: 'bg-stone-600',
+};
+
 export function Token({
   participant,
   cellSizePx,
   gridColumns,
   gridRows,
+  zoom = 1,
   isActive,
   isDraggable,
   isSelected,
@@ -98,6 +119,10 @@ export function Token({
   cellSizePx: number;
   gridColumns: number;
   gridRows: number;
+  /** Current map zoom — used only to decide the legibility threshold below
+   * (the parent scales the whole grid via CSS transform, so this doesn't
+   * affect layout math here, just which rendering this token picks). */
+  zoom?: number;
   isActive: boolean;
   /** Gates ALL pointer-event wiring, not just a disabled-looking affordance — a
    * player's token has no handlers attached at all. */
@@ -113,6 +138,7 @@ export function Token({
   const posY = participant.posY ?? 0;
   const footprint = footprintCellsFor(participant.size);
   const spanPx = cellSizePx * footprint;
+  const simplified = spanPx * zoom < SIMPLIFIED_BELOW_PX;
 
   // Local-only during a drag: the network write/broadcast happens once, on
   // pointer-up, from BattleMap — not here.
@@ -159,30 +185,47 @@ export function Token({
       onClick={onSelect}
       title={`${participant.name} (${String.fromCharCode(65 + posX)}${posY + 1})`}
     >
-      {participant.effects.length > 0 && (
-        <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex gap-0.5 z-10">
-          {participant.effects.slice(0, 4).map((e) => (
-            <span
-              key={e.effectId}
-              title={e.name}
-              aria-label={e.name}
-              className="h-2 w-2 rounded-full bg-violet-500 ring-1 ring-stone-950"
-            />
-          ))}
-          {participant.effects.length > 4 && (
-            <span className="text-[8px] leading-none text-violet-300 self-center">+{participant.effects.length - 4}</span>
-          )}
+      {simplified ? (
+        // Below SIMPLIFIED_BELOW_PX on screen, a full portrait + HP bar +
+        // condition dots is illegible noise, not detail — a flat faction-
+        // colored dot with initials reads better at a glance than shrinking
+        // every layer proportionally (docs/design-tokens.md mobile pass).
+        <div
+          className={`flex items-center justify-center rounded-full text-white font-semibold ${FACTION_DOT[participant.faction]} ${
+            isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
+          } ${isSelected ? 'outline outline-2 outline-offset-1 outline-amber-300' : ''}`}
+          style={{ width: spanPx, height: spanPx, fontSize: Math.max(8, spanPx * 0.4) }}
+        >
+          {initials(participant.name)}
         </div>
+      ) : (
+        <>
+          {participant.effects.length > 0 && (
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex gap-0.5 z-10">
+              {participant.effects.slice(0, 4).map((e) => (
+                <span
+                  key={e.effectId}
+                  title={e.name}
+                  aria-label={e.name}
+                  className="h-2 w-2 rounded-full bg-violet-500 ring-1 ring-stone-950"
+                />
+              ))}
+              {participant.effects.length > 4 && (
+                <span className="text-[8px] leading-none text-violet-300 self-center">+{participant.effects.length - 4}</span>
+              )}
+            </div>
+          )}
+          <div
+            className={`relative rounded-full border-2 ${FACTION_BORDER[participant.faction]} ${
+              isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
+            } ${isSelected ? 'outline outline-2 outline-offset-2 outline-amber-300' : ''}`}
+            style={{ width: portraitPx, height: portraitPx }}
+          >
+            <Portrait fileUrl={null} alt={participant.name} shape="circle" size={size} placeholderLabel={participant.name} />
+            <TokenHpIndicator hp={participant.hp} />
+          </div>
+        </>
       )}
-      <div
-        className={`relative rounded-full border-2 ${FACTION_BORDER[participant.faction]} ${
-          isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
-        } ${isSelected ? 'outline outline-2 outline-offset-2 outline-amber-300' : ''}`}
-        style={{ width: portraitPx, height: portraitPx }}
-      >
-        <Portrait fileUrl={null} alt={participant.name} shape="circle" size={size} placeholderLabel={participant.name} />
-        <TokenHpIndicator hp={participant.hp} />
-      </div>
     </div>
   );
 }
