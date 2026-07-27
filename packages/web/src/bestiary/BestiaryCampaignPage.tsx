@@ -71,7 +71,7 @@ export function BestiaryCampaignPage() {
         {campaignQuery.data?.myRole === 'dm' && (
           <Link
             to={`/campaigns/${campaignId}/monsters/new`}
-            className="rounded-md bg-amber-600 hover:bg-amber-500 text-stone-950 font-semibold px-3 py-1.5 text-xs"
+            className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
           >
             + New homebrew creature
           </Link>

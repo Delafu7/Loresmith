@@ -209,7 +209,7 @@ export function InventoryPanel({
                   onClick={() => armorClassModeMutation.mutate(m)}
                   className={`px-2 py-1 capitalize transition-colors ${
                     armorClassMode === m
-                      ? 'bg-amber-600 text-stone-950 font-semibold'
+                      ? 'bg-amber-950 text-amber-400 font-semibold'
                       : 'bg-stone-900 text-stone-400 hover:bg-stone-800'
                   }`}
                 >
@@ -512,7 +512,7 @@ function AddItemForm({
           type="button"
           disabled={!itemId || pending}
           onClick={submit}
-          className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-stone-950 font-semibold px-3 py-1.5 text-sm"
+          className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
         >
           Add
         </button>

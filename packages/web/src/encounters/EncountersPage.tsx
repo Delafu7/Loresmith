@@ -79,7 +79,7 @@ export function EncountersPage() {
               <button
                 type="button"
                 onClick={() => setShowCreate((v) => !v)}
-                className="text-xs rounded-md bg-amber-600 hover:bg-amber-500 text-stone-950 font-semibold px-2 py-1"
+                className="text-xs rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-2 py-1"
               >
                 {showCreate ? 'Cancel' : '+ New'}
               </button>
@@ -99,7 +99,7 @@ export function EncountersPage() {
               <button
                 type="submit"
                 disabled={createMutation.isPending}
-                className="w-full rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-stone-950 font-semibold px-3 py-1.5 text-sm"
+                className="w-full rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
               >
                 Create
               </button>
@@ -117,7 +117,7 @@ export function EncountersPage() {
                   type="button"
                   onClick={() => openEncounter(enc.id)}
                   className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors ${
-                    enc.id === activeTabId ? 'bg-amber-600 text-stone-950 font-medium' : 'bg-stone-900 text-stone-300 hover:bg-stone-800'
+                    enc.id === activeTabId ? 'bg-amber-950 text-amber-400 font-medium' : 'bg-stone-900 text-stone-300 hover:bg-stone-800'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">

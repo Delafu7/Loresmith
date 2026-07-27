@@ -679,7 +679,7 @@ export function CreatureEditorPage() {
           type="button"
           disabled={saveMutation.isPending}
           onClick={submit}
-          className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-stone-950 font-semibold px-4 py-2 text-sm"
+          className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
         >
           {saveMutation.isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Create creature'}
         </button>

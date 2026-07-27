@@ -36,7 +36,7 @@ function BestiaryTab({ to, label }: { to: string; label: string }) {
       to={to}
       className={({ isActive }) =>
         `rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-          isActive ? 'bg-amber-600 text-stone-950' : 'text-stone-300 hover:bg-stone-800'
+          isActive ? 'bg-amber-950 text-amber-400' : 'text-stone-300 hover:bg-stone-800'
         }`
       }
     >

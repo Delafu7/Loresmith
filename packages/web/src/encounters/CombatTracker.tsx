@@ -601,7 +601,7 @@ export function ActionButton({
   variant?: 'primary' | 'secondary' | 'danger';
 }) {
   const styles = {
-    primary: 'bg-amber-600 hover:bg-amber-500 text-stone-950',
+    primary: 'border border-amber-500 text-amber-500 hover:bg-amber-500/10',
     secondary: 'bg-stone-800 hover:bg-stone-700 text-stone-100 border border-stone-700',
     danger: 'bg-red-700 hover:bg-red-600 text-white',
   }[variant];
@@ -693,7 +693,7 @@ export function AddParticipantForm({
         type="button"
         disabled={!selected || pending}
         onClick={handleAdd}
-        className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-stone-950 font-semibold px-3 py-1.5 text-sm"
+        className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
       >
         Add
       </button>

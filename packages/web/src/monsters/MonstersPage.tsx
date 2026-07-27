@@ -114,7 +114,7 @@ export function MonstersPage() {
             <button
               type="button"
               onClick={() => navigate(`/campaigns/${campaignId}/monsters/new`)}
-              className="rounded-md bg-amber-600 hover:bg-amber-500 text-stone-950 font-semibold px-3 py-1.5 text-xs"
+              className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
             >
               + New homebrew creature
             </button>
@@ -207,7 +207,7 @@ export function MonstersPage() {
                             disabled={spawnMutation.isPending || alreadySpawned}
                             title={alreadySpawned ? 'Unique creature already has an active instance' : undefined}
                             onClick={() => spawnMutation.mutate(m)}
-                            className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-stone-950 font-semibold px-3 py-1 text-xs"
+                            className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1 text-xs"
                           >
                             {alreadySpawned ? 'Already spawned' : 'Spawn instance'}
                           </button>

@@ -124,7 +124,7 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
                 onClick={() => setKeep(opt.value)}
                 className={`px-1.5 py-1.5 transition-colors ${
                   keep === opt.value
-                    ? 'bg-amber-600 text-stone-950 font-semibold'
+                    ? 'bg-amber-950 text-amber-400 font-semibold'
                     : 'bg-stone-900 text-stone-400 hover:bg-stone-800'
                 }`}
               >
@@ -137,7 +137,7 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
           type="button"
           disabled={!parsed || rollMutation.isPending}
           onClick={() => rollMutation.mutate()}
-          className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-stone-950 font-semibold px-3 py-1.5 text-xs"
+          className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
         >
           {rollMutation.isPending ? 'Rolling…' : 'Roll'}
         </button>

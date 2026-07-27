@@ -183,7 +183,7 @@ export function ClassSummaryPanel({
           type="button"
           disabled={saving}
           onClick={handleSave}
-          className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-stone-950 font-semibold px-3 py-1.5 text-sm"
+          className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
         >
           Save
         </button>

@@ -125,7 +125,7 @@ export function Combobox({
                 option.disabled
                   ? 'text-stone-600 cursor-not-allowed'
                   : i === highlightIndex
-                    ? 'bg-amber-600 text-stone-950'
+                    ? 'bg-amber-950 text-amber-400'
                     : 'text-stone-100 hover:bg-stone-700'
               }`}
             >

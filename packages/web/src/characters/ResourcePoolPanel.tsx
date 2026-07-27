@@ -69,7 +69,7 @@ export function ResourcePoolPanel({
               type="button"
               disabled={restMutation.isPending}
               onClick={() => restMutation.mutate('long')}
-              className="text-xs rounded-md bg-amber-600 hover:bg-amber-500 text-stone-950 font-semibold px-2 py-1 disabled:opacity-60"
+              className="text-xs rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-2 py-1 disabled:opacity-60"
             >
               Long rest
             </button>
