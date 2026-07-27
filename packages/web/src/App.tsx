@@ -25,6 +25,7 @@ import { CreatureSheetPage } from './bestiary/CreatureSheetPage';
 import { MapsIndexPage } from './maps/MapsIndexPage';
 import { FullscreenMapPage } from './maps/FullscreenMapPage';
 import { NotesIndexPage } from './notes/NotesIndexPage';
+import { StyleguidePage } from './styleguide/StyleguidePage';
 
 function App() {
   return (
@@ -37,6 +38,9 @@ function App() {
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              {/* Design-system reference (not app data) — deliberately not behind
+                  RequireAuth. */}
+              <Route path="/styleguide" element={<StyleguidePage />} />
 
               <Route
                 path="/home"
