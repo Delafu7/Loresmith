@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -5,6 +6,8 @@ import type { DashboardResponse } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { ThemePicker } from '../components/ThemePicker';
+import { Card, CardKicker } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
 
 function relativeTime(iso: string): string {
   const diffSec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -34,136 +37,143 @@ export function DashboardPage() {
 
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Home</h1>
-        <div className="flex items-center gap-4 text-sm text-stone-400">
-          <Link to="/campaigns" className="hover:text-stone-200">
-            All campaigns
-          </Link>
-          <Link to="/bestiary" className="hover:text-stone-200">
-            Bestiary
-          </Link>
-          <Link to="/maps" className="hover:text-stone-200">
-            Maps
-          </Link>
-          <Link to="/notes" className="hover:text-stone-200">
-            Notes
-          </Link>
-          <ThemePicker />
-          <span>{user?.displayName}</span>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            className="rounded-md border border-stone-700 px-3 py-1.5 hover:bg-stone-800"
-          >
-            Log out
-          </button>
+      <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="font-display text-xl font-medium">Home</h1>
+          <div className="flex items-center gap-3">
+            <ThemePicker className="max-sm:hidden" />
+            <span className="hidden text-sm text-stone-400 sm:inline">{user?.displayName}</span>
+            <Button variant="secondary" size="sm" onClick={() => void logout()}>
+              Log out
+            </Button>
+          </div>
         </div>
+        <nav className="mt-3 flex flex-wrap gap-1 text-sm" aria-label="Sections">
+          <HubNavLink to="/campaigns">All campaigns</HubNavLink>
+          <HubNavLink to="/bestiary">Bestiary</HubNavLink>
+          <HubNavLink to="/maps">Maps</HubNavLink>
+          <HubNavLink to="/notes">Notes</HubNavLink>
+        </nav>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <main className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:py-8">
         {dashboardQuery.isLoading && <Loading />}
         {dashboardQuery.isError && <ErrorBanner message={errorMessage(dashboardQuery.error)} />}
 
         {dashboardQuery.data && (
-          <div className="grid sm:grid-cols-2 gap-4">
-            <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
-              <h3 className="text-xs uppercase text-stone-500">Your characters</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <HubSection kicker="Your characters">
               {dashboardQuery.data.characters.length === 0 && (
                 <EmptyState message="You don't own any characters yet." />
               )}
               <ul className="space-y-2">
                 {dashboardQuery.data.characters.map((c) => (
                   <li key={c.id}>
-                    <Link
-                      to={`/campaigns/${c.campaign_id}/characters/${c.id}`}
-                      className="block rounded-md border border-stone-800 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-3 py-2"
-                    >
+                    <HubRow to={`/campaigns/${c.campaign_id}/characters/${c.id}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-stone-100 truncate">{c.name}</span>
+                        <span className="truncate font-medium text-stone-100">{c.name}</span>
                         {!c.is_pc && (
-                          <span className="text-[10px] uppercase text-stone-500 border border-stone-700 rounded px-1 flex-shrink-0">
+                          <span className="flex-shrink-0 rounded border border-stone-700 px-1 text-[10px] uppercase text-stone-500">
                             NPC
                           </span>
                         )}
                       </div>
                       <span className="text-xs text-stone-500">{c.campaign_name}</span>
-                    </Link>
+                    </HubRow>
                   </li>
                 ))}
               </ul>
-            </section>
+            </HubSection>
 
-            <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
-              <h3 className="text-xs uppercase text-stone-500">Your campaigns</h3>
+            <HubSection kicker="Your campaigns">
               {dashboardQuery.data.campaigns.length === 0 && (
                 <EmptyState message="You're not in any campaigns yet." />
               )}
               <ul className="space-y-2">
                 {dashboardQuery.data.campaigns.map((c) => (
                   <li key={c.id}>
-                    <Link
-                      to={`/campaigns/${c.id}/characters`}
-                      className="block rounded-md border border-stone-800 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-3 py-2"
-                    >
+                    <HubRow to={`/campaigns/${c.id}/characters`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-stone-100 truncate">{c.name}</span>
-                        <span className="text-[10px] uppercase tracking-wide text-stone-500 flex-shrink-0">
+                        <span className="truncate font-medium text-stone-100">{c.name}</span>
+                        <span className="flex-shrink-0 text-[10px] uppercase tracking-wide text-stone-500">
                           {c.my_role}
                         </span>
                       </div>
-                    </Link>
+                    </HubRow>
                   </li>
                 ))}
               </ul>
-            </section>
+            </HubSection>
 
-            <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
-              <h3 className="text-xs uppercase text-stone-500">Your notes</h3>
+            <HubSection kicker="Your notes">
               {dashboardQuery.data.myNotes.length === 0 && <EmptyState message="You haven't written any notes yet." />}
               <ul className="space-y-2">
                 {dashboardQuery.data.myNotes.map((n) => (
                   <li key={n.id}>
-                    <Link
-                      to={`/campaigns/${n.campaign_id}/notes`}
-                      className="block rounded-md border border-stone-800 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-3 py-2"
-                    >
+                    <HubRow to={`/campaigns/${n.campaign_id}/notes`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-stone-100 truncate">{n.title}</span>
-                        <span className="text-xs text-stone-500 flex-shrink-0">{relativeTime(n.created_at)}</span>
+                        <span className="truncate font-medium text-stone-100">{n.title}</span>
+                        <span className="flex-shrink-0 text-xs text-stone-500">{relativeTime(n.created_at)}</span>
                       </div>
                       <span className="text-xs text-stone-500">{n.campaign_name}</span>
-                    </Link>
+                    </HubRow>
                   </li>
                 ))}
               </ul>
-            </section>
+            </HubSection>
 
-            <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
-              <h3 className="text-xs uppercase text-stone-500">Campaign notes</h3>
+            <HubSection kicker="Campaign notes">
               {dashboardQuery.data.campaignNotes.length === 0 && (
                 <EmptyState message="No notes in your campaigns yet." />
               )}
               <ul className="space-y-2">
                 {dashboardQuery.data.campaignNotes.map((n) => (
                   <li key={n.id}>
-                    <Link
-                      to={`/campaigns/${n.campaign_id}/notes`}
-                      className="block rounded-md border border-stone-800 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-3 py-2"
-                    >
+                    <HubRow to={`/campaigns/${n.campaign_id}/notes`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-stone-100 truncate">{n.title}</span>
-                        <span className="text-xs text-stone-500 flex-shrink-0">{relativeTime(n.created_at)}</span>
+                        <span className="truncate font-medium text-stone-100">{n.title}</span>
+                        <span className="flex-shrink-0 text-xs text-stone-500">{relativeTime(n.created_at)}</span>
                       </div>
                       <span className="text-xs text-stone-500">{n.campaign_name}</span>
-                    </Link>
+                    </HubRow>
                   </li>
                 ))}
               </ul>
-            </section>
+            </HubSection>
           </div>
         )}
       </main>
     </div>
+  );
+}
+
+function HubNavLink({ to, children }: { to: string; children: string }) {
+  return (
+    <Link
+      to={to}
+      className="flex min-h-11 items-center rounded-md px-3 text-stone-400 transition-colors hover:bg-stone-800 hover:text-stone-100"
+    >
+      {children}
+    </Link>
+  );
+}
+
+function HubSection({ kicker, children }: { kicker: string; children: ReactNode }) {
+  return (
+    <Card>
+      <CardKicker>{kicker}</CardKicker>
+      {children}
+    </Card>
+  );
+}
+
+function HubRow({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="block rounded-md px-3 py-2.5 transition-colors hover:bg-stone-800/70"
+    >
+      {children}
+    </Link>
   );
 }
