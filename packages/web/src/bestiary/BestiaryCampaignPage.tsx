@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import type { Campaign, MonsterCatalogEntry } from '../lib/types';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Portrait } from '../components/Portrait';
+import { ButtonLink } from '../components/ui/Button';
 import { formatCrLabel } from './formatCr';
 
 // No :id in the URL — a picker over the user's own campaigns, since
@@ -28,7 +29,7 @@ export function BestiaryCampaignPickerPage() {
           <li key={c.id}>
             <Link
               to={`/bestiary/campaign/${c.id}`}
-              className="block rounded-lg border border-stone-800 bg-stone-900 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
+              className="block rounded-md bg-stone-900 shadow-sm hover:bg-stone-800/70 transition-colors px-4 py-3"
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium text-stone-100">{c.name}</span>
@@ -67,14 +68,11 @@ export function BestiaryCampaignPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-lg font-semibold">{campaignQuery.data?.campaign.name}</h2>
+        <h2 className="font-display text-lg font-medium">{campaignQuery.data?.campaign.name}</h2>
         {campaignQuery.data?.myRole === 'dm' && (
-          <Link
-            to={`/campaigns/${campaignId}/monsters/new`}
-            className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
-          >
+          <ButtonLink to={`/campaigns/${campaignId}/monsters/new`} variant="primary" size="sm">
             + New homebrew creature
-          </Link>
+          </ButtonLink>
         )}
       </div>
 
@@ -84,12 +82,12 @@ export function BestiaryCampaignPage() {
         <EmptyState message="No homebrew creatures in this campaign yet." />
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
         {monstersQuery.data?.monsters.map((m) => (
           <Link
             key={m.id}
             to={`/creature/${m.id}`}
-            className="rounded-lg border border-stone-800 bg-stone-900 hover:border-amber-700 transition-colors overflow-hidden group"
+            className="rounded-md bg-stone-900 shadow-sm hover:bg-stone-800/70 transition-colors overflow-hidden group"
           >
             <div className="aspect-square bg-stone-950 flex items-center justify-center">
               <Portrait fileUrl={m.image_url} alt={m.name} size="xl" placeholderLabel={m.name} />

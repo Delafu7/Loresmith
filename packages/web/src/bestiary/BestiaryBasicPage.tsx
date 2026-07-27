@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import type { MonsterCatalogEntry } from '../lib/types';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Portrait } from '../components/Portrait';
+import { Input, Select } from '../components/ui/Field';
 import { formatCrLabel } from './formatCr';
 
 export function BestiaryBasicPage() {
@@ -34,39 +35,35 @@ export function BestiaryBasicPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <input
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <Input
           type="search"
           placeholder="Search creatures…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="rounded-md bg-stone-900 border border-stone-700 px-3 py-1.5 text-sm text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500 min-w-[12rem]"
+          className="col-span-2 sm:w-48"
         />
-        <select
-          value={creatureType}
-          onChange={(e) => setCreatureType(e.target.value)}
-          className="rounded-md bg-stone-900 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
-        >
+        <Select value={creatureType} onChange={(e) => setCreatureType(e.target.value)} className="sm:w-40">
           <option value="">All types</option>
           {creatureTypes.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
           ))}
-        </select>
-        <input
+        </Select>
+        <Input
           type="number"
           placeholder="CR min"
           value={crMin}
           onChange={(e) => setCrMin(e.target.value)}
-          className="rounded-md bg-stone-900 border border-stone-700 px-2 py-1.5 text-sm text-stone-100 w-24"
+          className="sm:w-24"
         />
-        <input
+        <Input
           type="number"
           placeholder="CR max"
           value={crMax}
           onChange={(e) => setCrMax(e.target.value)}
-          className="rounded-md bg-stone-900 border border-stone-700 px-2 py-1.5 text-sm text-stone-100 w-24"
+          className="sm:w-24"
         />
       </div>
 
@@ -74,12 +71,12 @@ export function BestiaryBasicPage() {
       {monstersQuery.isError && <ErrorBanner message={errorMessage(monstersQuery.error)} />}
       {filtered.length === 0 && !monstersQuery.isLoading && <EmptyState message="No creatures match this filter." />}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
         {filtered.map((m) => (
           <Link
             key={m.id}
             to={`/creature/${m.id}`}
-            className="rounded-lg border border-stone-800 bg-stone-900 hover:border-amber-700 transition-colors overflow-hidden group"
+            className="rounded-md bg-stone-900 shadow-sm hover:bg-stone-800/70 transition-colors overflow-hidden group"
           >
             <div className="aspect-square bg-stone-950 flex items-center justify-center">
               <Portrait fileUrl={m.image_url} alt={m.name} size="xl" placeholderLabel={m.name} />

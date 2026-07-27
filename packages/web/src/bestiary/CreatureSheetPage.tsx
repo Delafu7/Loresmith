@@ -24,12 +24,12 @@ export function CreatureSheetPage() {
 
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 px-6 py-4">
+      <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
         <Link to="/bestiary/basic" className="text-xs text-stone-500 hover:text-stone-300">
           ← Bestiary
         </Link>
       </header>
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-5">
+      <main className="max-w-3xl mx-auto px-4 py-6 space-y-5 sm:py-8">
         {monsterQuery.isLoading && <Loading />}
         {monsterQuery.isError && <ErrorBanner message={errorMessage(monsterQuery.error)} />}
         {monsterQuery.data && (
@@ -42,7 +42,7 @@ export function CreatureSheetPage() {
                 placeholderLabel={monsterQuery.data.monster.name}
               />
               <div>
-                <h1 className="text-2xl font-semibold">{monsterQuery.data.monster.name}</h1>
+                <h1 className="font-display text-2xl font-medium">{monsterQuery.data.monster.name}</h1>
                 <p className="text-sm text-stone-500">
                   {monsterQuery.data.monster.size} {monsterQuery.data.monster.creature_type}
                   {monsterQuery.data.monster.alignment ? `, ${monsterQuery.data.monster.alignment}` : ''}

@@ -11,19 +11,19 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 export function BestiaryLayout() {
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 px-6 py-4 flex items-center justify-between flex-wrap gap-3">
+      <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] flex items-center justify-between flex-wrap gap-3 sm:px-6">
         <div className="flex items-center gap-4">
           <Link to="/home" className="text-xs text-stone-500 hover:text-stone-300">
             ← Home
           </Link>
-          <h1 className="text-xl font-semibold">Bestiary</h1>
+          <h1 className="font-display text-xl font-medium">Bestiary</h1>
         </div>
         <nav className="flex gap-1">
           <BestiaryTab to="/bestiary/basic" label="Basic creatures" />
           <BestiaryTab to="/bestiary/campaign" label="Campaign-specific" />
         </nav>
       </header>
-      <main className="max-w-6xl mx-auto px-4 py-8">
+      <main className="max-w-6xl mx-auto px-4 py-6 sm:py-8">
         <Outlet />
       </main>
     </div>
@@ -35,7 +35,7 @@ function BestiaryTab({ to, label }: { to: string; label: string }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+        `flex min-h-11 items-center rounded-md px-3 text-sm font-medium transition-colors ${
           isActive ? 'bg-amber-950 text-amber-400' : 'text-stone-300 hover:bg-stone-800'
         }`
       }
