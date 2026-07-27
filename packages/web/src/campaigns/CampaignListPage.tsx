@@ -134,7 +134,7 @@ export function CampaignListPage() {
             <li key={c.id}>
               <Link
                 to={`/campaigns/${c.id}/characters`}
-                className="block rounded-lg border border-stone-800 bg-stone-900 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
+                className="block rounded-md bg-stone-900 shadow-sm hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-stone-100">{c.name}</span>

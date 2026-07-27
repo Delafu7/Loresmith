@@ -33,7 +33,7 @@ export function AbilityScoreGrid({
         const score = scores[key];
         const mod = abilityModifier(score);
         return (
-          <div key={key} className="rounded-lg border border-stone-800 bg-stone-900 p-3 text-center">
+          <div key={key} className="rounded-md bg-stone-900 shadow-sm p-3 text-center">
             <div className="text-xs font-semibold tracking-wide text-stone-500">{label}</div>
             {editable ? (
               <input

@@ -128,7 +128,7 @@ export function SpellcastingPanel({
   });
 
   return (
-    <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-4">
+    <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-4">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Spellcasting</h3>
 
       {spellSlotPools.length > 0 && (

@@ -71,7 +71,7 @@ export function BattleModeDmPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-stone-800 bg-stone-900 p-3">
+      <div className="rounded-md bg-stone-900 shadow-sm p-3">
         <p className="text-xs uppercase text-stone-500">Round {live.encounter.currentRound}</p>
         <div className="flex items-center gap-1.5 mt-1">
           <TurnTorch size={18} className="text-amber-500 flex-shrink-0" />

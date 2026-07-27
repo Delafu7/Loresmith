@@ -267,7 +267,7 @@ function CharacterCard({ character, campaignId }: { character: Character; campai
     <li>
       <Link
         to={`/campaigns/${campaignId}/characters/${character.id}`}
-        className="block rounded-lg border border-stone-800 bg-stone-900 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
+        className="block rounded-md bg-stone-900 shadow-sm hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
       >
         <div className="flex items-center justify-between">
           <span className="font-medium text-stone-100">{character.name}</span>

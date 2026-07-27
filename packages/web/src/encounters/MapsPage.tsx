@@ -39,7 +39,7 @@ export function MapsPage() {
           <li key={enc.id}>
             <Link
               to={`/maps/${enc.id}`}
-              className="flex items-center justify-between gap-2 rounded-md border border-stone-800 bg-stone-900 hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
+              className="flex items-center justify-between gap-2 rounded-md bg-stone-900 shadow-sm hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
             >
               <span className="truncate font-medium text-stone-100">{enc.name}</span>
               <StatusBadge status={enc.status} />

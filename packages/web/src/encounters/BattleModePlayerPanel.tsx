@@ -105,7 +105,7 @@ function PlayerPanelBody({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-stone-800 bg-stone-900 p-3">
+      <div className="rounded-md bg-stone-900 shadow-sm p-3">
         <div className="flex items-center gap-1.5">
           {isMyTurn && <TurnTorch size={18} className="text-amber-500 flex-shrink-0" />}
           <span className="font-semibold text-stone-100 truncate">{participant.name}</span>
@@ -122,7 +122,7 @@ function PlayerPanelBody({
         </p>
       </div>
 
-      <div className="rounded-lg border border-stone-800 bg-stone-900 p-3 space-y-2">
+      <div className="rounded-md bg-stone-900 shadow-sm p-3 space-y-2">
         <h3 className="text-xs uppercase text-stone-500">Actions</h3>
         {!isMyTurn && <p className="text-xs text-stone-500 italic">Not your turn — actions are disabled until it is.</p>}
         <div className="flex flex-wrap items-center gap-1.5">
@@ -167,7 +167,7 @@ function PlayerPanelBody({
         {spendMutation.isError && <ErrorBanner message={errorMessage(spendMutation.error)} />}
       </div>
 
-      <div className="rounded-lg border border-stone-800 bg-stone-900 p-3 space-y-2">
+      <div className="rounded-md bg-stone-900 shadow-sm p-3 space-y-2">
         <h3 className="text-xs uppercase text-stone-500">Inventory</h3>
         {itemsQuery.isLoading && <p className="text-xs text-stone-500 italic">Loading…</p>}
         {itemsQuery.isError && <ErrorBanner message={errorMessage(itemsQuery.error)} />}

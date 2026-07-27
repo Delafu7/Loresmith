@@ -67,7 +67,7 @@ export function ClassSummaryPanel({
 
   if (!editing) {
     return (
-      <div className="rounded-lg border border-stone-800 bg-stone-900 p-4">
+      <div className="rounded-md bg-stone-900 shadow-sm p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Class &amp; level</h3>
           {editable && (
@@ -118,7 +118,7 @@ export function ClassSummaryPanel({
   }
 
   return (
-    <div className="rounded-lg border border-stone-800 bg-stone-900 p-4">
+    <div className="rounded-md bg-stone-900 shadow-sm p-4">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">Class &amp; level</h3>
       <div className="space-y-2">
         {draft.map((row, idx) => {

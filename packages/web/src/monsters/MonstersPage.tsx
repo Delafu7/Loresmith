@@ -245,7 +245,7 @@ export function MonstersPage() {
         )}
         <ul className="grid sm:grid-cols-2 gap-3">
           {instancesQuery.data?.monsterInstances.map((mi) => (
-            <li key={mi.id} className="rounded-lg border border-stone-800 bg-stone-900 p-4">
+            <li key={mi.id} className="rounded-md bg-stone-900 shadow-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-medium text-stone-100">{mi.custom_name || mi.monster_name}</span>
                 <div className="flex items-center gap-2">

@@ -51,7 +51,7 @@ export function SkillsPanel({
   const sorted = [...skillsCatalog].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="rounded-lg border border-stone-800 bg-stone-900 p-4">
+    <div className="rounded-md bg-stone-900 shadow-sm p-4">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Skills</h3>
       <ul className="space-y-1">
         {sorted.map((skill) => {

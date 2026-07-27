@@ -399,7 +399,7 @@ export function CreatureEditorPage() {
       </div>
 
       {/* Identity */}
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
         <h3 className="text-xs uppercase text-stone-500">Identity</h3>
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label="Name" required>
@@ -461,7 +461,7 @@ export function CreatureEditorPage() {
       </section>
 
       {/* Defense */}
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
         <h3 className="text-xs uppercase text-stone-500">Defense</h3>
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label="Armor class" required>
@@ -509,7 +509,7 @@ export function CreatureEditorPage() {
       </section>
 
       {/* Ability scores */}
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
         <h3 className="text-xs uppercase text-stone-500">Ability scores</h3>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map((key) => (
@@ -533,7 +533,7 @@ export function CreatureEditorPage() {
       </section>
 
       {/* Damage & senses */}
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
         <h3 className="text-xs uppercase text-stone-500">Damage &amp; senses</h3>
         <div className="grid sm:grid-cols-3 gap-3">
           <StringListEditor
@@ -574,7 +574,7 @@ export function CreatureEditorPage() {
       </section>
 
       {/* Challenge */}
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
         <h3 className="text-xs uppercase text-stone-500">Challenge</h3>
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label="Challenge rating">
@@ -602,7 +602,7 @@ export function CreatureEditorPage() {
       </section>
 
       {/* Art */}
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
         <h3 className="text-xs uppercase text-stone-500">Art</h3>
         <div className="flex items-center gap-3">
           <Portrait
@@ -856,7 +856,7 @@ function StatEntryListEditor({
   }
 
   return (
-    <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+    <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-xs uppercase text-stone-500">
           {label}

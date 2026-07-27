@@ -79,7 +79,7 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
   });
 
   return (
-    <div className={`rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3 ${className}`}>
+    <div className={`rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3 ${className}`}>
       <h3 className="text-xs uppercase text-stone-500">Roll dice</h3>
 
       <div className="flex flex-wrap gap-1.5">

@@ -12,6 +12,7 @@ import type { Character, Encounter, MonsterCatalogEntry, MonsterInstance } from 
 import { BattleMap } from './BattleMap';
 import { BattleModeDmPanel, type MutationLike } from './BattleModeDmPanel';
 import { BattleModePlayerPanel } from './BattleModePlayerPanel';
+import { InitiativeStrip } from './InitiativeStrip';
 import type { EncounterLiveState } from './useEncounterLive';
 
 export interface BattleModeProps {
@@ -56,47 +57,52 @@ export function BattleMode({
   availableMonsterInstances,
 }: BattleModeProps) {
   return (
-    <div className="flex flex-col lg:flex-row gap-4">
-      <div className="flex-1 min-w-0">
-        <BattleMap
-          encounterId={encounter.id}
-          campaignId={campaignId}
-          map={live.map}
-          participants={live.participants}
-          activeParticipantId={live.activeParticipantId}
-          isDm={isDm}
-          showRoster={false}
-        />
+    <div className="space-y-3">
+      <div className="sticky top-0 z-30 rounded-md bg-stone-950/95 backdrop-blur-sm py-1.5 -mx-1 px-1">
+        <InitiativeStrip participants={live.participants} activeParticipantId={live.activeParticipantId} />
       </div>
-      <div className="lg:w-80 flex-shrink-0">
-        {isDm ? (
-          <BattleModeDmPanel
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-w-0">
+          <BattleMap
             encounterId={encounter.id}
-            live={live}
-            characters={characters}
-            monsterInstances={monsterInstances}
-            monsters={monsters}
-            expandedParticipantId={expandedParticipantId}
-            setExpandedParticipantId={setExpandedParticipantId}
-            showDiceRoller={showDiceRoller}
-            setShowDiceRoller={setShowDiceRoller}
-            endMutation={endMutation}
-            rollInitiativeMutation={rollInitiativeMutation}
-            advanceTurnMutation={advanceTurnMutation}
-            addParticipantMutation={addParticipantMutation}
-            availableCharacters={availableCharacters}
-            availableMonsterInstances={availableMonsterInstances}
+            campaignId={campaignId}
+            map={live.map}
+            participants={live.participants}
+            activeParticipantId={live.activeParticipantId}
+            isDm={isDm}
+            showRoster={false}
           />
-        ) : (
-          <BattleModePlayerPanel
-            encounterId={encounter.id}
-            live={live}
-            myCharacterIds={myCharacterIds}
-            characters={characters}
-            showDiceRoller={showDiceRoller}
-            setShowDiceRoller={setShowDiceRoller}
-          />
-        )}
+        </div>
+        <div className="lg:w-80 flex-shrink-0">
+          {isDm ? (
+            <BattleModeDmPanel
+              encounterId={encounter.id}
+              live={live}
+              characters={characters}
+              monsterInstances={monsterInstances}
+              monsters={monsters}
+              expandedParticipantId={expandedParticipantId}
+              setExpandedParticipantId={setExpandedParticipantId}
+              showDiceRoller={showDiceRoller}
+              setShowDiceRoller={setShowDiceRoller}
+              endMutation={endMutation}
+              rollInitiativeMutation={rollInitiativeMutation}
+              advanceTurnMutation={advanceTurnMutation}
+              addParticipantMutation={addParticipantMutation}
+              availableCharacters={availableCharacters}
+              availableMonsterInstances={availableMonsterInstances}
+            />
+          ) : (
+            <BattleModePlayerPanel
+              encounterId={encounter.id}
+              live={live}
+              myCharacterIds={myCharacterIds}
+              characters={characters}
+              showDiceRoller={showDiceRoller}
+              setShowDiceRoller={setShowDiceRoller}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

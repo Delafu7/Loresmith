@@ -61,7 +61,7 @@ export function CharacterEffectsPanel({
   const effects = effectsQuery.data?.effects ?? [];
 
   return (
-    <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+    <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Active effects</h3>
       <div className="flex flex-wrap items-center gap-1.5">
         {effects.length === 0 && <p className="text-stone-500 text-sm italic">No active effects.</p>}

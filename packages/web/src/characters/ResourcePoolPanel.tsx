@@ -52,7 +52,7 @@ export function ResourcePoolPanel({
   if (resourcesQuery.isLoading) return null;
 
   return (
-    <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-3">
+    <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Resources</h3>
         {isDm && (

@@ -155,7 +155,7 @@ function relativeTime(iso: string): string {
 function DiceRollRow({ roll }: { roll: DiceRoll }) {
   const keptIndex = keptDieIndex(roll.d20_rolls, roll.keep);
   return (
-    <li className="rounded-lg border border-stone-800 bg-stone-900 p-3 flex items-center justify-between gap-3 flex-wrap">
+    <li className="rounded-md bg-stone-900 shadow-sm p-3 flex items-center justify-between gap-3 flex-wrap">
       <div className="flex items-center gap-2 min-w-0">
         <div className="flex items-center gap-1 flex-shrink-0">
           {roll.d20_rolls.map((value, i) => (

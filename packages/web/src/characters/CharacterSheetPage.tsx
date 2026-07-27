@@ -56,7 +56,7 @@ const NPC_REVEALABLE_FIELDS: Array<{ key: string; label: string }> = [
 function RevealPanel({ characterId }: { characterId: number }) {
   const { fieldState, setRevealed, isSaving } = useReveals('character', characterId);
   return (
-    <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5">
+    <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Reveal to players</h3>
       <ul className="flex flex-wrap gap-x-5 gap-y-2">
         {NPC_REVEALABLE_FIELDS.map(({ key, label }) => {
@@ -261,7 +261,7 @@ export function CharacterSheetPage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto space-y-6">
-      <header className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5">
+      <header className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex items-start gap-4">
             <div className="flex flex-col items-center gap-2">
@@ -312,7 +312,7 @@ export function CharacterSheetPage() {
       {role === 'dm' && !character.is_pc && <RevealPanel characterId={characterId} />}
 
       {/* HP panel */}
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Hit points</h3>
         {character.hp_band ? (
           <HPBandPill band={character.hp_band} />
@@ -329,7 +329,7 @@ export function CharacterSheetPage() {
       </section>
 
       {/* Core stats */}
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Ability scores</h3>
           {editable && !editingCore && (
@@ -488,7 +488,7 @@ export function CharacterSheetPage() {
 
       <CharacterEffectsPanel characterId={characterId} campaignId={campaignId} isDm={role === 'dm'} />
 
-      <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5">
+      <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">Notes</h3>
         {editingCore ? (
           <textarea

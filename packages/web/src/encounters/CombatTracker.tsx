@@ -310,7 +310,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
 
   return (
     <div className="space-y-4">
-      <header className="rounded-lg border border-stone-800 bg-stone-900 p-4 flex flex-wrap items-center justify-between gap-3">
+      <header className="rounded-md bg-stone-900 shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-stone-100">{encounter.name}</h2>
           {status === 'active' ? (
@@ -664,7 +664,7 @@ export function AddParticipantForm({
   }
 
   return (
-    <div className="rounded-lg border border-stone-800 bg-stone-900 p-4 flex flex-wrap items-end gap-2">
+    <div className="rounded-md bg-stone-900 shadow-sm p-4 flex flex-wrap items-end gap-2">
       <div>
         <label className="block text-xs text-stone-500 mb-1">Add participant</label>
         <select

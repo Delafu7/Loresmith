@@ -60,7 +60,7 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
   });
 
   return (
-    <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5">
+    <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Attacks</h3>
         {editable && (

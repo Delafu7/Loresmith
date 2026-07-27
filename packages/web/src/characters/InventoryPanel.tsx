@@ -180,7 +180,7 @@ export function InventoryPanel({
   const acBreakdown = armorClassBreakdown(dex, equippedArmorCatalog, hasEquippedShield, armorClass);
 
   return (
-    <section className="rounded-lg border border-stone-800 bg-stone-900 p-4 sm:p-5 space-y-4">
+    <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Inventory</h3>
         {editable && !adding && (

@@ -44,7 +44,7 @@ export function SavingThrowsPanel({
   });
 
   return (
-    <div className="rounded-lg border border-stone-800 bg-stone-900 p-4">
+    <div className="rounded-md bg-stone-900 shadow-sm p-4">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Saving throws</h3>
       <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {ordered.map((a) => {
