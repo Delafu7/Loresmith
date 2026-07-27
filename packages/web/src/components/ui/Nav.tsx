@@ -13,7 +13,7 @@ import { NavLink, type NavLinkProps } from 'react-router-dom';
 export function Sidebar({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <nav
-      className={`flex flex-col gap-6 border-stone-800 px-4 py-4 max-md:border-b md:min-h-screen md:w-56 md:border-r ${className}`}
+      className={`flex flex-col gap-6 border-stone-800 px-4 py-4 max-md:border-b md:min-h-dvh md:w-56 md:border-r ${className}`}
     >
       {children}
     </nav>

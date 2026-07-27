@@ -10,7 +10,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 
 export function BestiaryLayout() {
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100">
+    <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-6 py-4 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <Link to="/home" className="text-xs text-stone-500 hover:text-stone-300">

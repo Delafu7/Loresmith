@@ -39,10 +39,13 @@ export function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-stone-950 text-stone-100 cursor-pointer">
-      <div className="text-center animate-[fadeIn_0.9s_ease-out]">
-        <h1 className="text-5xl font-semibold tracking-wide text-amber-500">Loresmith</h1>
-        <p className="mt-3 text-sm uppercase tracking-[0.3em] text-stone-500">Forge the campaign</p>
+    <div
+      className="min-h-dvh flex items-center justify-center bg-stone-950 text-stone-100 cursor-pointer px-6"
+      style={{ background: 'radial-gradient(120% 100% at 15% 0%, var(--color-stone-800) 0%, var(--color-stone-950) 55%)' }}
+    >
+      <div className="text-center animate-[fadeIn_0.9s_ease-out] motion-reduce:animate-none">
+        <h1 className="font-display text-4xl sm:text-5xl font-medium tracking-wide text-amber-500">Loresmith</h1>
+        <p className="mt-3 text-xs sm:text-sm uppercase tracking-[0.3em] text-stone-500">Forge the campaign</p>
       </div>
       <span className="sr-only">Press any key to skip</span>
       <style>{`

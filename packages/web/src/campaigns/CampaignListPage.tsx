@@ -42,7 +42,7 @@ export function CampaignListPage() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100">
+    <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold">Campaigns</h1>
         <div className="flex items-center gap-4 text-sm text-stone-400">

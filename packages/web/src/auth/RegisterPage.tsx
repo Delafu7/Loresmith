@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { PasswordInput } from '../components/PasswordInput';
+import { Field, Input } from '../components/ui/Field';
+import { Button } from '../components/ui/Button';
 
 export function RegisterPage() {
   const { register, registerError } = useAuth();
@@ -25,17 +27,14 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-stone-950 px-4">
-      <div className="w-full max-w-sm bg-stone-900 border border-stone-800 rounded-xl p-8 shadow-xl">
-        <h1 className="text-2xl font-semibold text-stone-100 mb-1">Create an account</h1>
+    <div className="min-h-dvh flex items-center justify-center bg-stone-950 px-4 py-[max(1rem,env(safe-area-inset-top))]">
+      <div className="w-full max-w-sm bg-stone-900 rounded-lg p-6 sm:p-8 shadow-md">
+        <h1 className="font-display text-2xl font-medium text-stone-100 mb-1">Create an account</h1>
         <p className="text-stone-400 text-sm mb-6">Join or start a campaign.</p>
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-          <div>
-            <label htmlFor="displayName" className="block text-sm font-medium text-stone-300 mb-1">
-              Display name
-            </label>
-            <input
+          <Field label="Display name" htmlFor="displayName">
+            <Input
               id="displayName"
               type="text"
               required
@@ -43,27 +42,19 @@ export function RegisterPage() {
               maxLength={200}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full rounded-md bg-stone-800 border border-stone-700 px-3 py-2 text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
-          </div>
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-stone-300 mb-1">
-              Email
-            </label>
-            <input
+          </Field>
+          <Field label="Email" htmlFor="email">
+            <Input
               id="email"
               type="email"
               required
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md bg-stone-800 border border-stone-700 px-3 py-2 text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
-          </div>
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-stone-300 mb-1">
-              Password
-            </label>
+          </Field>
+          <Field label="Password" htmlFor="password" hint="At least 8 characters.">
             <PasswordInput
               id="password"
               required
@@ -72,8 +63,7 @@ export function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <p className="text-xs text-stone-500 mt-1">At least 8 characters.</p>
-          </div>
+          </Field>
 
           {registerError && (
             <p role="alert" className="text-sm text-red-400">
@@ -81,13 +71,9 @@ export function RegisterPage() {
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold py-2 transition-colors"
-          >
+          <Button type="submit" variant="primary" block disabled={submitting}>
             {submitting ? 'Creating account…' : 'Create account'}
-          </button>
+          </Button>
         </form>
 
         <p className="text-stone-400 text-sm mt-6 text-center">

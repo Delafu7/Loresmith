@@ -23,7 +23,7 @@ export function CreatureSheetPage() {
   });
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100">
+    <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-6 py-4">
         <Link to="/bestiary/basic" className="text-xs text-stone-500 hover:text-stone-300">
           ← Bestiary

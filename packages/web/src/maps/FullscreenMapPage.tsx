@@ -34,7 +34,7 @@ export function FullscreenMapPage() {
   const encounter = encounterQuery.data?.encounter;
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col">
+    <div className="min-h-dvh bg-stone-950 text-stone-100 flex flex-col">
       <header className="border-b border-stone-800 px-4 py-2 flex items-center gap-4 flex-shrink-0">
         {encounter ? (
           <Link

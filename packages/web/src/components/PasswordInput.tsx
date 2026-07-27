@@ -17,7 +17,7 @@ export function PasswordInput({
       <input
         id={inputId}
         type={visible ? 'text' : 'password'}
-        className={`w-full rounded-md bg-stone-800 border border-stone-700 px-3 py-2 pr-10 text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500 ${className}`}
+        className={`w-full min-h-11 rounded-md bg-stone-800 border border-stone-700 hover:border-stone-500 px-3 py-2 pr-11 text-base sm:text-sm text-stone-100 transition-colors focus:outline-none focus-visible:border-amber-500 ${className}`}
         {...rest}
       />
       <button

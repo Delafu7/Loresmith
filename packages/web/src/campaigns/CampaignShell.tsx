@@ -44,8 +44,8 @@ export function CampaignShell() {
 
   return (
     <CampaignShellContext.Provider value={{ campaignId, campaign: campaignQuery.data.campaign, role }}>
-      <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col md:flex-row">
-        <nav className="md:w-56 border-b md:border-b-0 md:border-r border-stone-800 px-4 py-4 md:min-h-screen">
+      <div className="min-h-dvh bg-stone-950 text-stone-100 flex flex-col md:flex-row">
+        <nav className="md:w-56 border-b md:border-b-0 md:border-r border-stone-800 px-4 py-4 md:min-h-dvh">
           <div className="mb-4">
             <NavLink to="/home" className="text-xs text-stone-500 hover:text-stone-300">
               ← Home
