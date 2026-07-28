@@ -280,6 +280,38 @@ export async function deleteCharacter(pool: Pool, actorId: string, characterId: 
   await pool.query(`DELETE FROM characters WHERE id = $1`, [characterId]);
 }
 
+// Copies every column off the source row (same "read the row, drop id/
+// timestamps, re-insert" approach as catalogHomebrew.ts's
+// duplicateCatalogRow) rather than hand-listing columns, so this doesn't
+// drift out of sync as the table gains fields. Same authorization as
+// update/delete: owner-or-DM. The copy is always a fresh, full-HP, living
+// character regardless of the source's current state.
+export async function duplicateCharacter(pool: Pool, actorId: string, characterId: string) {
+  const source = await fetchCharacterOrThrow(pool, characterId);
+  await authorizeCharacterMutation(pool, actorId, source);
+
+  const omit = new Set(['id', 'created_at', 'updated_at']);
+  const columns: string[] = [];
+  const values: unknown[] = [];
+  for (const [col, val] of Object.entries(source)) {
+    if (omit.has(col) || col.endsWith('_legacy')) continue;
+    columns.push(col);
+    if (col === 'name') values.push(`${String(val)} (Copy)`);
+    else if (col === 'hp_current') values.push(source.hp_max);
+    else if (col === 'hp_temp') values.push(0);
+    else if (col === 'is_alive') values.push(true);
+    else if (col === 'created_by_user_id') values.push(actorId);
+    else values.push(val);
+  }
+
+  const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+  const result = await pool.query(
+    `INSERT INTO characters (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+    values,
+  );
+  return result.rows[0];
+}
+
 // One character can (rarely) be a live combat_participants row in more than
 // one encounter at once (the unique index is per-encounter, not global), so
 // this returns an array — the sockets layer broadcasts HP_CHANGED once per

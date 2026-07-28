@@ -194,6 +194,7 @@ export async function updateHomebrewMonster(
   }
   if (sets.length === 0) return fetchHomebrewMonsterOrThrow(pool, campaignId, monsterId);
 
+  sets.push('updated_at = now()');
   values.push(monsterId, campaignId);
   const result = await pool.query(
     // Re-scoped by owning_campaign_id here too (defense in depth, matching
@@ -235,4 +236,61 @@ export async function deleteHomebrewMonster(pool: Pool, campaignId: string, mons
   } finally {
     client.release();
   }
+}
+
+// Column-name (snake_case) counterpart to JSONB_FIELDS above — needed here
+// because this copies a SELECT * row (already snake_case, and already
+// parsed back into JS objects/arrays by the pg driver) rather than a
+// camelCase input payload, so it has to re-stringify before the INSERT.
+const JSONB_COLUMNS = new Set(['speed', 'saving_throws', 'skills', 'traits', 'actions', 'legendary_actions', 'reactions']);
+
+// Forks ANY monster — official/global, or another campaign's homebrew —
+// into a new homebrew row owned by this campaign. Unlike
+// fetchHomebrewMonsterOrThrow, the source lookup is deliberately unscoped by
+// owning_campaign_id: that's what makes forking an official creature
+// possible at all, matching the "duplicate an official row to fork it, then
+// edit your own copy" flow already established for the 11 generic catalog
+// entities (services/catalogHomebrew.ts's duplicateCatalogRow).
+export async function duplicateHomebrewMonster(pool: Pool, campaignId: string, sourceMonsterId: string) {
+  const sourceRes = await pool.query<MonsterRow>(`SELECT * FROM monsters WHERE id = $1`, [sourceMonsterId]);
+  const source = sourceRes.rows[0];
+  if (!source) throw notFound('Monster');
+
+  // art_asset_id is a campaign_assets FK scoped to the SOURCE campaign — an
+  // official monster's is always null, but a fork of another campaign's
+  // homebrew (unreachable via the normal bestiary list, but not otherwise
+  // blocked here) could carry one. Copying it verbatim would leave the new
+  // row pointing at an asset owned by a different campaign, so it's dropped
+  // unless it actually belongs to the destination campaign — same rule
+  // createHomebrewMonster enforces on create via validateArtAssetBelongsToCampaign.
+  let artAssetId = source.art_asset_id as string | null;
+  if (artAssetId !== null) {
+    const assetRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM campaign_assets WHERE id = $1`, [artAssetId]);
+    if (assetRes.rows[0]?.campaign_id !== campaignId) artAssetId = null;
+  }
+
+  const omit = new Set(['id', 'slug', 'edition_scope', 'is_homebrew', 'owning_campaign_id', 'created_at', 'updated_at', 'art_asset_id']);
+  const columns: string[] = ['art_asset_id'];
+  const values: unknown[] = [artAssetId];
+  for (const [col, val] of Object.entries(source)) {
+    if (omit.has(col) || col.endsWith('_legacy')) continue;
+    columns.push(col);
+    values.push(JSONB_COLUMNS.has(col) && val !== null ? JSON.stringify(val) : val);
+  }
+
+  // Always forks into the OWNING campaign's own edition, same reasoning as
+  // createHomebrewMonster: a copy visible only inside this campaign must
+  // carry this campaign's edition tag, not the source's (which could be an
+  // official monster tagged for either edition, or another campaign running
+  // a different one).
+  const editionScope = await fetchCampaignEditionOrThrow(pool, campaignId);
+  columns.push('slug', 'edition_scope', 'is_homebrew', 'owning_campaign_id');
+  values.push(homebrewSlug(source.name as string), editionScope, true, campaignId);
+
+  const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+  const result = await pool.query(
+    `INSERT INTO monsters (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+    values,
+  );
+  return result.rows[0];
 }

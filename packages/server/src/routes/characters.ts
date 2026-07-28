@@ -99,6 +99,11 @@ charactersRouter.delete('/:id', async (req, res) => {
   res.status(204).send();
 });
 
+charactersRouter.post('/:id/duplicate', async (req, res) => {
+  const character = await charactersService.duplicateCharacter(pool, req.user!.id, (req.params.id as string));
+  res.status(201).json({ character });
+});
+
 // GET counterparts to the replace-all PUTs below — added because there was
 // otherwise no way to read a character's current classes/skill-proficiencies/
 // saving-throw-proficiencies without first performing a write (see

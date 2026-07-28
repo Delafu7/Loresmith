@@ -74,6 +74,14 @@ campaignMonstersRouter.delete('/:monsterId', requireRole('dm'), async (req, res)
   res.status(204).send();
 });
 
+// Forks any monster (official, or another campaign's) into a homebrew copy
+// owned by this campaign — no request body, matching the generic catalog
+// entities' duplicate route (routes/catalogHomebrew.ts).
+campaignMonstersRouter.post('/:monsterId/duplicate', requireRole('dm'), async (req, res) => {
+  const monster = await monsterCatalogService.duplicateHomebrewMonster(pool, req.campaignId!, (req.params.monsterId as string));
+  res.status(201).json({ monster });
+});
+
 // Mounted at /campaigns/:id/monster-instances — per PLAN.md §4.1 this
 // resource nests the single-item id under the campaign prefix (unlike
 // characters, where /:id is flat), so GET/PATCH/DELETE-by-id live here too.
