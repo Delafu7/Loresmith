@@ -37,10 +37,11 @@ import { CharacterEffectsPanel } from './CharacterEffectsPanel';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { proficiencyBonusForLevel } from '../lib/dnd-math';
 import type { ProficiencyLevel } from '../components/ProficiencyToggle';
+import { isUuid } from '../lib/ids';
 
 export function CharacterSheetPage() {
   const params = useParams<{ characterId: string }>();
-  const characterId = Number(params.characterId);
+  const characterId = params.characterId ?? '';
   const { campaignId, campaign, role } = useCampaignShell();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -49,19 +50,19 @@ export function CharacterSheetPage() {
   const characterQuery = useQuery({
     queryKey: ['character', characterId],
     queryFn: () => api.get<{ character: Character }>(`/characters/${characterId}`),
-    enabled: Number.isInteger(characterId),
+    enabled: isUuid(characterId),
   });
 
   const classesQuery = useQuery({
     queryKey: ['character', characterId, 'classes'],
     queryFn: () => api.get<{ classes: CharacterClass[] }>(`/characters/${characterId}/classes`),
-    enabled: Number.isInteger(characterId),
+    enabled: isUuid(characterId),
   });
 
   const skillProficienciesQuery = useQuery({
     queryKey: ['character', characterId, 'skill-proficiencies'],
     queryFn: () => api.get<{ skillProficiencies: SkillProficiency[] }>(`/characters/${characterId}/skill-proficiencies`),
-    enabled: Number.isInteger(characterId),
+    enabled: isUuid(characterId),
   });
 
   const savingThrowsQuery = useQuery({
@@ -70,7 +71,7 @@ export function CharacterSheetPage() {
       api.get<{ savingThrowProficiencies: SavingThrowProficiency[] }>(
         `/characters/${characterId}/saving-throw-proficiencies`,
       ),
-    enabled: Number.isInteger(characterId),
+    enabled: isUuid(characterId),
   });
 
   // GET /characters/:id only returns the raw portrait_asset_id FK (no joined
@@ -81,7 +82,7 @@ export function CharacterSheetPage() {
   const assetsQuery = useQuery({
     queryKey: ['campaign', campaignId, 'assets'],
     queryFn: () => api.get<{ assets: CampaignAsset[] }>(`/campaigns/${campaignId}/assets`),
-    enabled: Number.isInteger(campaignId),
+    enabled: isUuid(campaignId),
   });
 
   const abilityScoresCatalog = useAbilityScoresCatalog();
@@ -137,7 +138,7 @@ export function CharacterSheetPage() {
   });
 
   const skillsMutation = useMutation({
-    mutationFn: (rows: Array<{ skillId: number; level: SkillProficiencyLevel }>) =>
+    mutationFn: (rows: Array<{ skillId: string; level: SkillProficiencyLevel }>) =>
       api.put<{ skillProficiencies: SkillProficiency[] }>(`/characters/${characterId}/skill-proficiencies`, rows),
     onSuccess: (data) => {
       queryClient.setQueryData(['character', characterId, 'skill-proficiencies'], data);
@@ -145,7 +146,7 @@ export function CharacterSheetPage() {
   });
 
   const savingThrowsMutation = useMutation({
-    mutationFn: (rows: Array<{ abilityScoreId: number }>) =>
+    mutationFn: (rows: Array<{ abilityScoreId: string }>) =>
       api.put<{ savingThrowProficiencies: SavingThrowProficiency[] }>(
         `/characters/${characterId}/saving-throw-proficiencies`,
         rows,
@@ -156,7 +157,7 @@ export function CharacterSheetPage() {
   });
 
   const classesMutation = useMutation({
-    mutationFn: (rows: Array<{ classId: number; subclassId: number | null; level: number }>) =>
+    mutationFn: (rows: Array<{ classId: string; subclassId: string | null; level: number }>) =>
       api.put<{ classes: CharacterClass[] }>(`/characters/${characterId}/classes`, rows),
     onSuccess: (data) => {
       queryClient.setQueryData(['character', characterId, 'classes'], data);
@@ -200,7 +201,7 @@ export function CharacterSheetPage() {
   const proficientAbilityScoreIds = new Set(
     (savingThrowsQuery.data?.savingThrowProficiencies ?? []).map((r) => r.ability_score_id),
   );
-  const skillProficiencyMap = new Map<number, ProficiencyLevel>(
+  const skillProficiencyMap = new Map<string, ProficiencyLevel>(
     (skillProficienciesQuery.data?.skillProficiencies ?? []).map((r) => [r.skill_id, r.level]),
   );
 
@@ -208,14 +209,14 @@ export function CharacterSheetPage() {
   const backgroundName = backgroundsCatalog.data?.backgrounds.find((b) => b.id === character.background_id)?.name;
   const portraitAsset = assetsQuery.data?.assets.find((a) => a.id === character.portrait_asset_id);
 
-  function toggleSavingThrow(abilityScoreId: number) {
+  function toggleSavingThrow(abilityScoreId: string) {
     const next = new Set(proficientAbilityScoreIds);
     if (next.has(abilityScoreId)) next.delete(abilityScoreId);
     else next.add(abilityScoreId);
     savingThrowsMutation.mutate([...next].map((id) => ({ abilityScoreId: id })));
   }
 
-  function changeSkill(skillId: number, next: ProficiencyLevel) {
+  function changeSkill(skillId: string, next: ProficiencyLevel) {
     const map = new Map(skillProficiencyMap);
     if (next === 'none') map.delete(skillId);
     else map.set(skillId, next);

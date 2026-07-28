@@ -4,7 +4,7 @@ import { useSocket } from './SocketContext';
 // Joins campaign:{id} on mount/reconnect — every client joins this room per
 // PLAN.md §5.1 ("every client joins on connect"). Re-joins automatically on
 // socket reconnect since Socket.io rooms don't survive a transport drop.
-export function useJoinCampaign(campaignId: number | undefined): void {
+export function useJoinCampaign(campaignId: string | undefined): void {
   const { socket, connected } = useSocket();
 
   useEffect(() => {

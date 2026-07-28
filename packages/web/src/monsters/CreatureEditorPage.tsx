@@ -98,7 +98,7 @@ interface FormState {
   legendaryActions: EntryDraft[];
   reactions: EntryDraft[];
   source: string;
-  artAssetId: number | null;
+  artAssetId: string | null;
   isUnique: boolean;
 }
 
@@ -241,7 +241,7 @@ function buildPayload(form: FormState) {
 function previewMonster(form: FormState): MonsterCatalogEntry {
   const payload = buildPayload(form);
   return {
-    id: 0,
+    id: '',
     slug: '',
     name: payload.name || '(unnamed)',
     edition_scope: 'both',
@@ -283,7 +283,7 @@ function previewMonster(form: FormState): MonsterCatalogEntry {
 
 export function CreatureEditorPage() {
   const params = useParams<{ monsterId?: string }>();
-  const monsterId = params.monsterId ? Number(params.monsterId) : null;
+  const monsterId = params.monsterId ?? null;
   const isEdit = monsterId !== null;
   const { campaignId, campaign, role } = useCampaignShell();
   const navigate = useNavigate();

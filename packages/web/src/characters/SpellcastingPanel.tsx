@@ -45,7 +45,7 @@ export function SpellcastingPanel({
   classesCatalog,
   editable,
 }: {
-  characterId: number;
+  characterId: string;
   edition: '2014' | '2024' | 'both';
   characterClasses: CharacterClass[];
   classesCatalog: ClassCatalog[];
@@ -73,7 +73,7 @@ export function SpellcastingPanel({
     .sort((a, b) => slotLevel(a.resource_key) - slotLevel(b.resource_key));
 
   const toggleMutation = useMutation({
-    mutationFn: ({ spellId, classId, isPrepared }: { spellId: number; classId: number | null; isPrepared: boolean }) => {
+    mutationFn: ({ spellId, classId, isPrepared }: { spellId: string; classId: string | null; isPrepared: boolean }) => {
       const qs = classId != null ? `?classId=${classId}` : '';
       return api.patch<{ spell: CharacterSpell }>(`/characters/${characterId}/spells/${spellId}${qs}`, { isPrepared });
     },
@@ -85,7 +85,7 @@ export function SpellcastingPanel({
   });
 
   const unlearnMutation = useMutation({
-    mutationFn: ({ spellId, classId }: { spellId: number; classId: number | null }) => {
+    mutationFn: ({ spellId, classId }: { spellId: string; classId: string | null }) => {
       const qs = classId != null ? `?classId=${classId}` : '';
       return api.delete<void>(`/characters/${characterId}/spells/${spellId}${qs}`);
     },
@@ -100,8 +100,8 @@ export function SpellcastingPanel({
 
   const learnMutation = useMutation({
     mutationFn: (input: {
-      spellId: number;
-      classId: number | null;
+      spellId: string;
+      classId: string | null;
       isPrepared: boolean;
       alwaysPrepared: boolean;
       source: CharacterSpellSource;
@@ -310,8 +310,8 @@ function LearnSpellForm({
   knownSpellIds: Set<string>;
   pending: boolean;
   onLearn: (input: {
-    spellId: number;
-    classId: number | null;
+    spellId: string;
+    classId: string | null;
     isPrepared: boolean;
     alwaysPrepared: boolean;
     source: CharacterSpellSource;
@@ -320,7 +320,7 @@ function LearnSpellForm({
 }) {
   const classById = new Map(classesCatalog.map((c) => [c.id, c]));
   const [spellId, setSpellId] = useState('');
-  const [classId, setClassId] = useState<string>(characterClasses[0] ? String(characterClasses[0].class_id) : '');
+  const [classId, setClassId] = useState<string>(characterClasses[0]?.class_id ?? '');
   const [isPrepared, setIsPrepared] = useState(false);
   const [alwaysPrepared, setAlwaysPrepared] = useState(false);
   const [source, setSource] = useState<CharacterSpellSource>('class');
@@ -328,11 +328,10 @@ function LearnSpellForm({
   const sorted = [...spellsCatalog].sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
 
   function submit() {
-    const id = Number(spellId);
-    if (!id) return;
+    if (!spellId) return;
     onLearn({
-      spellId: id,
-      classId: classId ? Number(classId) : null,
+      spellId,
+      classId: classId || null,
       isPrepared,
       alwaysPrepared,
       source,

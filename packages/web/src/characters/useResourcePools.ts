@@ -2,11 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { ResourcePool } from '../lib/types';
 
-export function resourcesQueryKey(characterId: number) {
+export function resourcesQueryKey(characterId: string) {
   return ['character', characterId, 'resources'] as const;
 }
 
-export function useCharacterResources(characterId: number) {
+export function useCharacterResources(characterId: string) {
   return useQuery({
     queryKey: resourcesQueryKey(characterId),
     queryFn: () => api.get<{ resources: ResourcePool[] }>(`/characters/${characterId}/resources`),
@@ -19,7 +19,7 @@ export function useCharacterResources(characterId: number) {
 // in how the caller GROUPS resource_key prefixes, not in this mutation
 // layer) and ResourcePoolPanel (every other resource_key), rather than
 // duplicating the same spend/recover-then-patch-the-cache logic twice.
-export function useResourcePoolMutations(characterId: number) {
+export function useResourcePoolMutations(characterId: string) {
   const queryClient = useQueryClient();
 
   function patchPool(resource: ResourcePool) {

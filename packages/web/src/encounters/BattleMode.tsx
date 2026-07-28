@@ -17,21 +17,21 @@ import type { EncounterLiveState } from './useEncounterLive';
 
 export interface BattleModeProps {
   encounter: Encounter;
-  campaignId: number;
+  campaignId: string;
   isDm: boolean;
   live: EncounterLiveState;
-  myCharacterIds: Set<number>;
+  myCharacterIds: Set<string>;
   characters: Character[] | undefined;
   monsterInstances: MonsterInstance[] | undefined;
   monsters: MonsterCatalogEntry[] | undefined;
-  expandedParticipantId: number | null;
-  setExpandedParticipantId: Dispatch<SetStateAction<number | null>>;
+  expandedParticipantId: string | null;
+  setExpandedParticipantId: Dispatch<SetStateAction<string | null>>;
   showDiceRoller: boolean;
   setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
   endMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
-  addParticipantMutation: MutationLike<{ characterId?: number; monsterInstanceId?: number }>;
+  addParticipantMutation: MutationLike<{ characterId?: string; monsterInstanceId?: string }>;
   availableCharacters: Character[];
   availableMonsterInstances: MonsterInstance[];
 }

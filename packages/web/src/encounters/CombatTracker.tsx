@@ -43,7 +43,7 @@ const WEAKNESS_FIELDS: Array<{ key: string; label: string }> = [
 // Pulled out as its own component, not inlined in the row map, since
 // useReveals is a hook and each row needs its own independent query/mutation
 // state.
-export function ParticipantWeaknessReveal({ monsterInstanceId }: { monsterInstanceId: number }) {
+export function ParticipantWeaknessReveal({ monsterInstanceId }: { monsterInstanceId: string }) {
   const { fieldState, setRevealed, isSaving } = useReveals(monsterInstanceId);
   return (
     <div className="flex items-center gap-1">
@@ -72,7 +72,7 @@ export function ParticipantWeaknessReveal({ monsterInstanceId }: { monsterInstan
 // devtools. Characters render via the same read-only AbilityScoreGrid the
 // character sheet itself uses, not a new component; monster instances reuse
 // StatBlock as-is (already built for the bestiary page).
-function attackTargetsFor(allParticipants: SnapshotParticipant[] | undefined, selfId: number): AttackTarget[] {
+function attackTargetsFor(allParticipants: SnapshotParticipant[] | undefined, selfId: string): AttackTarget[] {
   return (allParticipants ?? [])
     .filter((p) => p.participantId !== selfId)
     .map((p) => ({ participantId: p.participantId, name: p.name, characterId: p.characterId, monsterInstanceId: p.monsterInstanceId }));
@@ -96,7 +96,7 @@ export function ParticipantStatLookup({
    * with no live encounter/roster to target (e.g. none today — every caller
    * currently supplies these — but kept optional so a future non-combat
    * caller of this component degrades gracefully instead of crashing). */
-  encounterId?: number;
+  encounterId?: string;
   allParticipants?: SnapshotParticipant[];
 }) {
   if (participant.characterId != null) {
@@ -159,7 +159,7 @@ export function ParticipantStatLookup({
 // Split out only because it needs its own useQuery for character_attacks —
 // the monster branch above already has its attacks in hand (monster.actions,
 // no fetch needed) so it calls AttackRoller directly.
-function CharacterAttackRoller({ characterId, encounterId, targets }: { characterId: number; encounterId: number; targets: AttackTarget[] }) {
+function CharacterAttackRoller({ characterId, encounterId, targets }: { characterId: string; encounterId: string; targets: AttackTarget[] }) {
   const attacksQuery = useQuery({
     queryKey: ['character', characterId, 'attacks'],
     queryFn: () => api.get<{ attacks: CharacterAttack[] }>(`/characters/${characterId}/attacks`),
@@ -185,7 +185,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
   const live = useEncounterLive(encounter.id);
   // REVISION-PLAN.md §9.3/§9.4 — both let the DM stay on this screen instead
   // of navigating to the Bestiary tab or the Dice Rolls page mid-combat.
-  const [expandedParticipantId, setExpandedParticipantId] = useState<number | null>(null);
+  const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
   const [showDiceRoller, setShowDiceRoller] = useState(false);
 
   const detailQuery = useQuery({
@@ -250,11 +250,11 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
     onSuccess: invalidateControlPlane,
   });
   const removeParticipantMutation = useMutation({
-    mutationFn: (participantId: number) => api.delete(`/encounters/${encounter.id}/participants/${participantId}`),
+    mutationFn: (participantId: string) => api.delete(`/encounters/${encounter.id}/participants/${participantId}`),
     onSuccess: invalidateControlPlane,
   });
   const addParticipantMutation = useMutation({
-    mutationFn: (body: { characterId?: number; monsterInstanceId?: number }) =>
+    mutationFn: (body: { characterId?: string; monsterInstanceId?: string }) =>
       api.post(`/encounters/${encounter.id}/participants`, body),
     onSuccess: invalidateControlPlane,
   });
@@ -266,7 +266,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
       tempDelta,
     }: {
       target: 'character' | 'monster';
-      id: number;
+      id: string;
       delta: number;
       tempDelta: number;
     }) =>
@@ -291,7 +291,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
     // the socket is the source of truth (see useEncounterLive.ts).
   });
   const removeEffectMutation = useMutation({
-    mutationFn: (effectId: number) => api.delete(`/effects/${effectId}`),
+    mutationFn: (effectId: string) => api.delete(`/effects/${effectId}`),
     // EFFECT_EXPIRED over the socket patches the cache; see useEncounterLive.ts.
   });
 
@@ -302,7 +302,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
 
   const existingCharacterIds = new Set(
     (live?.participants.map((p) => p.characterId) ?? detailQuery.data?.encounter.participants.map((p) => p.character_id) ?? []).filter(
-      (id): id is number => id != null,
+      (id): id is string => id != null,
     ),
   );
   const existingMonsterInstanceIds = new Set(
@@ -310,7 +310,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
       live?.participants.map((p) => p.monsterInstanceId) ??
       detailQuery.data?.encounter.participants.map((p) => p.monster_instance_id) ??
       []
-    ).filter((id): id is number => id != null),
+    ).filter((id): id is string => id != null),
   );
 
   const availableCharacters = (charactersQuery.data?.characters ?? []).filter((c) => !existingCharacterIds.has(c.id));
@@ -622,7 +622,7 @@ export function ActionButton({
 
 // Resets every monster instance currently seated in THIS encounter back to
 // "weaknesses hidden" — the one thing the hide/reveal removal kept.
-export function ResetRevealsButton({ encounterId }: { encounterId: number }) {
+export function ResetRevealsButton({ encounterId }: { encounterId: string }) {
   const mutation = useMutation({
     mutationFn: () => api.post<void>(`/encounters/${encounterId}/reveals/reset`),
   });
@@ -649,7 +649,7 @@ export function AddParticipantForm({
 }: {
   characters: Character[];
   monsterInstances: MonsterInstance[];
-  onAdd: (body: { characterId?: number; monsterInstanceId?: number }) => void;
+  onAdd: (body: { characterId?: string; monsterInstanceId?: string }) => void;
   pending: boolean;
 }) {
   const [kind, setKind] = useState<'character' | 'monster'>('character');
@@ -658,9 +658,8 @@ export function AddParticipantForm({
   const options = kind === 'character' ? characters : monsterInstances;
 
   function handleAdd() {
-    const id = Number(selected);
-    if (!id) return;
-    onAdd(kind === 'character' ? { characterId: id } : { monsterInstanceId: id });
+    if (!selected) return;
+    onAdd(kind === 'character' ? { characterId: selected } : { monsterInstanceId: selected });
     setSelected('');
   }
 

@@ -25,9 +25,9 @@ import { ACTION_REGISTRY, type ActionSlot } from './actionEconomy';
 import { ActionButton } from './CombatTracker';
 
 export interface BattleModePlayerPanelProps {
-  encounterId: number;
+  encounterId: string;
   live: EncounterLiveState;
-  myCharacterIds: Set<number>;
+  myCharacterIds: Set<string>;
   characters: Character[] | undefined;
   showDiceRoller: boolean;
   setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
@@ -70,7 +70,7 @@ function PlayerPanelBody({
   showDiceRoller,
   setShowDiceRoller,
 }: {
-  encounterId: number;
+  encounterId: string;
   participant: EncounterLiveState['participants'][number];
   isMyTurn: boolean;
   character: Character | undefined;

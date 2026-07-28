@@ -35,7 +35,7 @@ export function AbilityScoreGenerator({
   allowReroll,
   onApply,
 }: {
-  campaignId: number;
+  campaignId: string;
   allowReroll: boolean;
   onApply: (scores: Record<AbilityKey, number>) => void;
 }) {

@@ -35,7 +35,7 @@ export function ActionEconomyPanel({
   abilityScores,
   otherParticipants,
 }: {
-  encounterId: number;
+  encounterId: string;
   participant: SnapshotParticipant;
   abilityScores: AbilityScores | null;
   /** Every other live participant, for the Shove-vs-NPC target picker below —
@@ -48,7 +48,7 @@ export function ActionEconomyPanel({
   const [difficultTerrain, setDifficultTerrain] = useState(false);
 
   const shoveTargets = otherParticipants.filter((p) => p.monsterInstanceId !== null);
-  const [shoveTargetId, setShoveTargetId] = useState<number | ''>('');
+  const [shoveTargetId, setShoveTargetId] = useState<string | ''>('');
   const [desiredEffect, setDesiredEffect] = useState<'push_5ft' | 'knock_prone'>('push_5ft');
   const [defenderSkill, setDefenderSkill] = useState<'athletics' | 'acrobatics'>('athletics');
   const [defenderOverride, setDefenderOverride] = useState('');
@@ -79,7 +79,7 @@ export function ActionEconomyPanel({
   // shape as the roll-trigger buttons above, just both mutating state
   // instead of one mutating and one just rolling.
   const removeEffectMutation = useMutation({
-    mutationFn: (effectId: number) => api.delete(`/effects/${effectId}`),
+    mutationFn: (effectId: string) => api.delete(`/effects/${effectId}`),
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounterId] });
     },
@@ -90,7 +90,7 @@ export function ActionEconomyPanel({
   // since there's no other way to surface "both rolls + who won" to the DM;
   // ACTION_ECONOMY_CHANGED over the socket still handles the actionUsed pip.
   const shoveMutation = useMutation({
-    mutationFn: (body: { targetParticipantId: number; desiredEffect: 'push_5ft' | 'knock_prone'; defenderSkill: 'athletics' | 'acrobatics'; defenderRollOverride?: number }) =>
+    mutationFn: (body: { targetParticipantId: string; desiredEffect: 'push_5ft' | 'knock_prone'; defenderSkill: 'athletics' | 'acrobatics'; defenderRollOverride?: number }) =>
       api.post<ShoveResult>(`/encounters/${encounterId}/participants/${participant.participantId}/shove`, body),
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounterId] });
@@ -235,7 +235,7 @@ export function ActionEconomyPanel({
             <span className="text-stone-500">Shove NPC:</span>
             <select
               value={shoveTargetId}
-              onChange={(e) => setShoveTargetId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => setShoveTargetId(e.target.value)}
               className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
             >
               <option value="">Select target…</option>

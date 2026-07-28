@@ -89,7 +89,7 @@ export function useItemsCatalog(edition: '2014' | '2024' | 'both') {
   });
 }
 
-export function useEffectDefinitionsCatalog(campaignId: number) {
+export function useEffectDefinitionsCatalog(campaignId: string) {
   return useQuery({
     queryKey: ['catalog', 'effect-definitions', campaignId],
     queryFn: () =>

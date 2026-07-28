@@ -25,8 +25,8 @@ export function CharacterEffectsPanel({
   campaignId,
   isDm,
 }: {
-  characterId: number;
-  campaignId: number;
+  characterId: string;
+  campaignId: string;
   isDm: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -50,7 +50,7 @@ export function CharacterEffectsPanel({
   });
 
   const removeMutation = useMutation({
-    mutationFn: (effectId: number) => api.delete<void>(`/effects/${effectId}`),
+    mutationFn: (effectId: string) => api.delete<void>(`/effects/${effectId}`),
     onSuccess: (_data, effectId) => {
       queryClient.setQueryData<{ effects: ActiveEffect[] }>(['character', characterId, 'effects'], (prev) =>
         prev ? { effects: prev.effects.filter((e) => e.id !== effectId) } : prev,

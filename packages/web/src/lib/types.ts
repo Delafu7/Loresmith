@@ -9,7 +9,7 @@ export type CampaignRole = 'dm' | 'player';
 export type UiTheme = 'crimson' | 'amber' | 'ember';
 
 export interface User {
-  id: number;
+  id: string;
   email: string;
   displayName: string;
   // Customizable Styles per Role (Phase 3.9) — a personal preference, not
@@ -19,15 +19,15 @@ export interface User {
 }
 
 export interface Membership {
-  campaignId: number;
+  campaignId: string;
   campaignName: string;
   role: CampaignRole;
 }
 
 export interface Campaign {
-  id: number;
+  id: string;
   name: string;
-  dm_user_id: number;
+  dm_user_id: string;
   srd_edition: '2014' | '2024';
   description: string | null;
   created_at: string;
@@ -39,9 +39,9 @@ export interface Campaign {
 }
 
 export interface CampaignMember {
-  id: number;
-  campaign_id: number;
-  user_id: number;
+  id: string;
+  campaign_id: string;
+  user_id: string;
   role: CampaignRole;
   joined_at: string;
   email: string;
@@ -49,15 +49,15 @@ export interface CampaignMember {
 }
 
 export interface Character {
-  id: number;
-  campaign_id: number;
+  id: string;
+  campaign_id: string;
   is_pc: boolean;
-  owner_user_id: number | null;
-  created_by_user_id: number;
+  owner_user_id: string | null;
+  created_by_user_id: string;
   name: string;
-  race_id: number | null;
-  subrace_id: number | null;
-  background_id: number | null;
+  race_id: string | null;
+  subrace_id: string | null;
+  background_id: string | null;
   alignment: string | null;
   str: number;
   dex: number;
@@ -77,61 +77,61 @@ export interface Character {
   languages: number[] | null;
   is_alive: boolean;
   notes: string | null;
-  portrait_asset_id: number | null;
+  portrait_asset_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface CharacterClass {
-  character_id: number;
-  class_id: number;
-  subclass_id: number | null;
+  character_id: string;
+  class_id: string;
+  subclass_id: string | null;
   level: number;
 }
 
 export type SkillProficiencyLevel = 'proficient' | 'expertise';
 
 export interface SkillProficiency {
-  character_id: number;
-  skill_id: number;
+  character_id: string;
+  skill_id: string;
   level: SkillProficiencyLevel;
 }
 
 export interface SavingThrowProficiency {
-  character_id: number;
-  ability_score_id: number;
+  character_id: string;
+  ability_score_id: string;
 }
 
 export interface AbilityScoreCatalog {
-  id: number;
+  id: string;
   index_key: string;
   name: string;
   full_name: string;
 }
 
 export interface DamageTypeCatalog {
-  id: number;
+  id: string;
   index_key: string;
   name: string;
   description: string | null;
 }
 
 export interface SkillCatalog {
-  id: number;
+  id: string;
   index_key: string;
   name: string;
-  ability_score_id: number;
+  ability_score_id: string;
 }
 
 export interface RaceCatalog {
-  id: number;
+  id: string;
   index_key: string;
   name: string;
   edition_scope: '2014' | '2024' | 'both';
 }
 
 export interface ClassCatalog {
-  id: number;
+  id: string;
   index_key: string;
   name: string;
   edition_scope: '2014' | '2024' | 'both';
@@ -139,21 +139,21 @@ export interface ClassCatalog {
 }
 
 export interface SubclassCatalog {
-  id: number;
-  class_id: number;
+  id: string;
+  class_id: string;
   index_key: string;
   name: string;
 }
 
 export interface BackgroundCatalog {
-  id: number;
+  id: string;
   index_key: string;
   name: string;
   edition_scope: '2014' | '2024' | 'both';
 }
 
 export interface MonsterCatalogEntry {
-  id: number;
+  id: string;
   slug: string;
   name: string;
   edition_scope: '2014' | '2024' | 'both';
@@ -190,8 +190,8 @@ export interface MonsterCatalogEntry {
   // owning_campaign_id=null; a campaign's own homebrew creatures union in via
   // GET /catalog/monsters?campaignId=.
   is_homebrew: boolean;
-  owning_campaign_id: number | null;
-  art_asset_id: number | null;
+  owning_campaign_id: string | null;
+  art_asset_id: string | null;
   // Catalog-level: caps monster_instances at 1 per campaign for this stat
   // block (named legendary villains etc.) — see services/monsters.ts.
   is_unique: boolean;
@@ -222,8 +222,8 @@ export interface StatBlockEntry {
 // Raw DB row shape (snake_case) — same "GET returns the raw row" convention
 // as most other sub-resource list endpoints in this app.
 export interface CharacterAttack {
-  id: number;
-  character_id: number;
+  id: string;
+  character_id: string;
   name: string;
   attack_bonus: number | null;
   damage_dice: string | null;
@@ -238,9 +238,9 @@ export interface CharacterAttack {
 export type MonsterInstanceStatus = 'alive' | 'dead' | 'fled' | 'captured';
 
 export interface MonsterInstance {
-  id: number;
-  campaign_id: number;
-  monster_id: number;
+  id: string;
+  campaign_id: string;
+  monster_id: string;
   custom_name: string | null;
   hp_max_override: number | null;
   hp_current: number;
@@ -267,8 +267,8 @@ export interface MonsterInstance {
 export type EncounterStatus = 'preparing' | 'active' | 'paused' | 'completed';
 
 export interface Encounter {
-  id: number;
-  campaign_id: number;
+  id: string;
+  campaign_id: string;
   name: string;
   status: EncounterStatus;
   current_round: number;
@@ -280,10 +280,10 @@ export interface Encounter {
 }
 
 export interface CombatParticipant {
-  id: number;
-  encounter_id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
+  id: string;
+  encounter_id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
   initiative_roll: number;
   initiative_tiebreak: number | null;
   turn_order: number;
@@ -306,9 +306,9 @@ export interface ParticipantHp {
 
 // FULL_STATE_SYNC / snapshot participant row shape, enriched with name.
 export interface SnapshotParticipant {
-  participantId: number;
-  characterId: number | null;
-  monsterInstanceId: number | null;
+  participantId: string;
+  characterId: string | null;
+  monsterInstanceId: string | null;
   name: string;
   initiativeRoll: number;
   initiativeTiebreak: number | null;
@@ -353,12 +353,12 @@ export interface SnapshotParticipant {
 // routes/rests.ts) ----
 
 export interface SpellCatalogEntry {
-  id: number;
+  id: string;
   slug: string;
   name: string;
   edition_scope: '2014' | '2024' | 'both';
   level: number; // 0 = cantrip
-  school_id: number;
+  school_id: string;
   casting_time: string;
   range: string;
   component_v: boolean;
@@ -368,7 +368,7 @@ export interface SpellCatalogEntry {
   duration: string;
   concentration: boolean;
   ritual: boolean;
-  saving_throw_ability_id: number | null;
+  saving_throw_ability_id: string | null;
   attack_type: 'melee' | 'ranged' | null;
   damage_at_level: Record<string, unknown> | null;
   description: string;
@@ -379,10 +379,10 @@ export interface SpellCatalogEntry {
 export type CharacterSpellSource = 'class' | 'race' | 'feat' | 'item';
 
 export interface CharacterSpell {
-  id: number;
-  character_id: number;
-  spell_id: number;
-  class_id: number | null;
+  id: string;
+  character_id: string;
+  spell_id: string;
+  class_id: string | null;
   is_prepared: boolean;
   always_prepared: boolean;
   source: CharacterSpellSource;
@@ -402,7 +402,7 @@ export type ItemType =
 export type ItemRarity = 'mundane' | 'common' | 'uncommon' | 'rare' | 'very_rare' | 'legendary' | 'artifact';
 
 export interface ItemCatalogEntry {
-  id: number;
+  id: string;
   slug: string;
   name: string;
   edition_scope: '2014' | '2024' | 'both';
@@ -420,7 +420,7 @@ export interface ItemCatalogEntry {
   str_requirement: number | null;
   stealth_disadvantage: boolean;
   damage_dice: string | null;
-  damage_type_id: number | null;
+  damage_type_id: string | null;
   requires_attunement: boolean;
   properties: Record<string, unknown> | null;
   description: string | null;
@@ -439,10 +439,10 @@ export interface UpdateCharacterItemBody {
 }
 
 export interface CharacterItem {
-  id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  item_id: number;
+  id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  item_id: string;
   quantity: number;
   is_equipped: boolean;
   is_attuned: boolean;
@@ -455,8 +455,8 @@ export interface CharacterItem {
 export type RechargeOn = 'short_rest' | 'long_rest' | 'dawn' | 'none';
 
 export interface ResourcePool {
-  id: number;
-  character_id: number;
+  id: string;
+  character_id: string;
   resource_key: string;
   current_value: number;
   max_value: number;
@@ -473,8 +473,8 @@ export type EffectDurationType =
   | 'special';
 
 export interface EffectDefinitionCatalog {
-  id: number;
-  condition_id: number | null;
+  id: string;
+  condition_id: string | null;
   name: string;
   description: string | null;
   default_duration_type: EffectDurationType;
@@ -482,27 +482,27 @@ export interface EffectDefinitionCatalog {
   concentration: boolean;
   stacking_rule: 'none' | 'stack' | 'refresh';
   is_homebrew: boolean;
-  owning_campaign_id: number | null;
+  owning_campaign_id: string | null;
 }
 
 // The full active_effects row, as returned by GET /characters/:id/effects,
 // GET /monster-instances/:id/effects, and GET /encounters/:id/effects.
 export interface ActiveEffect {
-  id: number;
-  effect_definition_id: number;
+  id: string;
+  effect_definition_id: string;
   effect_definition_name: string;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  encounter_id: number | null;
-  source_character_id: number | null;
-  source_spell_id: number | null;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  encounter_id: string | null;
+  source_character_id: string | null;
+  source_spell_id: string | null;
   source_type: 'spell' | 'class_feature' | 'monster_ability' | 'item' | 'manual';
   duration_type: EffectDurationType;
   duration_value: number | null;
   stack_count: number | null;
   applied_at_round: number | null;
   save_dc: number | null;
-  save_ability_id: number | null;
+  save_ability_id: string | null;
   concentration: boolean;
   removed_at: string | null;
   notes: string | null;
@@ -512,17 +512,17 @@ export interface ActiveEffect {
 // The compact per-participant shape carried on FULL_STATE_SYNC /
 // EFFECT_APPLIED / EFFECT_EXPIRED (sockets/broadcast.ts's formatEffectForWire).
 export interface ActiveEffectSummary {
-  effectId: number;
-  effectDefinitionId: number;
+  effectId: string;
+  effectDefinitionId: string;
   name: string;
   durationType: EffectDurationType;
   durationRemaining: number | null;
   concentration: boolean;
-  sourceCharacterId: number | null;
+  sourceCharacterId: string | null;
 }
 
 export interface MulticlassPrereqFailure {
-  classId: number;
+  classId: string;
   className: string;
   abilityIndex: string;
   required: number;
@@ -534,9 +534,9 @@ export interface MulticlassPrereqFailure {
 export type AssetType = 'image' | 'handout';
 
 export interface CampaignAsset {
-  id: number;
-  campaign_id: number;
-  uploaded_by_user_id: number;
+  id: string;
+  campaign_id: string;
+  uploaded_by_user_id: string;
   asset_type: AssetType;
   file_url: string; // relative path, e.g. /uploads/campaigns/1/<uuid>.png — serve directly as <img src>
   mime_type: string;
@@ -546,12 +546,12 @@ export interface CampaignAsset {
 }
 
 export interface Note {
-  id: number;
-  campaign_id: number;
-  session_id: number | null;
-  location_id: number | null;
-  character_id: number | null;
-  author_user_id: number;
+  id: string;
+  campaign_id: string;
+  session_id: string | null;
+  location_id: string | null;
+  character_id: string | null;
+  author_user_id: string;
   title: string;
   body: string;
   created_at: string;
@@ -600,12 +600,12 @@ export type DiceSides = (typeof DICE_SIDES)[number];
 // must be derived from `d20_rolls` values, never from `result_total` (which
 // includes `modifier` and could coincidentally match 20/1).
 export interface DiceRoll {
-  id: number;
-  campaign_id: number;
-  user_id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  encounter_id: number | null;
+  id: string;
+  campaign_id: string;
+  user_id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  encounter_id: string | null;
   roll_type: DiceRollType;
   roll_context: string | null;
   d20_rolls: number[];

@@ -8,7 +8,7 @@ export type CharacterEditMode = 'read' | 'edit-full' | 'edit-own';
 export function useCharacterEditMode(
   character: Character | undefined,
   role: CampaignRole | null,
-  userId: number | undefined,
+  userId: string | undefined,
 ): CharacterEditMode {
   if (!character || !role || userId === undefined) return 'read';
   if (role === 'dm') return 'edit-full';

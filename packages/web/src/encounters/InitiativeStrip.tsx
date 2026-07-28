@@ -22,7 +22,7 @@ export function InitiativeStrip({
   activeParticipantId,
 }: {
   participants: SnapshotParticipant[];
-  activeParticipantId: number | null;
+  activeParticipantId: string | null;
 }) {
   const activeRef = useRef<HTMLLIElement>(null);
 

@@ -25,8 +25,8 @@ export function ResourcePoolPanel({
   editable,
   isDm,
 }: {
-  characterId: number;
-  campaignId: number;
+  characterId: string;
+  campaignId: string;
   editable: boolean;
   isDm: boolean;
 }) {

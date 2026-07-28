@@ -32,10 +32,10 @@ export interface NormalizedAttack {
 }
 
 export interface AttackTarget {
-  participantId: number;
+  participantId: string;
   name: string;
-  characterId: number | null;
-  monsterInstanceId: number | null;
+  characterId: string | null;
+  monsterInstanceId: string | null;
 }
 
 interface ApplyDamageResponse {
@@ -58,9 +58,9 @@ export function AttackRoller({
   targets,
 }: {
   attacks: NormalizedAttack[];
-  rollerCharacterId?: number | null;
-  rollerMonsterInstanceId?: number | null;
-  encounterId: number;
+  rollerCharacterId?: string | null;
+  rollerMonsterInstanceId?: string | null;
+  encounterId: string;
   /** Every other live participant this roller could plausibly hit — the DM
    * picks which one actually takes the damage. */
   targets: AttackTarget[];
@@ -92,10 +92,10 @@ function AttackRow({
   rollerMonsterInstanceId,
 }: {
   attack: NormalizedAttack;
-  encounterId: number;
+  encounterId: string;
   targets: AttackTarget[];
-  rollerCharacterId?: number | null;
-  rollerMonsterInstanceId?: number | null;
+  rollerCharacterId?: string | null;
+  rollerMonsterInstanceId?: string | null;
 }) {
   const [lastAttackRoll, setLastAttackRoll] = useState<DiceRoll | null>(null);
   const [targetId, setTargetId] = useState<number | ''>('');

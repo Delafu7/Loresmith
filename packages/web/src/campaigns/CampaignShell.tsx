@@ -8,9 +8,10 @@ import { useJoinCampaign } from '../lib/useJoinCampaign';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { ThemePicker } from '../components/ThemePicker';
 import { Sidebar, NavItemList, NavItem } from '../components/ui/Nav';
+import { isUuid } from '../lib/ids';
 
 interface CampaignShellContextValue {
-  campaignId: number;
+  campaignId: string;
   campaign: Campaign;
   role: CampaignRole;
 }
@@ -25,7 +26,7 @@ export function useCampaignShell(): CampaignShellContextValue {
 
 export function CampaignShell() {
   const params = useParams<{ campaignId: string }>();
-  const campaignId = Number(params.campaignId);
+  const campaignId = params.campaignId ?? '';
   const { roleForCampaign } = useAuth();
 
   useJoinCampaign(campaignId);
@@ -33,7 +34,7 @@ export function CampaignShell() {
   const campaignQuery = useQuery({
     queryKey: ['campaign', campaignId],
     queryFn: () => api.get<{ campaign: Campaign; myRole: CampaignRole }>(`/campaigns/${campaignId}`),
-    enabled: Number.isInteger(campaignId),
+    enabled: isUuid(campaignId),
   });
 
   if (campaignQuery.isLoading) return <Loading label="Loading campaign…" />;

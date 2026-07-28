@@ -6,6 +6,7 @@ import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Fe
 import { Portrait } from '../components/Portrait';
 import { ButtonLink } from '../components/ui/Button';
 import { formatCrLabel } from './formatCr';
+import { isUuid } from '../lib/ids';
 
 // No :id in the URL — a picker over the user's own campaigns, since
 // "campaign-specific creatures" only means something once you've chosen
@@ -47,19 +48,19 @@ export function BestiaryCampaignPickerPage() {
 // (no global-catalog union; the Basic tab already covers that).
 export function BestiaryCampaignPage() {
   const params = useParams<{ id: string }>();
-  const campaignId = Number(params.id);
+  const campaignId = params.id ?? '';
 
   const campaignQuery = useQuery({
     queryKey: ['campaign', campaignId],
     queryFn: () => api.get<{ campaign: Campaign; myRole: string }>(`/campaigns/${campaignId}`),
-    enabled: Number.isInteger(campaignId),
+    enabled: isUuid(campaignId),
   });
 
   const monstersQuery = useQuery({
     queryKey: ['catalog', 'monsters', 'campaign', campaignId],
     queryFn: () =>
       api.get<{ monsters: MonsterCatalogEntry[] }>(`/catalog/monsters?campaignId=${campaignId}&homebrewOnly=true`),
-    enabled: Number.isInteger(campaignId),
+    enabled: isUuid(campaignId),
   });
 
   if (campaignQuery.isLoading) return <Loading />;

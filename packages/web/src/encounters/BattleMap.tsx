@@ -93,11 +93,11 @@ export function BattleMap({
   isDm,
   showRoster = true,
 }: {
-  encounterId: number;
-  campaignId: number;
+  encounterId: string;
+  campaignId: string;
   map: MapConfig | null;
   participants: SnapshotParticipant[];
-  activeParticipantId: number | null;
+  activeParticipantId: string | null;
   isDm: boolean;
   /** BattleMode.tsx already renders its own DM/player side panel (HP,
    * effects, dice — action-oriented tools) alongside this component, so it
@@ -109,7 +109,7 @@ export function BattleMap({
   showRoster?: boolean;
 }) {
   const [showSetup, setShowSetup] = useState(false);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [paintMode, setPaintMode] = useState(false);
   // Tap-to-move (docs/design-tokens.md mobile pass): "dragging is unreliable
@@ -162,7 +162,7 @@ export function BattleMap({
   }
 
   const positionMutation = useMutation({
-    mutationFn: ({ participantId, x, y }: { participantId: number; x: number | null; y: number | null }) =>
+    mutationFn: ({ participantId, x, y }: { participantId: string; x: number | null; y: number | null }) =>
       api.patch(`/encounters/${encounterId}/participants/${participantId}/position`, { x, y }),
     // No cache write on success, on purpose: TOKEN_MOVED arriving over the
     // socket (which the DM's own action also triggers) is the single source
@@ -172,7 +172,7 @@ export function BattleMap({
   });
 
   const factionMutation = useMutation({
-    mutationFn: ({ participantId, faction }: { participantId: number; faction: SnapshotParticipant['faction'] }) =>
+    mutationFn: ({ participantId, faction }: { participantId: string; faction: SnapshotParticipant['faction'] }) =>
       api.patch(`/encounters/${encounterId}/participants/${participantId}/faction`, { faction }),
   });
 
@@ -226,7 +226,7 @@ export function BattleMap({
   const placed = spawnable.filter((p) => p.posX != null && p.posY != null);
   const unplaced = spawnable.filter((p) => p.posX == null || p.posY == null);
 
-  function selectParticipant(id: number | null) {
+  function selectParticipant(id: string | null) {
     setSelectedId(id);
     setPendingMove(null);
   }
@@ -597,11 +597,11 @@ function RosterPanel({
   bare = false,
 }: {
   participants: SnapshotParticipant[];
-  activeParticipantId: number | null;
-  selectedId: number | null;
-  onSelect: (id: number | null) => void;
+  activeParticipantId: string | null;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
   isDm: boolean;
-  onChangeFaction?: (participantId: number, faction: SnapshotParticipant['faction']) => void;
+  onChangeFaction?: (participantId: string, faction: SnapshotParticipant['faction']) => void;
   /** Skips the card shell + "On the board" heading — for embedding inside
    * the mobile collapsible drawer, whose <summary> already labels it. */
   bare?: boolean;
@@ -674,8 +674,8 @@ function MapSetupPanel({
   map,
   onDone,
 }: {
-  campaignId: number;
-  encounterId: number;
+  campaignId: string;
+  encounterId: string;
   map: MapConfig | null;
   onDone: () => void;
 }) {
@@ -684,7 +684,7 @@ function MapSetupPanel({
   const [gridRows, setGridRows] = useState(map?.gridRows ?? 20);
   const [cellSizePx, setCellSizePx] = useState(map?.cellSizePx ?? 50);
   const [feetPerCell, setFeetPerCell] = useState(map?.feetPerCell ?? 5);
-  const [backgroundAssetId, setBackgroundAssetId] = useState<number | null>(map?.backgroundAssetId ?? null);
+  const [backgroundAssetId, setBackgroundAssetId] = useState<string | null>(map?.backgroundAssetId ?? null);
 
   const assetsQuery = useQuery({
     queryKey: ['campaign', campaignId, 'assets'],

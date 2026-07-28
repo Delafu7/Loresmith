@@ -11,8 +11,8 @@ const STATUS_ORDER: Record<Encounter['status'], number> = { active: 0, paused: 1
 export function EncountersPage() {
   const { campaignId, role } = useCampaignShell();
   const queryClient = useQueryClient();
-  const [openTabIds, setOpenTabIds] = useState<number[]>([]);
-  const [activeTabId, setActiveTabId] = useState<number | null>(null);
+  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const autoOpened = useRef(false);
@@ -22,12 +22,12 @@ export function EncountersPage() {
     queryFn: () => api.get<{ encounters: Encounter[] }>(`/campaigns/${campaignId}/encounters`),
   });
 
-  function openEncounter(id: number) {
+  function openEncounter(id: string) {
     setOpenTabIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
     setActiveTabId(id);
   }
 
-  function closeTab(id: number) {
+  function closeTab(id: string) {
     setOpenTabIds((ids) => {
       const next = ids.filter((i) => i !== id);
       setActiveTabId((current) => (current === id ? (next[0] ?? null) : current));

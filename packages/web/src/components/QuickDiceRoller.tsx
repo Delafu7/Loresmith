@@ -36,9 +36,9 @@ export function parseDiceExpression(input: string): ParsedExpression | null {
 }
 
 export interface QuickDiceRollerProps {
-  characterId?: number;
-  monsterInstanceId?: number;
-  encounterId?: number;
+  characterId?: string;
+  monsterInstanceId?: string;
+  encounterId?: string;
   className?: string;
 }
 

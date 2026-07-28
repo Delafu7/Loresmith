@@ -32,19 +32,19 @@ export interface MutationLike<TVariables = void> {
 }
 
 export interface BattleModeDmPanelProps {
-  encounterId: number;
+  encounterId: string;
   live: EncounterLiveState;
   characters: Character[] | undefined;
   monsterInstances: MonsterInstance[] | undefined;
   monsters: MonsterCatalogEntry[] | undefined;
-  expandedParticipantId: number | null;
-  setExpandedParticipantId: Dispatch<SetStateAction<number | null>>;
+  expandedParticipantId: string | null;
+  setExpandedParticipantId: Dispatch<SetStateAction<string | null>>;
   showDiceRoller: boolean;
   setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
   endMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
-  addParticipantMutation: MutationLike<{ characterId?: number; monsterInstanceId?: number }>;
+  addParticipantMutation: MutationLike<{ characterId?: string; monsterInstanceId?: string }>;
   availableCharacters: Character[];
   availableMonsterInstances: MonsterInstance[];
 }

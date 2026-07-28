@@ -27,10 +27,10 @@ export function SkillsPanel({
   skillsCatalog: SkillCatalog[];
   abilityScoresCatalog: AbilityScoreCatalog[];
   abilities: CharacterAbilities;
-  proficiencyBySkillId: Map<number, ProficiencyLevel>;
+  proficiencyBySkillId: Map<string, ProficiencyLevel>;
   proficiencyBonus: number;
   editable: boolean;
-  onChange: (skillId: number, next: ProficiencyLevel) => void;
+  onChange: (skillId: string, next: ProficiencyLevel) => void;
   // `editable` (from useCharacterEditMode) is reused as the roll-trigger
   // gate too, not just the proficiency-toggle gate: it's already exactly
   // "DM, or the player who owns this PC" — the same population the server
@@ -38,7 +38,7 @@ export function SkillsPanel({
   // /campaigns/:id/dice-rolls's ownership check). Rolling isn't editing, but
   // this app has no separate "can view but not roll for a different
   // player's PC" state to distinguish, so the existing gate covers it.
-  characterId: number;
+  characterId: string;
 }) {
   // Known gap (dnd-srd-rules-validator, Phase 3.4): Bard's Jack of All Trades
   // (add half proficiency bonus, rounded down, to non-proficient checks) isn't

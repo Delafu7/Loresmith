@@ -28,9 +28,9 @@ export function ImageUploadField({
   onUploaded,
   label = 'Upload image',
 }: {
-  campaignId: number;
+  campaignId: string;
   /** Set to target this upload at a specific character's portrait (POST body's `characterId` field). */
-  characterId?: number;
+  characterId?: string;
   title?: string;
   onUploaded: (asset: CampaignAsset) => void;
   label?: string;

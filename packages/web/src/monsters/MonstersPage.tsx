@@ -17,7 +17,7 @@ export function MonstersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [creatureTypeFilter, setCreatureTypeFilter] = useState('');
-  const [expandedMonsterId, setExpandedMonsterId] = useState<number | null>(null);
+  const [expandedMonsterId, setExpandedMonsterId] = useState<string | null>(null);
 
   const bestiaryQueryKey = ['catalog', 'monsters', campaign.srd_edition, campaignId];
   const bestiaryQuery = useQuery({
@@ -45,7 +45,7 @@ export function MonstersPage() {
   });
 
   const hpMutation = useMutation({
-    mutationFn: ({ id, delta, tempDelta }: { id: number; delta: number; tempDelta: number }) =>
+    mutationFn: ({ id, delta, tempDelta }: { id: string; delta: number; tempDelta: number }) =>
       api.patch<{ monsterInstance: MonsterInstance }>(`/monster-instances/${id}/hp`, { delta, tempDelta }),
     onSuccess: (data) => {
       queryClient.setQueryData<{ monsterInstances: MonsterInstance[] } | undefined>(
@@ -61,7 +61,7 @@ export function MonstersPage() {
   });
 
   const deleteInstanceMutation = useMutation({
-    mutationFn: (instanceId: number) => api.delete<void>(`/campaigns/${campaignId}/monster-instances/${instanceId}`),
+    mutationFn: (instanceId: string) => api.delete<void>(`/campaigns/${campaignId}/monster-instances/${instanceId}`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['monsterInstances', campaignId] });
     },
@@ -73,7 +73,7 @@ export function MonstersPage() {
   // one asks first via a plain window.confirm, consistent with how
   // CharacterSheetPage.tsx's character-delete button already does the same.
   const deleteMonsterMutation = useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/campaigns/${campaignId}/monsters/${id}`),
+    mutationFn: (id: string) => api.delete<void>(`/campaigns/${campaignId}/monsters/${id}`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: bestiaryQueryKey });
       setExpandedMonsterId(null);

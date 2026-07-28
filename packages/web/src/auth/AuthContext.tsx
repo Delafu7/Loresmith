@@ -14,7 +14,7 @@ interface AuthContextValue {
   memberships: Membership[];
   isLoading: boolean;
   isAuthenticated: boolean;
-  roleForCampaign: (campaignId: number) => 'dm' | 'player' | null;
+  roleForCampaign: (campaignId: string) => 'dm' | 'player' | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, displayName: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -87,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       memberships: meQuery.data?.memberships ?? [],
       isLoading: meQuery.isLoading,
       isAuthenticated: !!meQuery.data?.user,
-      roleForCampaign: (campaignId: number) =>
+      roleForCampaign: (campaignId: string) =>
         meQuery.data?.memberships.find((m) => m.campaignId === campaignId)?.role ?? null,
       login: async (email, password) => {
         await loginMutation.mutateAsync({ email, password });

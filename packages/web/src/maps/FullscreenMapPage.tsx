@@ -11,10 +11,11 @@ import { api } from '../lib/api';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { useEncounterLive } from '../encounters/useEncounterLive';
 import { BattleMap } from '../encounters/BattleMap';
+import { isUuid } from '../lib/ids';
 
 interface FlatEncounter {
-  id: number;
-  campaign_id: number;
+  id: string;
+  campaign_id: string;
   name: string;
   status: string;
   myRole: 'dm' | 'player';
@@ -22,15 +23,15 @@ interface FlatEncounter {
 
 export function FullscreenMapPage() {
   const params = useParams<{ mapId: string }>();
-  const encounterId = Number(params.mapId);
+  const encounterId = params.mapId ?? '';
 
   const encounterQuery = useQuery({
     queryKey: ['encounter', 'flat', encounterId],
     queryFn: () => api.get<{ encounter: FlatEncounter }>(`/encounters/${encounterId}`),
-    enabled: Number.isInteger(encounterId),
+    enabled: isUuid(encounterId),
   });
 
-  const live = useEncounterLive(Number.isInteger(encounterId) ? encounterId : undefined);
+  const live = useEncounterLive(isUuid(encounterId) ? encounterId : undefined);
   const encounter = encounterQuery.data?.encounter;
 
   return (

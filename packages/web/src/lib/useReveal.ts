@@ -14,15 +14,15 @@ export interface RevealFieldState {
   playerOverride: string | null;
 }
 
-function revealsPath(monsterInstanceId: number): string {
+function revealsPath(monsterInstanceId: string): string {
   return `/monster-instances/${monsterInstanceId}/reveals`;
 }
 
-function revealsQueryKey(monsterInstanceId: number | undefined) {
+function revealsQueryKey(monsterInstanceId: string | undefined) {
   return ['reveals', 'monster_instance', monsterInstanceId] as const;
 }
 
-export function useReveals(monsterInstanceId: number | undefined, enabled = true) {
+export function useReveals(monsterInstanceId: string | undefined, enabled = true) {
   const queryClient = useQueryClient();
   const queryKey = revealsQueryKey(monsterInstanceId);
 

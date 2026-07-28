@@ -29,7 +29,7 @@ export function CharactersListPage() {
   const [form, setForm] = useState({
     name: '',
     isPc: role === 'player' ? true : true,
-    ownerUserId: '' as string | number,
+    ownerUserId: '',
     str: 10,
     dex: 10,
     con: 10,
@@ -49,7 +49,7 @@ export function CharactersListPage() {
           role === 'player'
             ? user!.id
             : form.isPc
-              ? Number(form.ownerUserId) || undefined
+              ? form.ownerUserId || undefined
               : undefined,
         str: form.str,
         dex: form.dex,
@@ -261,7 +261,7 @@ export function CharactersListPage() {
   );
 }
 
-function CharacterCard({ character, campaignId }: { character: Character; campaignId: number }) {
+function CharacterCard({ character, campaignId }: { character: Character; campaignId: string }) {
   return (
     <li>
       <Link

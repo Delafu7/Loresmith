@@ -25,7 +25,7 @@ function emptyDraft(): AttackDraft {
   return { name: '', mode: 'attack', attackBonus: '', saveDc: '', saveAbilityIndex: 'dex', damageDice: '', damageType: '' };
 }
 
-export function CharacterAttacksPanel({ characterId, editable }: { characterId: number; editable: boolean }) {
+export function CharacterAttacksPanel({ characterId, editable }: { characterId: string; editable: boolean }) {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState<AttackDraft>(emptyDraft());
@@ -53,7 +53,7 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (attackId: number) => api.delete(`/characters/${characterId}/attacks/${attackId}`),
+    mutationFn: (attackId: string) => api.delete(`/characters/${characterId}/attacks/${attackId}`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['character', characterId, 'attacks'] });
     },

@@ -64,8 +64,8 @@ const AMBER_SWATCHES = [
 
 const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
   {
-    participantId: 1,
-    characterId: 1,
+    participantId: '1',
+    characterId: '1',
     monsterInstanceId: null,
     name: 'Kaelen Duskrider',
     initiativeRoll: 18,
@@ -74,8 +74,8 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     hp: { hpCurrent: 58, hpMax: 64, hpTemp: 0 },
     effects: [
       {
-        effectId: 1,
-        effectDefinitionId: 1,
+        effectId: '1',
+        effectDefinitionId: '1',
         name: 'Blessed',
         durationType: 'rounds',
         durationRemaining: 3,
@@ -98,9 +98,9 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     faction: 'player',
   },
   {
-    participantId: 2,
+    participantId: '2',
     characterId: null,
-    monsterInstanceId: 1,
+    monsterInstanceId: '1',
     name: 'Ashclaw Wyrmling',
     initiativeRoll: 16,
     initiativeTiebreak: null,
@@ -122,9 +122,9 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     faction: 'enemy',
   },
   {
-    participantId: 3,
+    participantId: '3',
     characterId: null,
-    monsterInstanceId: 2,
+    monsterInstanceId: '2',
     name: 'Cinderfang',
     initiativeRoll: 9,
     initiativeTiebreak: null,
@@ -148,7 +148,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
 ];
 
 interface SampleRow {
-  id: number;
+  id: string;
   name: string;
   cr: string;
   hp: number;
@@ -163,9 +163,9 @@ const TABLE_COLUMNS: TableColumn<SampleRow>[] = [
 ];
 
 const TABLE_ROWS: SampleRow[] = [
-  { id: 1, name: 'Goblin', cr: '1/4', hp: 7, ac: 15 },
-  { id: 2, name: 'Ashclaw Wyrmling', cr: '4', hp: 82, ac: 17 },
-  { id: 3, name: 'The Sundered King', cr: '12', hp: 210, ac: 19 },
+  { id: '1', name: 'Goblin', cr: '1/4', hp: 7, ac: 15 },
+  { id: '2', name: 'Ashclaw Wyrmling', cr: '4', hp: 82, ac: 17 },
+  { id: '3', name: 'The Sundered King', cr: '12', hp: 210, ac: 19 },
 ];
 
 export function StyleguidePage() {
@@ -359,7 +359,7 @@ export function StyleguidePage() {
           title="Sample board"
           description="Tokens at full size, and below the 30px legibility threshold where Token.tsx swaps to a simplified faction-colored dot with initials (Phase 3 mobile pass). Turn-order strip is the same InitiativeStrip BattleMode.tsx uses."
         >
-          <InitiativeStrip participants={SAMPLE_PARTICIPANTS} activeParticipantId={1} />
+          <InitiativeStrip participants={SAMPLE_PARTICIPANTS} activeParticipantId="1" />
           <div className="relative overflow-visible rounded-md bg-stone-950 shadow-sm p-6 flex items-center gap-8">
             <div className="text-center">
               <div className="relative h-20 w-20">

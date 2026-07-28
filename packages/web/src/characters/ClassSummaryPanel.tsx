@@ -4,8 +4,8 @@ import { ApiError } from '../lib/api';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
 
 interface DraftRow {
-  classId: number;
-  subclassId: number | null;
+  classId: string;
+  subclassId: string | null;
   level: number;
 }
 
@@ -127,7 +127,7 @@ export function ClassSummaryPanel({
             <div key={idx} className="flex flex-wrap items-center gap-2">
               <select
                 value={row.classId}
-                onChange={(e) => updateRow(idx, { classId: Number(e.target.value), subclassId: null })}
+                onChange={(e) => updateRow(idx, { classId: e.target.value, subclassId: null })}
                 className="flex-1 min-w-[8rem] rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100 text-sm"
               >
                 {classesCatalog.map((c) => (
@@ -138,7 +138,7 @@ export function ClassSummaryPanel({
               </select>
               <select
                 value={row.subclassId ?? ''}
-                onChange={(e) => updateRow(idx, { subclassId: e.target.value ? Number(e.target.value) : null })}
+                onChange={(e) => updateRow(idx, { subclassId: e.target.value ? e.target.value : null })}
                 disabled={subclassOptions.length === 0}
                 className="flex-1 min-w-[8rem] rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100 text-sm disabled:opacity-50"
               >
@@ -170,7 +170,7 @@ export function ClassSummaryPanel({
         })}
         <button
           type="button"
-          onClick={() => setDraft((d) => [...d, { classId: classesCatalog[0]?.id ?? 0, subclassId: null, level: 1 }])}
+          onClick={() => setDraft((d) => [...d, { classId: classesCatalog[0]?.id ?? '', subclassId: null, level: 1 }])}
           disabled={classesCatalog.length === 0}
           className="text-xs text-amber-500 hover:text-amber-400"
         >

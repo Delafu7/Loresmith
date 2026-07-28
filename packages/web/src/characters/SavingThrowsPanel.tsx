@@ -29,13 +29,13 @@ export function SavingThrowsPanel({
 }: {
   abilityScoresCatalog: AbilityScoreCatalog[];
   abilities: CharacterAbilities;
-  proficientAbilityScoreIds: Set<number>;
+  proficientAbilityScoreIds: Set<string>;
   proficiencyBonus: number;
   editable: boolean;
-  onToggle: (abilityScoreId: number) => void;
+  onToggle: (abilityScoreId: string) => void;
   // Same reuse of `editable` as the roll-trigger gate as SkillsPanel — see
   // its comment for the reasoning.
-  characterId: number;
+  characterId: string;
 }) {
   const ordered = [...abilityScoresCatalog].sort((a, b) => {
     const ai = KEY_ORDER.indexOf((abilityKeyFor(a) ?? 'str') as keyof CharacterAbilities);

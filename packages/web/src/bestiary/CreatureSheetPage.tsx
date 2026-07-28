@@ -11,15 +11,16 @@ import type { MonsterCatalogEntry } from '../lib/types';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { Portrait } from '../components/Portrait';
 import { StatBlock } from '../components/StatBlock';
+import { isUuid } from '../lib/ids';
 
 export function CreatureSheetPage() {
   const params = useParams<{ id: string }>();
-  const id = Number(params.id);
+  const id = params.id ?? '';
 
   const monsterQuery = useQuery({
     queryKey: ['catalog', 'monster', id],
     queryFn: () => api.get<{ monster: MonsterCatalogEntry }>(`/catalog/monsters/${id}`),
-    enabled: Number.isInteger(id),
+    enabled: isUuid(id),
   });
 
   return (

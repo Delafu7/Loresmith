@@ -89,7 +89,7 @@ export function InventoryPanel({
   armorClass,
   armorClassMode,
 }: {
-  characterId: number;
+  characterId: string;
   edition: '2014' | '2024' | 'both';
   editable: boolean;
   str: number;
@@ -109,7 +109,7 @@ export function InventoryPanel({
 
   const addMutation = useMutation({
     mutationFn: (input: {
-      itemId: number;
+      itemId: string;
       quantity: number;
       isEquipped: boolean;
       isAttuned: boolean;
@@ -127,7 +127,7 @@ export function InventoryPanel({
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ itemRowId, patch }: { itemRowId: number; patch: UpdateCharacterItemBody }) =>
+    mutationFn: ({ itemRowId, patch }: { itemRowId: string; patch: UpdateCharacterItemBody }) =>
       api.patch<{ item: CharacterItem; character: Character }>(`/characters/${characterId}/items/${itemRowId}`, patch),
     onSuccess: (data) => {
       queryClient.setQueryData<{ items: CharacterItem[] }>(['character', characterId, 'items'], (prev) =>
@@ -143,7 +143,7 @@ export function InventoryPanel({
   });
 
   const removeMutation = useMutation({
-    mutationFn: (itemRowId: number) => api.delete<void>(`/characters/${characterId}/items/${itemRowId}`),
+    mutationFn: (itemRowId: string) => api.delete<void>(`/characters/${characterId}/items/${itemRowId}`),
     onSuccess: (_data, itemRowId) => {
       queryClient.setQueryData<{ items: CharacterItem[] }>(['character', characterId, 'items'], (prev) =>
         prev ? { items: prev.items.filter((i) => i.id !== itemRowId) } : prev,
@@ -168,12 +168,14 @@ export function InventoryPanel({
   const items = itemsQuery.data?.items ?? [];
   const proficiencyBonus = proficiencyBonusForLevel(level);
 
-  // Same "lowest id wins" tie-break as services/armorClass.ts's
-  // recomputeAndApplyCharacterArmorClass, for when more than one armor row
-  // is equipped simultaneously (a pre-existing data-modeling gap this app
-  // doesn't prevent anywhere else either).
+  // Same stable-but-arbitrary tie-break as services/armorClass.ts's
+  // recomputeAndApplyCharacterArmorClass (`ORDER BY ci.id ASC`), for when
+  // more than one armor row is equipped simultaneously (a pre-existing
+  // data-modeling gap this app doesn't prevent anywhere else either). With
+  // UUID ids this no longer means "oldest wins," just "the same one every
+  // time" — same tradeoff the server side already made.
   const equippedArmorItem = [...items]
-    .sort((a, b) => a.id - b.id)
+    .sort((a, b) => a.id.localeCompare(b.id))
     .find((i) => i.is_equipped && catalogById.get(i.item_id)?.item_type === 'armor');
   const equippedArmorCatalog = equippedArmorItem ? catalogById.get(equippedArmorItem.item_id) ?? null : null;
   const hasEquippedShield = items.some((i) => i.is_equipped && catalogById.get(i.item_id)?.item_type === 'shield');
@@ -278,7 +280,7 @@ function ItemCard({
   item: CharacterItem;
   catalogEntry: ItemCatalogEntry | undefined;
   editable: boolean;
-  characterId: number;
+  characterId: string;
   str: number;
   dex: number;
   proficiencyBonus: number;
@@ -442,7 +444,7 @@ function AddItemForm({
 }: {
   catalog: ItemCatalogEntry[];
   pending: boolean;
-  onAdd: (input: { itemId: number; quantity: number; isEquipped: boolean; isAttuned: boolean; customName: string | null }) => void;
+  onAdd: (input: { itemId: string; quantity: number; isEquipped: boolean; isAttuned: boolean; customName: string | null }) => void;
   onCancel: () => void;
 }) {
   const [itemId, setItemId] = useState('');
@@ -454,10 +456,9 @@ function AddItemForm({
   const sorted = [...catalog].sort((a, b) => a.name.localeCompare(b.name));
 
   function submit() {
-    const id = Number(itemId);
-    if (!id) return;
+    if (!itemId) return;
     onAdd({
-      itemId: id,
+      itemId,
       quantity: Math.max(0, Number(quantity) || 1),
       isEquipped,
       isAttuned,

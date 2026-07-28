@@ -26,9 +26,9 @@ export interface DiceRollerProps {
    * for damage dice. */
   diceSides?: number;
   diceCount?: number;
-  characterId?: number;
-  monsterInstanceId?: number;
-  encounterId?: number;
+  characterId?: string;
+  monsterInstanceId?: string;
+  encounterId?: string;
   /** Label for the roll-trigger button. Defaults to "Roll"; callers embedding
    * this inline in a dense row (skill/save lists) can pass a compact glyph
    * instead. */

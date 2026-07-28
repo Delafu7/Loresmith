@@ -12,8 +12,8 @@ import type {
 } from './types';
 
 export interface Envelope {
-  encounterId: number;
-  campaignId: number;
+  encounterId: string;
+  campaignId: string;
   seq: number;
   serverTimestamp: number;
 }
@@ -29,7 +29,7 @@ export interface CombatEndedEvent extends Envelope {
 
 export interface InitiativeRolledEvent extends Envelope {
   participants: Array<{
-    participantId: number;
+    participantId: string;
     initiativeRoll: number;
     initiativeTiebreak: number | null;
     turnOrder: number;
@@ -39,14 +39,14 @@ export interface InitiativeRolledEvent extends Envelope {
 export interface TurnAdvancedEvent extends Envelope {
   currentRound: number;
   currentTurnIndex: number;
-  activeParticipantId: number | null;
+  activeParticipantId: string | null;
 }
 
 export interface ParticipantJoinedEvent extends Envelope {
   participant: {
-    participantId: number;
-    characterId: number | null;
-    monsterInstanceId: number | null;
+    participantId: string;
+    characterId: string | null;
+    monsterInstanceId: string | null;
     initiativeRoll: number;
     turnOrder: number;
   };
@@ -54,16 +54,16 @@ export interface ParticipantJoinedEvent extends Envelope {
 
 export interface ParticipantLeftEvent extends Envelope {
   participant: {
-    participantId: number;
-    characterId: number | null;
-    monsterInstanceId: number | null;
+    participantId: string;
+    characterId: string | null;
+    monsterInstanceId: string | null;
   };
 }
 
 export interface HpChangedEvent extends Envelope {
-  participantId: number;
-  characterId: number | null;
-  monsterInstanceId: number | null;
+  participantId: string;
+  characterId: string | null;
+  monsterInstanceId: string | null;
   changeType: 'damage' | 'heal' | 'none';
   hp: { hpCurrent: number; hpMax: number; hpTemp: number };
 }
@@ -73,7 +73,7 @@ export interface HpChangedEvent extends Envelope {
 // here since this is the socket layer; that REST route uses snake_case per
 // this codebase's usual split).
 export interface MapConfig {
-  backgroundAssetId: number | null;
+  backgroundAssetId: string | null;
   backgroundFileUrl: string | null;
   gridColumns: number;
   gridRows: number;
@@ -89,11 +89,11 @@ export interface FullStateSyncEvent extends Envelope {
     currentRound: number;
     currentTurnIndex: number;
   };
-  activeParticipantId: number | null;
+  activeParticipantId: string | null;
   participants: Array<{
-    participantId: number;
-    characterId: number | null;
-    monsterInstanceId: number | null;
+    participantId: string;
+    characterId: string | null;
+    monsterInstanceId: string | null;
     name: string;
     initiativeRoll: number;
     initiativeTiebreak: number | null;
@@ -119,7 +119,7 @@ export interface FullStateSyncEvent extends Envelope {
 
 // REFACTOR-PLAN.md §3 — DM override for a participant's board faction.
 export interface ParticipantFactionChangedEvent extends Envelope {
-  participantId: number;
+  participantId: string;
   faction: 'player' | 'ally' | 'enemy' | 'neutral';
 }
 
@@ -128,7 +128,7 @@ export interface ParticipantFactionChangedEvent extends Envelope {
 export interface MapUpdatedEvent extends Envelope, MapConfig {}
 
 export interface TokenMovedEvent extends Envelope {
-  participantId: number;
+  participantId: string;
   x: number | null;
   y: number | null;
 }
@@ -140,15 +140,15 @@ export interface TokenMovedEvent extends Envelope {
 // combat_participants row. No DM/player visibility split (AC isn't
 // HP-sensitive), same as TOKEN_MOVED/MAP_UPDATED above.
 export interface ParticipantAcChangedEvent extends Envelope {
-  participantId: number;
-  characterId: number;
+  participantId: string;
+  characterId: string;
   armorClass: number;
 }
 
 // Phase 3.6 — no DM/player visibility split, same reasoning as
 // TOKEN_MOVED/MAP_UPDATED above (action-economy state isn't HP-sensitive).
 export interface ActionEconomyChangedEvent extends Envelope {
-  participantId: number;
+  participantId: string;
   actionUsed: boolean;
   bonusActionUsed: boolean;
   reactionUsed: boolean;
@@ -164,15 +164,15 @@ export interface ActionEconomyChangedEvent extends Envelope {
 // routes/monsters.ts's POST .../effects) and still need to reach a live
 // encounter room the target happens to be a participant in.
 export interface EffectAppliedEvent extends Envelope {
-  effectId: number;
-  targetId: number;
+  effectId: string;
+  targetId: string;
   targetType: 'character' | 'monster_instance';
-  effectDefinitionId: number;
+  effectDefinitionId: string;
   name: string;
   durationType: EffectDurationType;
   durationRemaining: number | null;
   concentration: boolean;
-  sourceCharacterId: number | null;
+  sourceCharacterId: string | null;
 }
 
 export type EffectExpiredEvent = EffectAppliedEvent;
@@ -186,8 +186,8 @@ export type EffectExpiredEvent = EffectAppliedEvent;
 // one) — never branch on `revealed` client-side to decide what to render,
 // just render `value` as-is.
 export interface RevealChangedEvent extends Envelope {
-  participantId: number;
-  monsterInstanceId: number;
+  participantId: string;
+  monsterInstanceId: string;
   fieldKey: string;
   revealed: boolean;
   value: unknown;
@@ -203,9 +203,9 @@ export interface RevealChangedEvent extends Envelope {
 // event only reaches a socket that's allowed to see the roll, so nothing to
 // branch on client-side.
 export interface DiceRolledEvent {
-  campaignId: number;
+  campaignId: string;
   serverTimestamp: number;
-  id: number;
+  id: string;
   rollType: DiceRollType;
   rollContext: string | null;
   d20Rolls: number[];
@@ -214,10 +214,10 @@ export interface DiceRolledEvent {
   diceCount: number;
   modifier: number;
   resultTotal: number;
-  characterId: number | null;
-  monsterInstanceId: number | null;
-  encounterId: number | null;
-  userId: number;
+  characterId: string | null;
+  monsterInstanceId: string | null;
+  encounterId: string | null;
+  userId: string;
   createdAt: string;
 }
 
@@ -252,7 +252,7 @@ export interface AckErr {
 export type Ack = AckOk | AckErr;
 
 export interface ClientToServerEvents {
-  'join:campaign': (payload: { campaignId: number }, ack?: (res: Ack) => void) => void;
-  'join:encounter': (payload: { encounterId: number }, ack?: (res: Ack) => void) => void;
-  'request:sync': (payload: { encounterId: number }, ack?: (res: Ack) => void) => void;
+  'join:campaign': (payload: { campaignId: string }, ack?: (res: Ack) => void) => void;
+  'join:encounter': (payload: { encounterId: string }, ack?: (res: Ack) => void) => void;
+  'request:sync': (payload: { encounterId: string }, ack?: (res: Ack) => void) => void;
 }

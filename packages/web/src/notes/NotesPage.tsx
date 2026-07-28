@@ -34,7 +34,7 @@ export function NotesPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (noteId: number) => api.delete(`/campaigns/${campaignId}/notes/${noteId}`),
+    mutationFn: (noteId: string) => api.delete(`/campaigns/${campaignId}/notes/${noteId}`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notes', campaignId] }),
   });
 

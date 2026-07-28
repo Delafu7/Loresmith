@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { EffectDefinitionCatalog } from '../lib/types';
 
 export interface ApplyEffectFormInput {
-  effectDefinitionId: number;
+  effectDefinitionId: string;
   durationValue: number | null;
 }
 
@@ -45,10 +45,9 @@ export function EffectApplyDialog({
   }
 
   function submit() {
-    const id = Number(effectDefinitionId);
-    if (!id) return;
+    if (!effectDefinitionId) return;
     onApply({
-      effectDefinitionId: id,
+      effectDefinitionId,
       durationValue: durationValue.trim() === '' ? null : Number(durationValue),
     });
     reset();

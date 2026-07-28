@@ -35,16 +35,16 @@ export interface EncounterLiveState {
     currentRound: number;
     currentTurnIndex: number;
   };
-  activeParticipantId: number | null;
+  activeParticipantId: string | null;
   participants: SnapshotParticipant[];
   map: MapConfig | null;
 }
 
-function liveQueryKey(encounterId: number) {
+function liveQueryKey(encounterId: string) {
   return ['encounterLive', encounterId] as const;
 }
 
-export function useEncounterLive(encounterId: number | undefined) {
+export function useEncounterLive(encounterId: string | undefined) {
   const queryClient = useQueryClient();
   const { socket, connected } = useSocket();
   const lastSeqRef = useRef<number | null>(null);
