@@ -8,7 +8,7 @@ import { pool } from '../db/pool.js';
 import { AppError } from './errors.js';
 
 export interface AuthedUser {
-  id: number;
+  id: string;
   email: string;
   displayName: string;
   uiTheme: 'crimson' | 'amber' | 'ember';
@@ -29,7 +29,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     throw new AppError('UNAUTHENTICATED', 'You must be logged in to do that');
   }
 
-  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
+  const result = await pool.query<{ id: string; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
     `SELECT id, email, display_name, ui_theme FROM users WHERE id = $1`,
     [userId],
   );

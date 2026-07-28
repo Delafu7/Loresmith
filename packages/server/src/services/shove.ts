@@ -37,14 +37,14 @@ export function canShoveSize(defenderSize: string): boolean {
 }
 
 interface EncounterRow {
-  id: number;
-  campaign_id: number;
+  id: string;
+  campaign_id: string;
   sync_seq: number;
   [key: string]: unknown;
 }
 
 interface ParticipantRow {
-  id: number;
+  id: string;
   action_used: boolean;
   bonus_action_used: boolean;
   reaction_used: boolean;
@@ -68,16 +68,16 @@ export interface ShoveResult {
 
 export async function performShove(
   pool: Pool,
-  encounterId: number,
-  attackerParticipantId: number,
-  actorUserId: number,
+  encounterId: string,
+  attackerParticipantId: string,
+  actorUserId: string,
   input: PerformShoveInput,
 ): Promise<ShoveResult> {
   const client = await pool.connect();
-  let campaignId: number;
+  let campaignId: string;
   let attackerStr: number;
-  let attackerCharacterId: number;
-  let defenderMonsterInstanceId: number;
+  let attackerCharacterId: string;
+  let defenderMonsterInstanceId: string;
   let defenderStr: number;
   let defenderDex: number;
   let defenderSkills: Record<string, number> | null;
@@ -88,7 +88,7 @@ export async function performShove(
     await client.query('BEGIN');
 
     const attackerRes = await client.query<
-      { id: number; character_id: number | null; action_used: boolean; str: number; campaign_id: number }
+      { id: string; character_id: string | null; action_used: boolean; str: number; campaign_id: string }
     >(
       `SELECT cp.id, cp.character_id, cp.action_used, c.str, e.campaign_id
        FROM combat_participants cp
@@ -108,7 +108,7 @@ export async function performShove(
     attackerCharacterId = attackerRow.character_id!;
 
     const defenderRes = await client.query<
-      { monster_instance_id: number | null; size: string; str: number; dex: number; skills: Record<string, number> | null }
+      { monster_instance_id: string | null; size: string; str: number; dex: number; skills: Record<string, number> | null }
     >(
       `SELECT cp.monster_instance_id, m.size, m.str, m.dex, m.skills
        FROM combat_participants cp

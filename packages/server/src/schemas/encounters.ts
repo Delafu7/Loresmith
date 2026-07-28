@@ -17,8 +17,8 @@ export const participantFactionEnum = z.enum(['player', 'ally', 'enemy', 'neutra
 
 export const addParticipantSchema = z
   .object({
-    characterId: z.number().int().positive().optional(),
-    monsterInstanceId: z.number().int().positive().optional(),
+    characterId: z.string().uuid().optional(),
+    monsterInstanceId: z.string().uuid().optional(),
     initiativeRoll: z.number().int().optional(), // omit to roll later via /roll-initiative
     // Omit to default player/enemy by character-vs-monster-instance.
     faction: participantFactionEnum.optional(),
@@ -65,7 +65,7 @@ export type UpsertCellOverrideInput = z.infer<typeof upsertCellOverrideSchema>;
 // max, an oversized grid would broadcast room-wide via MAP_UPDATED and hang
 // every connected client's `Array.from({length: columns*rows})` render.
 export const upsertEncounterMapSchema = z.object({
-  backgroundAssetId: z.number().int().positive().nullable().optional(),
+  backgroundAssetId: z.string().uuid().nullable().optional(),
   gridColumns: z.number().int().min(5).max(50).optional(),
   gridRows: z.number().int().min(5).max(50).optional(),
   cellSizePx: z.number().int().min(10).max(200).optional(),

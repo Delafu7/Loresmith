@@ -26,13 +26,13 @@ import { pool } from '../db/pool.js';
 import { performRest } from './rests.js';
 
 describe('performRest (integration, live DB, throwaway fixtures)', () => {
-  let userId: number;
-  let campaignId: number;
-  let longRestCharacterId: number;
-  let shortRestCharacterId: number;
+  let userId: string;
+  let campaignId: string;
+  let longRestCharacterId: string;
+  let shortRestCharacterId: string;
 
-  async function makeCharacter(fighterClassId: number, hpMax: number, hpCurrent: number, hitDiceRemaining: Record<string, number>) {
-    const res = await pool.query<{ id: number }>(
+  async function makeCharacter(fighterClassId: string, hpMax: number, hpCurrent: number, hitDiceRemaining: Record<string, number>) {
+    const res = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha,
           armor_class, hp_max, hp_current, hit_dice_remaining)
@@ -60,18 +60,18 @@ describe('performRest (integration, live DB, throwaway fixtures)', () => {
   }
 
   beforeAll(async () => {
-    const classRes = await pool.query<{ id: number }>(
+    const classRes = await pool.query<{ id: string }>(
       `SELECT id FROM classes WHERE index_key = 'fighter' AND edition_scope = '2024'`,
     );
     const fighterClassId = classRes.rows[0]!.id;
 
-    const userRes = await pool.query<{ id: number }>(
+    const userRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Rest Test User', 'x') RETURNING id`,
       [`rest-test-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`],
     );
     userId = userRes.rows[0]!.id;
 
-    const campaignRes = await pool.query<{ id: number }>(
+    const campaignRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('Rest Test Campaign', $1, '2024') RETURNING id`,
       [userId],
     );

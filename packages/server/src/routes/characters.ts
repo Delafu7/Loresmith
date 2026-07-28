@@ -43,7 +43,7 @@ import type { ArmorClassEncounterSync } from '../services/armorClass.js';
 // reported an actual AC change (a non-null armorClassSync).
 function broadcastArmorClassSyncs(
   io: Server,
-  characterId: number,
+  characterId: string,
   armorClass: number,
   encounterSyncs: ArmorClassEncounterSync[],
 ): void {
@@ -76,17 +76,17 @@ export const charactersRouter = Router();
 charactersRouter.use(requireAuth);
 
 charactersRouter.get('/:id', async (req, res) => {
-  const character = await charactersService.getCharacter(pool, req.user!.id, Number(req.params.id));
+  const character = await charactersService.getCharacter(pool, req.user!.id, (req.params.id as string));
   res.json({ character });
 });
 
 charactersRouter.patch('/:id', async (req, res) => {
   const input = updateCharacterSchema.parse(req.body);
-  const { character, armorClassSync } = await charactersService.updateCharacter(pool, req.user!.id, Number(req.params.id), input);
+  const { character, armorClassSync } = await charactersService.updateCharacter(pool, req.user!.id, (req.params.id as string), input);
   if (armorClassSync) {
     broadcastArmorClassSyncs(
       getIo(req.app),
-      Number(req.params.id),
+      (req.params.id as string),
       armorClassSync.character.armor_class as number,
       armorClassSync.encounterSyncs,
     );
@@ -95,7 +95,7 @@ charactersRouter.patch('/:id', async (req, res) => {
 });
 
 charactersRouter.delete('/:id', async (req, res) => {
-  await charactersService.deleteCharacter(pool, req.user!.id, Number(req.params.id));
+  await charactersService.deleteCharacter(pool, req.user!.id, (req.params.id as string));
   res.status(204).send();
 });
 
@@ -107,45 +107,45 @@ charactersRouter.delete('/:id', async (req, res) => {
 // member may read" rule as GET /:id, ownership is only enforced on the PUTs).
 
 charactersRouter.get('/:id/classes', async (req, res) => {
-  const classes = await charactersService.getClasses(pool, req.user!.id, Number(req.params.id));
+  const classes = await charactersService.getClasses(pool, req.user!.id, (req.params.id as string));
   res.json({ classes });
 });
 
 charactersRouter.get('/:id/skill-proficiencies', async (req, res) => {
-  const skillProficiencies = await charactersService.getSkillProficiencies(pool, req.user!.id, Number(req.params.id));
+  const skillProficiencies = await charactersService.getSkillProficiencies(pool, req.user!.id, (req.params.id as string));
   res.json({ skillProficiencies });
 });
 
 charactersRouter.get('/:id/saving-throw-proficiencies', async (req, res) => {
   const savingThrowProficiencies = await charactersService.getSavingThrowProficiencies(
-    pool, req.user!.id, Number(req.params.id),
+    pool, req.user!.id, (req.params.id as string),
   );
   res.json({ savingThrowProficiencies });
 });
 
 charactersRouter.put('/:id/classes', async (req, res) => {
   const input = replaceClassesSchema.parse(req.body);
-  const classes = await charactersService.replaceClasses(pool, req.user!.id, Number(req.params.id), input);
+  const classes = await charactersService.replaceClasses(pool, req.user!.id, (req.params.id as string), input);
   res.json({ classes });
 });
 
 charactersRouter.put('/:id/skill-proficiencies', async (req, res) => {
   const input = replaceSkillProficienciesSchema.parse(req.body);
-  const skillProficiencies = await charactersService.replaceSkillProficiencies(pool, req.user!.id, Number(req.params.id), input);
+  const skillProficiencies = await charactersService.replaceSkillProficiencies(pool, req.user!.id, (req.params.id as string), input);
   res.json({ skillProficiencies });
 });
 
 charactersRouter.put('/:id/saving-throw-proficiencies', async (req, res) => {
   const input = replaceSavingThrowProficienciesSchema.parse(req.body);
   const savingThrowProficiencies = await charactersService.replaceSavingThrowProficiencies(
-    pool, req.user!.id, Number(req.params.id), input,
+    pool, req.user!.id, (req.params.id as string), input,
   );
   res.json({ savingThrowProficiencies });
 });
 
 charactersRouter.patch('/:id/hp', async (req, res) => {
   const input = hpDeltaSchema.parse(req.body);
-  const { character, encounterSyncs } = await charactersService.applyHpDelta(pool, req.user!.id, Number(req.params.id), input);
+  const { character, encounterSyncs } = await charactersService.applyHpDelta(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
   for (const sync of encounterSyncs) {
     broadcastHpChanged(io, {
@@ -153,7 +153,7 @@ charactersRouter.patch('/:id/hp', async (req, res) => {
       campaignId: sync.campaign_id,
       seq: sync.sync_seq,
       participantId: sync.participant_id,
-      characterId: Number(req.params.id),
+      characterId: (req.params.id as string),
       monsterInstanceId: null,
       hpCurrent: character.hp_current as number,
       hpMax: character.hp_max as number,
@@ -170,7 +170,7 @@ charactersRouter.patch('/:id/hp', async (req, res) => {
 // applyDamage for the full rationale).
 charactersRouter.post('/:id/apply-damage', async (req, res) => {
   const input = applyDamageSchema.parse(req.body);
-  const result = await charactersService.applyDamage(pool, req.user!.id, Number(req.params.id), input);
+  const result = await charactersService.applyDamage(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
   for (const sync of result.encounterSyncs) {
     broadcastHpChanged(io, {
@@ -178,7 +178,7 @@ charactersRouter.post('/:id/apply-damage', async (req, res) => {
       campaignId: sync.campaign_id,
       seq: sync.sync_seq,
       participantId: sync.participant_id,
-      characterId: Number(req.params.id),
+      characterId: (req.params.id as string),
       monsterInstanceId: null,
       hpCurrent: result.character.hp_current as number,
       hpMax: result.character.hp_max as number,
@@ -197,15 +197,15 @@ charactersRouter.post('/:id/apply-damage', async (req, res) => {
 
 charactersRouter.patch('/:id/exhaustion', async (req, res) => {
   const input = exhaustionSchema.parse(req.body);
-  const character = await charactersService.updateExhaustion(pool, req.user!.id, Number(req.params.id), input);
+  const character = await charactersService.updateExhaustion(pool, req.user!.id, (req.params.id as string), input);
   res.json({ character });
 });
 
 charactersRouter.patch('/:id/armor-class-mode', async (req, res) => {
   const input = updateArmorClassModeSchema.parse(req.body);
-  const { character, armorClassSync } = await charactersService.updateArmorClassMode(pool, req.user!.id, Number(req.params.id), input);
+  const { character, armorClassSync } = await charactersService.updateArmorClassMode(pool, req.user!.id, (req.params.id as string), input);
   if (armorClassSync) {
-    broadcastArmorClassSyncs(getIo(req.app), Number(req.params.id), character.armor_class as number, armorClassSync.encounterSyncs);
+    broadcastArmorClassSyncs(getIo(req.app), (req.params.id as string), character.armor_class as number, armorClassSync.encounterSyncs);
   }
   res.json({ character });
 });
@@ -213,13 +213,13 @@ charactersRouter.patch('/:id/armor-class-mode', async (req, res) => {
 // ---- Spells (character_spells) ----
 
 charactersRouter.get('/:id/spells', async (req, res) => {
-  const spells = await characterSpellsService.listCharacterSpells(pool, req.user!.id, Number(req.params.id));
+  const spells = await characterSpellsService.listCharacterSpells(pool, req.user!.id, (req.params.id as string));
   res.json({ spells });
 });
 
 charactersRouter.post('/:id/spells', async (req, res) => {
   const input = createCharacterSpellSchema.parse(req.body);
-  const spell = await characterSpellsService.learnCharacterSpell(pool, req.user!.id, Number(req.params.id), input);
+  const spell = await characterSpellsService.learnCharacterSpell(pool, req.user!.id, (req.params.id as string), input);
   res.status(201).json({ spell });
 });
 
@@ -227,14 +227,14 @@ charactersRouter.patch('/:id/spells/:spellId', async (req, res) => {
   const input = updateCharacterSpellSchema.parse(req.body);
   const { classId } = spellRowQuerySchema.parse(req.query);
   const spell = await characterSpellsService.toggleCharacterSpellPrepared(
-    pool, req.user!.id, Number(req.params.id), Number(req.params.spellId), classId, input,
+    pool, req.user!.id, (req.params.id as string), (req.params.spellId as string), classId, input,
   );
   res.json({ spell });
 });
 
 charactersRouter.delete('/:id/spells/:spellId', async (req, res) => {
   const { classId } = spellRowQuerySchema.parse(req.query);
-  await characterSpellsService.unlearnCharacterSpell(pool, req.user!.id, Number(req.params.id), Number(req.params.spellId), classId);
+  await characterSpellsService.unlearnCharacterSpell(pool, req.user!.id, (req.params.id as string), (req.params.spellId as string), classId);
   res.status(204).send();
 });
 
@@ -242,43 +242,43 @@ charactersRouter.delete('/:id/spells/:spellId', async (req, res) => {
 
 // REFACTOR-PLAN.md §6: a character's structured, selectable attack list.
 charactersRouter.get('/:id/attacks', async (req, res) => {
-  const attacks = await characterAttacksService.listCharacterAttacks(pool, req.user!.id, Number(req.params.id));
+  const attacks = await characterAttacksService.listCharacterAttacks(pool, req.user!.id, (req.params.id as string));
   res.json({ attacks });
 });
 
 charactersRouter.post('/:id/attacks', async (req, res) => {
   const input = createCharacterAttackSchema.parse(req.body);
-  const attack = await characterAttacksService.addCharacterAttack(pool, req.user!.id, Number(req.params.id), input);
+  const attack = await characterAttacksService.addCharacterAttack(pool, req.user!.id, (req.params.id as string), input);
   res.status(201).json({ attack });
 });
 
 charactersRouter.patch('/:id/attacks/:attackId', async (req, res) => {
   const input = updateCharacterAttackSchema.parse(req.body);
   const attack = await characterAttacksService.updateCharacterAttack(
-    pool, req.user!.id, Number(req.params.id), Number(req.params.attackId), input,
+    pool, req.user!.id, (req.params.id as string), (req.params.attackId as string), input,
   );
   res.json({ attack });
 });
 
 charactersRouter.delete('/:id/attacks/:attackId', async (req, res) => {
-  await characterAttacksService.removeCharacterAttack(pool, req.user!.id, Number(req.params.id), Number(req.params.attackId));
+  await characterAttacksService.removeCharacterAttack(pool, req.user!.id, (req.params.id as string), (req.params.attackId as string));
   res.status(204).send();
 });
 
 charactersRouter.get('/:id/items', async (req, res) => {
-  const items = await characterItemsService.listCharacterItems(pool, req.user!.id, Number(req.params.id));
+  const items = await characterItemsService.listCharacterItems(pool, req.user!.id, (req.params.id as string));
   res.json({ items });
 });
 
 charactersRouter.post('/:id/items', async (req, res) => {
   const input = createCharacterItemSchema.parse(req.body);
   const { item, character, armorClassSync } = await characterItemsService.addCharacterItem(
-    pool, req.user!.id, Number(req.params.id), input,
+    pool, req.user!.id, (req.params.id as string), input,
   );
   if (armorClassSync) {
     broadcastArmorClassSyncs(
       getIo(req.app),
-      Number(req.params.id),
+      (req.params.id as string),
       armorClassSync.character.armor_class as number,
       armorClassSync.encounterSyncs,
     );
@@ -289,12 +289,12 @@ charactersRouter.post('/:id/items', async (req, res) => {
 charactersRouter.patch('/:id/items/:itemId', async (req, res) => {
   const input = updateCharacterItemSchema.parse(req.body);
   const { item, character, armorClassSync } = await characterItemsService.updateCharacterItem(
-    pool, req.user!.id, Number(req.params.id), Number(req.params.itemId), input,
+    pool, req.user!.id, (req.params.id as string), (req.params.itemId as string), input,
   );
   if (armorClassSync) {
     broadcastArmorClassSyncs(
       getIo(req.app),
-      Number(req.params.id),
+      (req.params.id as string),
       armorClassSync.character.armor_class as number,
       armorClassSync.encounterSyncs,
     );
@@ -307,26 +307,26 @@ charactersRouter.patch('/:id/items/:itemId', async (req, res) => {
 });
 
 charactersRouter.delete('/:id/items/:itemId', async (req, res) => {
-  await characterItemsService.removeCharacterItem(pool, req.user!.id, Number(req.params.id), Number(req.params.itemId));
+  await characterItemsService.removeCharacterItem(pool, req.user!.id, (req.params.id as string), (req.params.itemId as string));
   res.status(204).send();
 });
 
 // ---- Resource pools (character_resource_pools) ----
 
 charactersRouter.get('/:id/resources', async (req, res) => {
-  const resources = await resourcePoolsService.listResourcePools(pool, req.user!.id, Number(req.params.id));
+  const resources = await resourcePoolsService.listResourcePools(pool, req.user!.id, (req.params.id as string));
   res.json({ resources });
 });
 
 charactersRouter.post('/:id/resources/:key/spend', async (req, res) => {
   const input = resourceAmountSchema.parse(req.body);
-  const resource = await resourcePoolsService.spendResource(pool, req.user!.id, Number(req.params.id), req.params.key!, input);
+  const resource = await resourcePoolsService.spendResource(pool, req.user!.id, (req.params.id as string), req.params.key!, input);
   res.json({ resource });
 });
 
 charactersRouter.post('/:id/resources/:key/recover', async (req, res) => {
   const input = resourceAmountSchema.parse(req.body);
-  const resource = await resourcePoolsService.recoverResource(pool, req.user!.id, Number(req.params.id), req.params.key!, input);
+  const resource = await resourcePoolsService.recoverResource(pool, req.user!.id, (req.params.id as string), req.params.key!, input);
   res.json({ resource });
 });
 
@@ -334,13 +334,13 @@ charactersRouter.post('/:id/resources/:key/recover', async (req, res) => {
 // services/effects.ts ----
 
 charactersRouter.get('/:id/effects', async (req, res) => {
-  const effects = await effectsService.listCharacterEffects(pool, req.user!.id, Number(req.params.id));
+  const effects = await effectsService.listCharacterEffects(pool, req.user!.id, (req.params.id as string));
   res.json({ effects });
 });
 
 charactersRouter.post('/:id/effects', async (req, res) => {
   const input = applyTargetEffectSchema.parse(req.body);
-  const { effect, effectDefinitionName, encounterSyncs, replacedEffect } = await effectsService.applyCharacterEffect(pool, req.user!.id, Number(req.params.id), input);
+  const { effect, effectDefinitionName, encounterSyncs, replacedEffect } = await effectsService.applyCharacterEffect(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
   for (const sync of encounterSyncs) {
     if (replacedEffect) {

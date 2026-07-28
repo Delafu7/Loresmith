@@ -21,17 +21,17 @@ notesRouter.post('/', async (req, res) => {
 });
 
 notesRouter.get('/:noteId', async (req, res) => {
-  const note = await notesService.getNote(pool, req.campaignId!, Number(req.params.noteId), req.campaignRole!);
+  const note = await notesService.getNote(pool, req.campaignId!, (req.params.noteId as string), req.campaignRole!);
   res.json({ note });
 });
 
 notesRouter.patch('/:noteId', async (req, res) => {
   const input = updateNoteSchema.parse(req.body);
-  const note = await notesService.updateNote(pool, req.campaignId!, Number(req.params.noteId), req.user!.id, req.campaignRole!, input);
+  const note = await notesService.updateNote(pool, req.campaignId!, (req.params.noteId as string), req.user!.id, req.campaignRole!, input);
   res.json({ note });
 });
 
 notesRouter.delete('/:noteId', async (req, res) => {
-  await notesService.deleteNote(pool, req.campaignId!, Number(req.params.noteId), req.user!.id, req.campaignRole!);
+  await notesService.deleteNote(pool, req.campaignId!, (req.params.noteId as string), req.user!.id, req.campaignRole!);
   res.status(204).send();
 });

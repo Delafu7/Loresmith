@@ -20,10 +20,10 @@ import type {
 import type { ApplyDamageInput } from '../schemas/damage.js';
 
 interface CharacterRow {
-  id: number;
-  campaign_id: number;
+  id: string;
+  campaign_id: string;
   is_pc: boolean;
-  owner_user_id: number | null;
+  owner_user_id: string | null;
   str: number;
   dex: number;
   con: number;
@@ -40,7 +40,7 @@ interface CharacterRow {
 // why ownership checks are inline per-service rather than centralized in
 // middleware (resource-id-keyed routes only know the campaign after loading
 // the row), while still not duplicating the DB reads/logic themselves.
-export async function fetchCharacterOrThrow(pool: Pool | PoolClient, characterId: number): Promise<CharacterRow> {
+export async function fetchCharacterOrThrow(pool: Pool | PoolClient, characterId: string): Promise<CharacterRow> {
   const result = await pool.query<CharacterRow>(`SELECT * FROM characters WHERE id = $1`, [characterId]);
   const row = result.rows[0];
   if (!row) throw notFound('Character');
@@ -50,7 +50,7 @@ export async function fetchCharacterOrThrow(pool: Pool | PoolClient, characterId
 /** Layer 2+3+4 for a resource-id-keyed character route: membership, then ownership-or-DM. */
 export async function authorizeCharacterMutation(
   pool: Pool,
-  actorId: number,
+  actorId: string,
   character: CharacterRow,
 ): Promise<CampaignRole> {
   const role = await requireMembership(pool, character.campaign_id, actorId);
@@ -62,12 +62,12 @@ export async function authorizeCharacterMutation(
 // campaign now (hide/reveal was removed) — this is a plain read for every
 // role, `role` is kept only because callers already have it from the
 // membership check and other sibling functions share the signature shape.
-export async function listCharacters(pool: Pool, campaignId: number, _role: CampaignRole) {
+export async function listCharacters(pool: Pool, campaignId: string, _role: CampaignRole) {
   const result = await pool.query<CharacterRow>(`SELECT * FROM characters WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
   return result.rows;
 }
 
-export async function getCharacter(pool: Pool, actorId: number, characterId: number) {
+export async function getCharacter(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await requireMembership(pool, character.campaign_id, actorId); // any role may read
   return character;
@@ -75,8 +75,8 @@ export async function getCharacter(pool: Pool, actorId: number, characterId: num
 
 export async function createCharacter(
   pool: Pool,
-  actorId: number,
-  campaignId: number,
+  actorId: string,
+  campaignId: string,
   role: CampaignRole,
   input: CreateCharacterInput,
 ) {
@@ -165,8 +165,8 @@ export interface UpdateCharacterResult {
 
 export async function updateCharacter(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: UpdateCharacterInput,
 ): Promise<UpdateCharacterResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -274,7 +274,7 @@ export async function updateCharacter(
   }
 }
 
-export async function deleteCharacter(pool: Pool, actorId: number, characterId: number): Promise<void> {
+export async function deleteCharacter(pool: Pool, actorId: string, characterId: string): Promise<void> {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);
   await pool.query(`DELETE FROM characters WHERE id = $1`, [characterId]);
@@ -287,10 +287,10 @@ export async function deleteCharacter(pool: Pool, actorId: number, characterId: 
 // transaction as the HP update itself (PLAN.md §5.2), not as a follow-up
 // query that could observe a different snapshot.
 export interface EncounterHpSyncTarget {
-  encounter_id: number;
-  campaign_id: number;
+  encounter_id: string;
+  campaign_id: string;
   sync_seq: number;
-  participant_id: number;
+  participant_id: string;
 }
 
 export interface ApplyHpDeltaResult {
@@ -300,8 +300,8 @@ export interface ApplyHpDeltaResult {
 
 export async function applyHpDelta(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: HpDeltaInput,
 ): Promise<ApplyHpDeltaResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -371,8 +371,8 @@ export interface ApplyDamageResult {
 
 export async function applyDamage(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: ApplyDamageInput,
 ): Promise<ApplyDamageResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -458,21 +458,21 @@ export async function applyDamage(
 // campaign member may view another member's sheet) — ownership is only
 // enforced on the mutating PUTs via authorizeCharacterMutation.
 
-export async function getClasses(pool: Pool, actorId: number, characterId: number) {
+export async function getClasses(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await requireMembership(pool, character.campaign_id, actorId);
   const result = await pool.query(`SELECT * FROM character_classes WHERE character_id = $1`, [characterId]);
   return result.rows;
 }
 
-export async function getSkillProficiencies(pool: Pool, actorId: number, characterId: number) {
+export async function getSkillProficiencies(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await requireMembership(pool, character.campaign_id, actorId);
   const result = await pool.query(`SELECT * FROM character_skill_proficiencies WHERE character_id = $1`, [characterId]);
   return result.rows;
 }
 
-export async function getSavingThrowProficiencies(pool: Pool, actorId: number, characterId: number) {
+export async function getSavingThrowProficiencies(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await requireMembership(pool, character.campaign_id, actorId);
   const result = await pool.query(
@@ -484,7 +484,7 @@ export async function getSavingThrowProficiencies(pool: Pool, actorId: number, c
 
 // ---- Bulk replace-all sub-resources ----
 
-export async function replaceClasses(pool: Pool, actorId: number, characterId: number, input: ReplaceClassesInput) {
+export async function replaceClasses(pool: Pool, actorId: string, characterId: string, input: ReplaceClassesInput) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);
 
@@ -525,8 +525,8 @@ export async function replaceClasses(pool: Pool, actorId: number, characterId: n
 
 export async function replaceSkillProficiencies(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: ReplaceSkillProficienciesInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -556,8 +556,8 @@ export async function replaceSkillProficiencies(
 
 export async function replaceSavingThrowProficiencies(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: ReplaceSavingThrowProficienciesInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -596,8 +596,8 @@ export async function replaceSavingThrowProficiencies(
 
 export async function updateExhaustion(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: ExhaustionInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -620,8 +620,8 @@ export async function updateExhaustion(
 // track its equipped armor automatically is a self-service sheet decision.
 export async function updateArmorClassMode(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: UpdateArmorClassModeInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);

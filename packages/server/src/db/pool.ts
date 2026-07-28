@@ -9,16 +9,18 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is not set (expected to be loaded from the repo-root .env)');
 }
 
-// node-postgres returns BIGINT/BIGSERIAL (OID 20) columns as strings by
-// default, since JS numbers can't safely represent the full 64-bit range.
-// Every id column in this schema is BIGSERIAL, and none of them will ever
-// approach Number.MAX_SAFE_INTEGER, so parse them as real numbers instead —
-// otherwise `row.owner_user_id === actorId` (a JS number from req.user.id or
-// Number(req.params.x)) silently fails even when the ids are logically
-// equal, which previously broke real authorization/ownership checks (e.g.
-// letting a DM remove themselves from their own campaign's membership,
-// since the "don't remove the owning DM" guard never matched). This is a
-// process-wide setting on the `pg` module, so it must run before any query.
+// node-postgres returns BIGINT (OID 20) columns as strings by default, since
+// JS numbers can't safely represent the full 64-bit range. Every id column
+// in this schema used to be BIGSERIAL — it's UUID now (see the
+// uuid-primary-keys migration), compared as plain strings with no parser
+// needed. This setting only matters anymore for the two remaining kinds of
+// real bigint values: the dormant `*_legacy` columns that migration kept
+// around for recovery (never read by application code), and COUNT(*)
+// aggregates (Postgres always returns those as bigint regardless of the
+// counted column's type) — parsing those as real numbers instead of strings
+// keeps arithmetic on them (`count + 1`, etc.) working without an explicit
+// Number() at every call site. This is a process-wide setting on the `pg`
+// module, so it must run before any query.
 types.setTypeParser(20, (value: string) => parseInt(value, 10));
 
 export const pool = new Pool({ connectionString });

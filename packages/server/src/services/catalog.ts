@@ -171,7 +171,7 @@ export async function listMonsters(pool: Pool, query: MonsterQuery) {
 // is the caller's responsibility (see routes/catalog.ts) — this just 404s if
 // the id doesn't exist at all, same "don't leak existence" posture as
 // fetchHomebrewMonsterOrThrow in services/monsterCatalog.ts.
-export async function getMonsterById(pool: Pool, id: number) {
+export async function getMonsterById(pool: Pool, id: string) {
   const result = await pool.query(`SELECT * FROM monsters WHERE id = $1`, [id]);
   return result.rows[0] ?? null;
 }

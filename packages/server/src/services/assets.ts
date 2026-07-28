@@ -12,9 +12,9 @@ import { fetchCharacterOrThrow, authorizeCharacterMutation } from './characters.
 import type { CreateAssetFieldsInput } from '../schemas/assets.js';
 
 interface AssetRow {
-  id: number;
-  campaign_id: number;
-  uploaded_by_user_id: number;
+  id: string;
+  campaign_id: string;
+  uploaded_by_user_id: string;
   asset_type: 'image' | 'handout';
   file_url: string;
   mime_type: string;
@@ -23,7 +23,7 @@ interface AssetRow {
   created_at: string;
 }
 
-export async function listAssets(pool: Pool, campaignId: number, _role: CampaignRole): Promise<AssetRow[]> {
+export async function listAssets(pool: Pool, campaignId: string, _role: CampaignRole): Promise<AssetRow[]> {
   const result = await pool.query<AssetRow>(
     `SELECT * FROM campaign_assets WHERE campaign_id = $1 ORDER BY created_at DESC`,
     [campaignId],
@@ -47,8 +47,8 @@ export interface UploadedFileInfo {
  */
 export async function authorizeAssetUpload(
   pool: Pool,
-  campaignId: number,
-  actorId: number,
+  campaignId: string,
+  actorId: string,
   role: CampaignRole,
   fields: CreateAssetFieldsInput,
 ): Promise<void> {
@@ -58,7 +58,7 @@ export async function authorizeAssetUpload(
     throw new AppError('FORBIDDEN_ROLE', 'Players may only upload an image for their own character\'s portrait');
   }
   const character = await fetchCharacterOrThrow(pool, fields.characterId);
-  if (Number(character.campaign_id) !== campaignId) {
+  if (character.campaign_id !== campaignId) {
     // Cross-campaign consistency (characterId's row must belong to this
     // same campaign) is a service-layer check, not a DB constraint — same
     // "app-layer, not declarative" precedent as PLAN.md §3.5's
@@ -72,8 +72,8 @@ export async function authorizeAssetUpload(
 
 export async function createAsset(
   pool: Pool,
-  campaignId: number,
-  actorId: number,
+  campaignId: string,
+  actorId: string,
   _role: CampaignRole,
   fields: CreateAssetFieldsInput,
   file: UploadedFileInfo,
@@ -111,18 +111,18 @@ export async function createAsset(
   }
 }
 
-async function fetchAssetOrThrow(pool: Pool, assetId: number): Promise<AssetRow> {
+async function fetchAssetOrThrow(pool: Pool, assetId: string): Promise<AssetRow> {
   const result = await pool.query<AssetRow>(`SELECT * FROM campaign_assets WHERE id = $1`, [assetId]);
   const row = result.rows[0];
   if (!row) throw notFound('Asset');
   return row;
 }
 
-export async function deleteAsset(pool: Pool, actorId: number, assetId: number): Promise<void> {
+export async function deleteAsset(pool: Pool, actorId: string, assetId: string): Promise<void> {
   const asset = await fetchAssetOrThrow(pool, assetId);
   const role = await requireMembership(pool, asset.campaign_id, actorId);
   // DM of the owning campaign, OR the original uploader, may delete.
-  if (role !== 'dm' && Number(asset.uploaded_by_user_id) !== Number(actorId)) {
+  if (role !== 'dm' && asset.uploaded_by_user_id !== actorId) {
     throw new AppError('FORBIDDEN_NOT_OWNER', 'Only the DM or the original uploader can delete this asset');
   }
 

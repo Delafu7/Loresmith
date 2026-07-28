@@ -3,7 +3,7 @@ import { z } from 'zod';
 // See schemas/characters.ts for why defaulted fields live only on the create
 // schema (zod's `.partial()` doesn't strip `.default()`).
 const sharedCharacterItemShape = {
-  itemId: z.number().int().positive(),
+  itemId: z.string().uuid(),
   quantity: z.number().int().min(0),
   isEquipped: z.boolean(),
   isAttuned: z.boolean(),

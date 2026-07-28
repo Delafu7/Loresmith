@@ -1,18 +1,24 @@
 // Integration test for the initiative tiebreak/ordering rule in
 // rollInitiative(): highest roll first, DEX-mod tiebreak, then participant
-// id as a final stable tiebreak. This talks to the real dev Postgres (the
-// docker-compose instance this project already uses for manual verification)
-// against the seeded demo encounter, since the ordering is expressed as a SQL
-// ORDER BY rather than a pure JS function. Original initiative values are
-// captured and restored afterward so the demo seed data is left untouched.
+// id as a final stable tiebreak (an implementation convenience so ties don't
+// flap between calls — not a 5e rule, and with UUID ids there's no
+// insertion-order correlation to lean on anymore, so this compares against
+// plain string ordering of whichever two ids the fixture actually gets
+// rather than assuming which one sorts first). This talks to the real dev
+// Postgres (the docker-compose instance this project already uses for
+// manual verification) against the seeded demo encounter, since the
+// ordering is expressed as a SQL ORDER BY rather than a pure JS function.
+// Original initiative values are captured and restored afterward so the
+// demo seed data is left untouched. Looked up by encounter name, not a
+// hardcoded id — ids are UUIDs now, generated fresh per seed run.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';
 import { rollInitiative } from './encounters.js';
 
-const DEMO_ENCOUNTER_ID = 1;
+let DEMO_ENCOUNTER_ID: string;
 
 interface ParticipantRow {
-  id: number;
+  id: string;
   initiative_roll: number;
   initiative_tiebreak: number | null;
   turn_order: number;
@@ -22,6 +28,9 @@ describe('rollInitiative ordering (integration, live DB)', () => {
   let original: ParticipantRow[] = [];
 
   beforeAll(async () => {
+    const encRes = await pool.query<{ id: string }>(`SELECT id FROM encounters WHERE name = 'Ambush on the Old Road'`);
+    DEMO_ENCOUNTER_ID = encRes.rows[0]!.id;
+
     const res = await pool.query<ParticipantRow>(
       `SELECT id, initiative_roll, initiative_tiebreak, turn_order FROM combat_participants WHERE encounter_id = $1 ORDER BY id`,
       [DEMO_ENCOUNTER_ID],

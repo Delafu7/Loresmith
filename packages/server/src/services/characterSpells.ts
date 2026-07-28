@@ -11,7 +11,7 @@ import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.
 import { isUniqueViolation } from './dbErrors.js';
 import type { CreateCharacterSpellInput, UpdateCharacterSpellInput } from '../schemas/characterSpells.js';
 
-export async function listCharacterSpells(pool: Pool, actorId: number, characterId: number) {
+export async function listCharacterSpells(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await requireMembership(pool, character.campaign_id, actorId);
   const result = await pool.query(
@@ -23,8 +23,8 @@ export async function listCharacterSpells(pool: Pool, actorId: number, character
 
 export async function learnCharacterSpell(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: CreateCharacterSpellInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -53,17 +53,17 @@ export async function learnCharacterSpell(
 // class and the caller didn't disambiguate with classId.
 async function findOneCharacterSpellRow(
   pool: Pool,
-  characterId: number,
-  spellId: number,
-  classId: number | undefined,
-): Promise<{ id: number; class_id: number | null }> {
+  characterId: string,
+  spellId: string,
+  classId: string | undefined,
+): Promise<{ id: string; class_id: string | null }> {
   const params: unknown[] = [characterId, spellId];
   let query = `SELECT id, class_id FROM character_spells WHERE character_id = $1 AND spell_id = $2`;
   if (classId !== undefined) {
     query += ` AND class_id = $3`;
     params.push(classId);
   }
-  const result = await pool.query<{ id: number; class_id: number | null }>(query, params);
+  const result = await pool.query<{ id: string; class_id: string | null }>(query, params);
   if (result.rows.length === 0) throw notFound('Character spell');
   if (result.rows.length > 1) {
     throw new AppError(
@@ -77,10 +77,10 @@ async function findOneCharacterSpellRow(
 
 export async function toggleCharacterSpellPrepared(
   pool: Pool,
-  actorId: number,
-  characterId: number,
-  spellId: number,
-  classId: number | undefined,
+  actorId: string,
+  characterId: string,
+  spellId: string,
+  classId: string | undefined,
   input: UpdateCharacterSpellInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -96,10 +96,10 @@ export async function toggleCharacterSpellPrepared(
 
 export async function unlearnCharacterSpell(
   pool: Pool,
-  actorId: number,
-  characterId: number,
-  spellId: number,
-  classId: number | undefined,
+  actorId: string,
+  characterId: string,
+  spellId: string,
+  classId: string | undefined,
 ): Promise<void> {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);

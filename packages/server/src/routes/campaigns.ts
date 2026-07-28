@@ -73,12 +73,12 @@ campaignsRouter.get('/:id/members', requireCampaignMember(), async (req, res) =>
 
 campaignsRouter.patch('/:id/members/:userId', requireCampaignMember(), requireRole('dm'), async (req, res) => {
   const input = updateMemberSchema.parse(req.body);
-  const member = await campaignsService.updateMember(pool, req.campaignId!, Number(req.params.userId), input);
+  const member = await campaignsService.updateMember(pool, req.campaignId!, (req.params.userId as string), input);
   res.json({ member });
 });
 
 campaignsRouter.delete('/:id/members/:userId', requireCampaignMember(), requireRole('dm'), async (req, res) => {
-  await campaignsService.removeMember(pool, req.campaignId!, Number(req.params.userId));
+  await campaignsService.removeMember(pool, req.campaignId!, (req.params.userId as string));
   res.status(204).send();
 });
 
@@ -96,17 +96,17 @@ campaignsRouter.get('/:id/sessions', requireCampaignMember(), async (req, res) =
 });
 
 campaignsRouter.get('/:id/sessions/:sid', requireCampaignMember(), async (req, res) => {
-  const session = await campaignsService.getSessionLog(pool, req.campaignId!, Number(req.params.sid));
+  const session = await campaignsService.getSessionLog(pool, req.campaignId!, (req.params.sid as string));
   res.json({ session });
 });
 
 campaignsRouter.patch('/:id/sessions/:sid', requireCampaignMember(), requireRole('dm'), async (req, res) => {
   const input = updateSessionLogSchema.parse(req.body);
-  const session = await campaignsService.updateSessionLog(pool, req.campaignId!, Number(req.params.sid), input);
+  const session = await campaignsService.updateSessionLog(pool, req.campaignId!, (req.params.sid as string), input);
   res.json({ session });
 });
 
 campaignsRouter.delete('/:id/sessions/:sid', requireCampaignMember(), requireRole('dm'), async (req, res) => {
-  await campaignsService.deleteSessionLog(pool, req.campaignId!, Number(req.params.sid));
+  await campaignsService.deleteSessionLog(pool, req.campaignId!, (req.params.sid as string));
   res.status(204).send();
 });

@@ -61,7 +61,7 @@ function mergeProgressionByDieType(progression: HitDieTypeProgression[]): HitDie
   return [...byType.entries()].map(([dieType, maxForType]) => ({ dieType, maxForType }));
 }
 
-async function fetchHitDieProgression(db: Pool | PoolClient, characterId: number): Promise<HitDieTypeProgression[]> {
+async function fetchHitDieProgression(db: Pool | PoolClient, characterId: string): Promise<HitDieTypeProgression[]> {
   const result = await db.query<{ level: number; hit_die: number }>(
     `SELECT cc.level, c.hit_die FROM character_classes cc JOIN classes c ON c.id = cc.class_id WHERE cc.character_id = $1`,
     [characterId],
@@ -70,14 +70,14 @@ async function fetchHitDieProgression(db: Pool | PoolClient, characterId: number
 }
 
 interface CharacterForRest {
-  id: number;
+  id: string;
   hp_max: number;
   hp_current: number;
   hit_dice_remaining: Record<string, number> | null;
 }
 
 export interface RestCharacterResult {
-  characterId: number;
+  characterId: string;
   hpBefore: number;
   hpAfter: number;
   resourcesRestored: Record<string, unknown>;
@@ -85,8 +85,8 @@ export interface RestCharacterResult {
 
 export async function performRest(
   pool: Pool,
-  actorId: number,
-  campaignId: number,
+  actorId: string,
+  campaignId: string,
   input: RestInput,
 ): Promise<{ restEvent: Record<string, unknown>; characters: RestCharacterResult[] }> {
   const client = await pool.connect();
@@ -166,7 +166,7 @@ export async function performRest(
   }
 }
 
-export async function listRests(pool: Pool, campaignId: number) {
+export async function listRests(pool: Pool, campaignId: string) {
   const eventsRes = await pool.query(`SELECT * FROM rest_events WHERE campaign_id = $1 ORDER BY occurred_at DESC`, [campaignId]);
   const events = eventsRes.rows;
   if (events.length === 0) return [];

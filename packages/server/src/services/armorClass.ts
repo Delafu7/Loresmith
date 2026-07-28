@@ -72,10 +72,10 @@ export function computeArmorClass(
 // with whatever equip/dex/mode change triggered it.
 
 export interface ArmorClassEncounterSync {
-  encounter_id: number;
-  campaign_id: number;
+  encounter_id: string;
+  campaign_id: string;
   sync_seq: number;
-  participant_id: number;
+  participant_id: string;
 }
 
 export interface RecomputeArmorClassResult {
@@ -113,7 +113,7 @@ interface CharacterAcRow {
  */
 export async function recomputeAndApplyCharacterArmorClass(
   client: PoolClient,
-  characterId: number,
+  characterId: string,
 ): Promise<RecomputeArmorClassResult> {
   const charRes = await client.query<CharacterAcRow>(
     `SELECT dex, armor_class_mode, armor_class FROM characters WHERE id = $1 FOR UPDATE`,

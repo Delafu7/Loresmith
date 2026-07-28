@@ -3,10 +3,10 @@
 // needs broadcast.ts's buildFullStateSyncPayload, and broadcast.ts needs
 // these room names).
 
-export function campaignRoom(campaignId: number): string {
+export function campaignRoom(campaignId: string): string {
   return `campaign:${campaignId}`;
 }
 
-export function encounterRoom(encounterId: number): string {
+export function encounterRoom(encounterId: string): string {
   return `encounter:${encounterId}`;
 }

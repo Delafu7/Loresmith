@@ -12,7 +12,7 @@ import { requireMembership } from './authz.js';
 import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
 import type { CreateCharacterAttackInput, UpdateCharacterAttackInput } from '../schemas/characterAttacks.js';
 
-export async function listCharacterAttacks(pool: Pool, actorId: number, characterId: number) {
+export async function listCharacterAttacks(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await requireMembership(pool, character.campaign_id, actorId);
   const result = await pool.query(
@@ -22,7 +22,7 @@ export async function listCharacterAttacks(pool: Pool, actorId: number, characte
   return result.rows;
 }
 
-export async function addCharacterAttack(pool: Pool, actorId: number, characterId: number, input: CreateCharacterAttackInput) {
+export async function addCharacterAttack(pool: Pool, actorId: string, characterId: string, input: CreateCharacterAttackInput) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);
 
@@ -53,9 +53,9 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
 
 export async function updateCharacterAttack(
   pool: Pool,
-  actorId: number,
-  characterId: number,
-  attackId: number,
+  actorId: string,
+  characterId: string,
+  attackId: string,
   input: UpdateCharacterAttackInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -88,7 +88,7 @@ export async function updateCharacterAttack(
   return row;
 }
 
-export async function removeCharacterAttack(pool: Pool, actorId: number, characterId: number, attackId: number): Promise<void> {
+export async function removeCharacterAttack(pool: Pool, actorId: string, characterId: string, attackId: string): Promise<void> {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);
 

@@ -39,9 +39,9 @@ export const createDiceRollSchema = z
     // diceSides/modifier; the server never parses expression strings).
     diceSides: diceSidesEnum.default(20),
     diceCount: z.number().int().min(1).max(20).default(1),
-    characterId: z.number().int().positive().optional(),
-    monsterInstanceId: z.number().int().positive().optional(),
-    encounterId: z.number().int().positive().optional(),
+    characterId: z.string().uuid().optional(),
+    monsterInstanceId: z.string().uuid().optional(),
+    encounterId: z.string().uuid().optional(),
   })
   // Advantage/disadvantage is a d20-only 5e concept (roll 2, keep one) — any
   // other die size always rolls `diceCount` independent dice with no
@@ -57,7 +57,7 @@ export type CreateDiceRollInput = z.infer<typeof createDiceRollSchema>;
 // encodeCursor/decodeCursor), so the client never constructs or parses it,
 // just round-trips whatever `nextCursor` it was last given.
 export const listDiceRollsQuerySchema = z.object({
-  encounterId: z.coerce.number().int().positive().optional(),
+  encounterId: z.string().uuid().optional(),
   cursor: z.string().min(1).optional(),
 });
 export type ListDiceRollsQuery = z.infer<typeof listDiceRollsQuerySchema>;

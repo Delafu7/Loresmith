@@ -31,8 +31,8 @@ export function getIo(app: Application): Server {
 }
 
 interface EncounterLike {
-  id: number;
-  campaign_id: number;
+  id: string;
+  campaign_id: string;
   sync_seq: number;
   status?: string;
   current_round?: number;
@@ -59,18 +59,18 @@ function envelope(encounter: EncounterLike) {
 
 async function splitSocketsByRole(
   io: Server,
-  campaignId: number,
+  campaignId: string,
   room: string,
 ): Promise<{ dmSocketIds: string[]; playerSocketIds: string[] }> {
   const socketsInRoom = await io.in(room).fetchSockets();
   if (socketsInRoom.length === 0) return { dmSocketIds: [], playerSocketIds: [] };
 
   const userIds = [...new Set(socketsInRoom.map((s) => (s.data as SocketData).userId))];
-  const roleRes = await pool.query<{ user_id: number; role: CampaignRole }>(
-    `SELECT user_id, role FROM campaign_members WHERE campaign_id = $1 AND user_id = ANY($2::bigint[])`,
+  const roleRes = await pool.query<{ user_id: string; role: CampaignRole }>(
+    `SELECT user_id, role FROM campaign_members WHERE campaign_id = $1 AND user_id = ANY($2::uuid[])`,
     [campaignId, userIds],
   );
-  const roleByUser = new Map(roleRes.rows.map((r) => [Number(r.user_id), r.role]));
+  const roleByUser = new Map(roleRes.rows.map((r) => [r.user_id, r.role]));
 
   const dmSocketIds: string[] = [];
   const playerSocketIds: string[] = [];
@@ -102,7 +102,7 @@ export function broadcastCombatEnded(io: Server, encounter: EncounterLike): void
 export function broadcastInitiativeRolled(
   io: Server,
   encounter: EncounterLike,
-  participants: Array<{ id: number; initiative_roll: number; initiative_tiebreak: number | null; turn_order: number }>,
+  participants: Array<{ id: string; initiative_roll: number; initiative_tiebreak: number | null; turn_order: number }>,
 ): void {
   io.to(encounterRoom(encounter.id)).emit('INITIATIVE_ROLLED', {
     ...envelope(encounter),
@@ -119,7 +119,7 @@ export function broadcastInitiativeRolled(
 export function broadcastTurnAdvanced(
   io: Server,
   encounter: EncounterLike,
-  participants: Array<{ id: number; turn_order: number }>,
+  participants: Array<{ id: string; turn_order: number }>,
 ): void {
   const active = participants.find((p) => p.turn_order === encounter.current_turn_index);
   io.to(encounterRoom(encounter.id)).emit('TURN_ADVANCED', {
@@ -133,7 +133,7 @@ export function broadcastTurnAdvanced(
 export function broadcastParticipantJoined(
   io: Server,
   encounter: EncounterLike,
-  participant: { id: number; character_id: number | null; monster_instance_id: number | null; initiative_roll: number; turn_order: number },
+  participant: { id: string; character_id: string | null; monster_instance_id: string | null; initiative_roll: number; turn_order: number },
 ): void {
   io.to(encounterRoom(encounter.id)).emit('PARTICIPANT_JOINED', {
     ...envelope(encounter),
@@ -159,12 +159,12 @@ export function broadcastParticipantJoined(
 export async function pushEncounterRoomJoinForOwner(
   io: Server,
   pool_: Pool,
-  encounterId: number,
-  campaignId: number,
-  characterId: number | null,
+  encounterId: string,
+  campaignId: string,
+  characterId: string | null,
 ): Promise<void> {
   if (characterId === null) return;
-  const ownerRes = await pool_.query<{ owner_user_id: number | null }>(
+  const ownerRes = await pool_.query<{ owner_user_id: string | null }>(
     `SELECT owner_user_id FROM characters WHERE id = $1`,
     [characterId],
   );
@@ -174,7 +174,7 @@ export async function pushEncounterRoomJoinForOwner(
   const room = encounterRoom(encounterId);
   const campaignSockets = await io.in(campaignRoom(campaignId)).fetchSockets();
   const targets = campaignSockets.filter(
-    (s) => (s.data as SocketData).userId === Number(ownerUserId) && !s.rooms.has(room),
+    (s) => (s.data as SocketData).userId === ownerUserId && !s.rooms.has(room),
   );
   if (targets.length === 0) return;
 
@@ -186,7 +186,7 @@ export async function pushEncounterRoomJoinForOwner(
 export function broadcastParticipantLeft(
   io: Server,
   encounter: EncounterLike,
-  participant: { id: number; character_id: number | null; monster_instance_id: number | null },
+  participant: { id: string; character_id: string | null; monster_instance_id: string | null },
 ): void {
   io.to(encounterRoom(encounter.id)).emit('PARTICIPANT_LEFT', {
     ...envelope(encounter),
@@ -219,7 +219,7 @@ export function broadcastMapUpdated(io: Server, encounter: EncounterLike, map: E
 export function broadcastTokenMoved(
   io: Server,
   encounter: EncounterLike,
-  participant: { id: number; pos_x: number | null; pos_y: number | null },
+  participant: { id: string; pos_x: number | null; pos_y: number | null },
 ): void {
   io.to(encounterRoom(encounter.id)).emit('TOKEN_MOVED', {
     ...envelope(encounter),
@@ -234,7 +234,7 @@ export function broadcastTokenMoved(
 export function broadcastParticipantFactionChanged(
   io: Server,
   encounter: EncounterLike,
-  participant: { id: number; faction: 'player' | 'ally' | 'enemy' | 'neutral' },
+  participant: { id: string; faction: 'player' | 'ally' | 'enemy' | 'neutral' },
 ): void {
   io.to(encounterRoom(encounter.id)).emit('PARTICIPANT_FACTION_CHANGED', {
     ...envelope(encounter),
@@ -252,7 +252,7 @@ export function broadcastActionEconomyChanged(
   io: Server,
   encounter: EncounterLike,
   participant: {
-    id: number;
+    id: string;
     action_used: boolean;
     bonus_action_used: boolean;
     reaction_used: boolean;
@@ -290,15 +290,15 @@ export function broadcastActionEconomyChanged(
 // armor_class_override changes never call this (the existing monster-
 // instance PATCH endpoint doesn't broadcast anything today either).
 export interface ArmorClassSyncTarget {
-  encounter_id: number;
-  campaign_id: number;
+  encounter_id: string;
+  campaign_id: string;
   sync_seq: number;
 }
 
 export function broadcastArmorClassChanged(
   io: Server,
   sync: ArmorClassSyncTarget,
-  participant: { participantId: number; characterId: number; armorClass: number },
+  participant: { participantId: string; characterId: string; armorClass: number },
 ): void {
   io.to(encounterRoom(sync.encounter_id)).emit('PARTICIPANT_AC_CHANGED', {
     encounterId: sync.encounter_id,
@@ -318,12 +318,12 @@ export function broadcastArmorClassChanged(
 // was removed along with hp_visibility; see the "remove hide/reveal" work).
 
 export interface HpChangeTarget {
-  encounterId: number;
-  campaignId: number;
+  encounterId: string;
+  campaignId: string;
   seq: number;
-  participantId: number;
-  characterId: number | null;
-  monsterInstanceId: number | null;
+  participantId: string;
+  characterId: string | null;
+  monsterInstanceId: string | null;
   hpCurrent: number;
   hpMax: number;
   hpTemp: number;
@@ -356,11 +356,11 @@ export function broadcastHpChanged(io: Server, target: HpChangeTarget): void {
 // DM set one — never a client-side flag, same discipline as HP_CHANGED.
 
 export interface RevealChangeTarget {
-  encounterId: number;
-  campaignId: number;
+  encounterId: string;
+  campaignId: string;
   seq: number;
-  participantId: number;
-  monsterInstanceId: number;
+  participantId: string;
+  monsterInstanceId: string;
   fieldKey: string;
   revealed: boolean;
   playerOverride: string | null;
@@ -410,20 +410,20 @@ export async function broadcastRevealChanged(io: Server, target: RevealChangeTar
 // no second payload shape to maintain.
 
 export interface EffectSyncTarget {
-  encounter_id: number;
-  campaign_id: number;
+  encounter_id: string;
+  campaign_id: string;
   sync_seq: number;
 }
 
 export interface EffectBroadcastRow {
-  id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  effect_definition_id: number;
+  id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  effect_definition_id: string;
   duration_type: string;
   duration_value: number | null;
   concentration: boolean;
-  source_character_id: number | null;
+  source_character_id: string | null;
 }
 
 function effectPayloadBase(sync: EffectSyncTarget, effect: EffectBroadcastRow, name: string) {
@@ -467,18 +467,18 @@ export function broadcastEffectExpired(io: Server, sync: EffectSyncTarget, effec
 // its target is a live participant here (see services/effects.ts's
 // resolveEncounterSyncs) — the snapshot should still show it.
 interface ActiveEffectRow {
-  id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  effect_definition_id: number;
+  id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  effect_definition_id: string;
   name: string;
   duration_type: string;
   duration_value: number | null;
   concentration: boolean;
-  source_character_id: number | null;
+  source_character_id: string | null;
 }
 
-function effectTargetKey(characterId: number | null, monsterInstanceId: number | null): string {
+function effectTargetKey(characterId: string | null, monsterInstanceId: string | null): string {
   return characterId != null ? `c:${characterId}` : `m:${monsterInstanceId}`;
 }
 
@@ -500,16 +500,16 @@ function formatEffectForWire(e: ActiveEffectRow) {
 // it's read via GET /monster-instances/:id, which still redacts).
 export async function buildFullStateSyncPayload(
   poolOrClient: Pool | PoolClient,
-  encounterId: number,
-  campaignId: number,
+  encounterId: string,
+  campaignId: string,
 ): Promise<Record<string, unknown>> {
   const snapshot = await getEncounterCombatSnapshot(poolOrClient, encounterId);
   const { encounter, participants } = snapshot;
 
   const active = participants.find((p) => p.turn_order === encounter.current_turn_index);
 
-  const characterIds = participants.filter((p) => p.character_id != null).map((p) => p.character_id as number);
-  const monsterInstanceIds = participants.filter((p) => p.monster_instance_id != null).map((p) => p.monster_instance_id as number);
+  const characterIds = participants.filter((p) => p.character_id != null).map((p) => p.character_id as string);
+  const monsterInstanceIds = participants.filter((p) => p.monster_instance_id != null).map((p) => p.monster_instance_id as string);
 
   const effectsRes = await poolOrClient.query<ActiveEffectRow>(
     `SELECT ae.id, ae.character_id, ae.monster_instance_id, ae.effect_definition_id, ed.name,
@@ -517,7 +517,7 @@ export async function buildFullStateSyncPayload(
      FROM active_effects ae
      JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
      WHERE ae.removed_at IS NULL
-       AND ((ae.character_id = ANY($1::bigint[])) OR (ae.monster_instance_id = ANY($2::bigint[])))`,
+       AND ((ae.character_id = ANY($1::uuid[])) OR (ae.monster_instance_id = ANY($2::uuid[])))`,
     [characterIds, monsterInstanceIds],
   );
   const effectsByTarget = new Map<string, ActiveEffectRow[]>();
@@ -577,7 +577,7 @@ export async function buildFullStateSyncPayload(
 // encounter room — used after an encounter-wide weakness-reveal reset, where
 // several fields changed at once and a pile of individual REVEAL_CHANGED
 // events would be noisier than just resyncing.
-export async function broadcastFullStateResync(io: Server, encounterId: number, campaignId: number): Promise<void> {
+export async function broadcastFullStateResync(io: Server, encounterId: string, campaignId: string): Promise<void> {
   const payload = await buildFullStateSyncPayload(pool, encounterId, campaignId);
   io.to(encounterRoom(encounterId)).emit('FULL_STATE_SYNC', payload);
 }
@@ -609,12 +609,12 @@ export async function broadcastFullStateResync(io: Server, encounterId: number, 
 // dice-roll history should just append DICE_ROLLED payloads on receipt, not
 // run them through that gap-check.
 export interface DiceRollBroadcastRow {
-  id: number;
-  campaign_id: number;
-  user_id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  encounter_id: number | null;
+  id: string;
+  campaign_id: string;
+  user_id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  encounter_id: string | null;
   roll_type: string;
   roll_context: string | null;
   d20_rolls: number[];
@@ -626,7 +626,7 @@ export interface DiceRollBroadcastRow {
   created_at: Date | string;
 }
 
-export function broadcastDiceRolled(io: Server, campaignId: number, roll: DiceRollBroadcastRow): void {
+export function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRollBroadcastRow): void {
   const payload = {
     campaignId,
     serverTimestamp: Date.now(),

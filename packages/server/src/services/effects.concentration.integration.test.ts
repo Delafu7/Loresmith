@@ -27,15 +27,15 @@ import { pool } from '../db/pool.js';
 import { applyCharacterEffect } from './effects.js';
 
 describe('concentration auto-replace (integration, live DB, throwaway fixtures)', () => {
-  let userId: number;
-  let campaignId: number;
-  let characterId: number;
-  let concentrationDefA: number;
-  let concentrationDefB: number;
-  let nonConcentrationDef: number;
+  let userId: string;
+  let campaignId: string;
+  let characterId: string;
+  let concentrationDefA: string;
+  let concentrationDefB: string;
+  let nonConcentrationDef: string;
 
-  async function makeEffectDefinition(name: string, concentration: boolean): Promise<number> {
-    const res = await pool.query<{ id: number }>(
+  async function makeEffectDefinition(name: string, concentration: boolean): Promise<string> {
+    const res = await pool.query<{ id: string }>(
       `INSERT INTO effect_definitions
          (name, default_duration_type, default_duration_value, concentration, is_homebrew, owning_campaign_id)
        VALUES ($1, 'minutes', 10, $2, true, $3)
@@ -46,20 +46,20 @@ describe('concentration auto-replace (integration, live DB, throwaway fixtures)'
   }
 
   beforeAll(async () => {
-    const userRes = await pool.query<{ id: number }>(
+    const userRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Effects Test User', 'x') RETURNING id`,
       [`effects-test-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`],
     );
     userId = userRes.rows[0]!.id;
 
-    const campaignRes = await pool.query<{ id: number }>(
+    const campaignRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('Effects Test Campaign', $1, '2024') RETURNING id`,
       [userId],
     );
     campaignId = campaignRes.rows[0]!.id;
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'dm')`, [campaignId, userId]);
 
-    const charRes = await pool.query<{ id: number }>(
+    const charRes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha, armor_class, hp_max, hp_current)
        VALUES ($1, true, $2, $2, 'Effects Test Character', 10, 10, 10, 10, 10, 10, 10, 20, 20)

@@ -16,8 +16,8 @@ export type CampaignRole = 'dm' | 'player';
 
 export async function getMembership(
   pool: Pool,
-  campaignId: number,
-  userId: number,
+  campaignId: string,
+  userId: string,
 ): Promise<CampaignRole | null> {
   const result = await pool.query<{ role: CampaignRole }>(
     `SELECT role FROM campaign_members WHERE campaign_id = $1 AND user_id = $2`,
@@ -29,8 +29,8 @@ export async function getMembership(
 /** Throws NOT_CAMPAIGN_MEMBER (403) if the user isn't in the campaign. Default-deny. */
 export async function requireMembership(
   pool: Pool,
-  campaignId: number,
-  userId: number,
+  campaignId: string,
+  userId: string,
 ): Promise<CampaignRole> {
   const role = await getMembership(pool, campaignId, userId);
   if (!role) {
@@ -47,12 +47,8 @@ export function requireDm(role: CampaignRole): void {
 }
 
 /** Throws FORBIDDEN_NOT_OWNER (403) unless the actor is the DM or owns the resource. */
-export function requireOwnerOrDm(role: CampaignRole, ownerUserId: number | null, actorUserId: number): void {
+export function requireOwnerOrDm(role: CampaignRole, ownerUserId: string | null, actorUserId: string): void {
   if (role === 'dm') return;
-  // Number(...) is defense-in-depth: pool.ts installs a process-wide BIGINT
-  // type parser so this is already number===number, but this comparison
-  // guards a security-relevant boundary, so it's worth being robust even if
-  // that global setting were ever removed or bypassed (e.g. a raw pg.Client).
-  if (ownerUserId !== null && Number(ownerUserId) === Number(actorUserId)) return;
+  if (ownerUserId !== null && ownerUserId === actorUserId) return;
   throw new AppError('FORBIDDEN_NOT_OWNER', 'You can only modify your own resources');
 }

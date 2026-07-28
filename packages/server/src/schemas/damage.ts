@@ -17,6 +17,6 @@ export const applyDamageSchema = z.object({
   // concern, not a post-roll multiplier).
   isCritical: z.boolean().default(false),
   rollContext: z.string().min(1).max(200).optional().nullable(),
-  encounterId: z.number().int().positive().optional(),
+  encounterId: z.string().uuid().optional(),
 });
 export type ApplyDamageInput = z.infer<typeof applyDamageSchema>;

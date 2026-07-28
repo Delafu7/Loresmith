@@ -4,5 +4,5 @@
 
 /** Attached to socket.data during the io.use() auth handshake (see io.ts). */
 export interface SocketData {
-  userId: number;
+  userId: string;
 }

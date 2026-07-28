@@ -12,27 +12,27 @@ import { pool } from '../db/pool.js';
 import { applyDamage } from './characters.js';
 
 describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
-  let dmUserId: number;
-  let campaignId: number;
-  let resistantCharacterId: number;
-  let plainCharacterId: number;
+  let dmUserId: string;
+  let campaignId: string;
+  let resistantCharacterId: string;
+  let plainCharacterId: string;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dmRes = await pool.query<{ id: number }>(
+    const dmRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'ApplyDamage Test DM', 'x') RETURNING id`,
       [`apply-damage-dm-${suffix}@example.test`],
     );
     dmUserId = dmRes.rows[0]!.id;
 
-    const campaignRes = await pool.query<{ id: number }>(
+    const campaignRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('ApplyDamage Test Campaign', $1, '2024') RETURNING id`,
       [dmUserId],
     );
     campaignId = campaignRes.rows[0]!.id;
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'dm')`, [campaignId, dmUserId]);
 
-    const resistantRes = await pool.query<{ id: number }>(
+    const resistantRes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha,
           armor_class, speed, hp_max, hp_current, damage_resistances)
@@ -42,7 +42,7 @@ describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
     );
     resistantCharacterId = resistantRes.rows[0]!.id;
 
-    const plainRes = await pool.query<{ id: number }>(
+    const plainRes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha,
           armor_class, speed, hp_max, hp_current)

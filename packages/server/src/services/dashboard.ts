@@ -9,7 +9,7 @@ import { listCampaignsForUser } from './campaigns.js';
 
 const RECENT_NOTES_LIMIT = 20;
 
-export async function getUserDashboard(pool: Pool, userId: number) {
+export async function getUserDashboard(pool: Pool, userId: string) {
   const campaigns = await listCampaignsForUser(pool, userId);
 
   const charactersRes = await pool.query(

@@ -42,10 +42,10 @@ monsterCatalogRouter.get('/', async (req, res) => {
 // additionally requires membership in its owning campaign — never leaks
 // existence of another campaign's homebrew creature to a non-member.
 monsterCatalogRouter.get('/:id', async (req, res) => {
-  const monster = await catalogService.getMonsterById(pool, Number(req.params.id));
+  const monster = await catalogService.getMonsterById(pool, (req.params.id as string));
   if (!monster) throw notFound('Monster');
   if (monster.owning_campaign_id !== null) {
-    await requireMembership(pool, monster.owning_campaign_id as number, req.user!.id);
+    await requireMembership(pool, monster.owning_campaign_id as string, req.user!.id);
   }
   res.json({ monster });
 });
@@ -65,12 +65,12 @@ campaignMonstersRouter.post('/', requireRole('dm'), async (req, res) => {
 
 campaignMonstersRouter.patch('/:monsterId', requireRole('dm'), async (req, res) => {
   const input = updateHomebrewMonsterSchema.parse(req.body);
-  const monster = await monsterCatalogService.updateHomebrewMonster(pool, req.campaignId!, Number(req.params.monsterId), input);
+  const monster = await monsterCatalogService.updateHomebrewMonster(pool, req.campaignId!, (req.params.monsterId as string), input);
   res.json({ monster });
 });
 
 campaignMonstersRouter.delete('/:monsterId', requireRole('dm'), async (req, res) => {
-  await monsterCatalogService.deleteHomebrewMonster(pool, req.campaignId!, Number(req.params.monsterId));
+  await monsterCatalogService.deleteHomebrewMonster(pool, req.campaignId!, (req.params.monsterId as string));
   res.status(204).send();
 });
 
@@ -92,18 +92,18 @@ campaignMonsterInstancesRouter.post('/', requireRole('dm'), async (req, res) => 
 });
 
 campaignMonsterInstancesRouter.get('/:instanceId', async (req, res) => {
-  const instance = await monstersService.getMonsterInstance(pool, req.campaignId!, Number(req.params.instanceId), req.campaignRole!);
+  const instance = await monstersService.getMonsterInstance(pool, req.campaignId!, (req.params.instanceId as string), req.campaignRole!);
   res.json({ monsterInstance: instance });
 });
 
 campaignMonsterInstancesRouter.patch('/:instanceId', requireRole('dm'), async (req, res) => {
   const input = updateMonsterInstanceSchema.parse(req.body);
-  const instance = await monstersService.updateMonsterInstance(pool, req.campaignId!, Number(req.params.instanceId), input);
+  const instance = await monstersService.updateMonsterInstance(pool, req.campaignId!, (req.params.instanceId as string), input);
   res.json({ monsterInstance: instance });
 });
 
 campaignMonsterInstancesRouter.delete('/:instanceId', requireRole('dm'), async (req, res) => {
-  await monstersService.deleteMonsterInstance(pool, req.campaignId!, Number(req.params.instanceId));
+  await monstersService.deleteMonsterInstance(pool, req.campaignId!, (req.params.instanceId as string));
   res.status(204).send();
 });
 
@@ -115,7 +115,7 @@ monsterInstancesRouter.use(requireAuth);
 monsterInstancesRouter.patch('/:id/hp', async (req, res) => {
   const input = monsterInstanceHpDeltaSchema.parse(req.body);
   const { monsterInstance, encounterSyncs } = await monstersService.applyMonsterInstanceHpDelta(
-    pool, req.user!.id, Number(req.params.id), input,
+    pool, req.user!.id, (req.params.id as string), input,
   );
   const io = getIo(req.app);
   for (const sync of encounterSyncs) {
@@ -125,7 +125,7 @@ monsterInstancesRouter.patch('/:id/hp', async (req, res) => {
       seq: sync.sync_seq,
       participantId: sync.participant_id,
       characterId: null,
-      monsterInstanceId: Number(req.params.id),
+      monsterInstanceId: (req.params.id as string),
       hpCurrent: monsterInstance.hp_current as number,
       hpMax: (monsterInstance.hp_max_override as number | null) ?? (monsterInstance.hit_point_average as number),
       hpTemp: monsterInstance.hp_temp as number,
@@ -139,7 +139,7 @@ monsterInstancesRouter.patch('/:id/hp', async (req, res) => {
 // services/monsters.ts's applyMonsterInstanceDamage.
 monsterInstancesRouter.post('/:id/apply-damage', async (req, res) => {
   const input = applyDamageSchema.parse(req.body);
-  const result = await monstersService.applyMonsterInstanceDamage(pool, req.user!.id, Number(req.params.id), input);
+  const result = await monstersService.applyMonsterInstanceDamage(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
   for (const sync of result.encounterSyncs) {
     broadcastHpChanged(io, {
@@ -148,7 +148,7 @@ monsterInstancesRouter.post('/:id/apply-damage', async (req, res) => {
       seq: sync.sync_seq,
       participantId: sync.participant_id,
       characterId: null,
-      monsterInstanceId: Number(req.params.id),
+      monsterInstanceId: (req.params.id as string),
       hpCurrent: result.monsterInstance.hp_current as number,
       hpMax: (result.monsterInstance.hp_max_override as number | null) ?? (result.monsterInstance.hit_point_average as number),
       hpTemp: result.monsterInstance.hp_temp as number,
@@ -165,14 +165,14 @@ monsterInstancesRouter.post('/:id/apply-damage', async (req, res) => {
 });
 
 monsterInstancesRouter.get('/:id/effects', async (req, res) => {
-  const effects = await effectsService.listMonsterInstanceEffects(pool, req.user!.id, Number(req.params.id));
+  const effects = await effectsService.listMonsterInstanceEffects(pool, req.user!.id, (req.params.id as string));
   res.json({ effects });
 });
 
 // Effects applied outside combat (encounter_id = null) — DM-only, see services/effects.ts.
 monsterInstancesRouter.post('/:id/effects', async (req, res) => {
   const input = applyTargetEffectSchema.parse(req.body);
-  const { effect, effectDefinitionName, encounterSyncs, replacedEffect } = await effectsService.applyMonsterInstanceEffect(pool, req.user!.id, Number(req.params.id), input);
+  const { effect, effectDefinitionName, encounterSyncs, replacedEffect } = await effectsService.applyMonsterInstanceEffect(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
   for (const sync of encounterSyncs) {
     if (replacedEffect) {
@@ -186,13 +186,13 @@ monsterInstancesRouter.post('/:id/effects', async (req, res) => {
 // ---- Weakness reveals — DM-only, entity_field_reveals ----
 
 monsterInstancesRouter.get('/:id/reveals', async (req, res) => {
-  const fields = await entityFieldRevealService.getMonsterInstanceReveals(pool, req.user!.id, Number(req.params.id));
+  const fields = await entityFieldRevealService.getMonsterInstanceReveals(pool, req.user!.id, (req.params.id as string));
   res.json({ fields });
 });
 
 monsterInstancesRouter.patch('/:id/reveals', async (req, res) => {
   const input = updateRevealsSchema.parse(req.body);
-  const monsterInstanceId = Number(req.params.id);
+  const monsterInstanceId = (req.params.id as string);
   const result = await entityFieldRevealService.updateMonsterInstanceReveals(pool, req.user!.id, monsterInstanceId, input);
 
   const fieldKeys = result.fields.map((f) => f.fieldKey);

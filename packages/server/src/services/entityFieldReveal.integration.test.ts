@@ -14,27 +14,27 @@ import { getMonsterInstance, listMonsterInstances } from './monsters.js';
 import { updateMonsterInstanceReveals } from './entityFieldReveal.js';
 
 describe('weakness reveal read-path redaction (integration, live DB, throwaway fixtures)', () => {
-  let dmUserId: number;
-  let playerUserId: number;
-  let campaignId: number;
-  let monsterId: number;
-  let instanceId: number;
+  let dmUserId: string;
+  let playerUserId: string;
+  let campaignId: string;
+  let monsterId: string;
+  let instanceId: string;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dmRes = await pool.query<{ id: number }>(
+    const dmRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Reveal Test DM', 'x') RETURNING id`,
       [`reveal-test-dm-${suffix}@example.test`],
     );
     dmUserId = dmRes.rows[0]!.id;
 
-    const playerRes = await pool.query<{ id: number }>(
+    const playerRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Reveal Test Player', 'x') RETURNING id`,
       [`reveal-test-player-${suffix}@example.test`],
     );
     playerUserId = playerRes.rows[0]!.id;
 
-    const campaignRes = await pool.query<{ id: number }>(
+    const campaignRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('Reveal Test Campaign', $1, '2024') RETURNING id`,
       [dmUserId],
     );
@@ -43,7 +43,7 @@ describe('weakness reveal read-path redaction (integration, live DB, throwaway f
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'dm')`, [campaignId, dmUserId]);
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player')`, [campaignId, playerUserId]);
 
-    const monsterRes = await pool.query<{ id: number }>(
+    const monsterRes = await pool.query<{ id: string }>(
       `INSERT INTO monsters
          (slug, name, edition_scope, size, creature_type, armor_class, hit_point_average, hit_dice, speed,
           str, dex, con, int, wis, cha, damage_vulnerabilities, damage_resistances, damage_immunities,
@@ -56,7 +56,7 @@ describe('weakness reveal read-path redaction (integration, live DB, throwaway f
     );
     monsterId = monsterRes.rows[0]!.id;
 
-    const instanceRes = await pool.query<{ id: number }>(
+    const instanceRes = await pool.query<{ id: string }>(
       `INSERT INTO monster_instances (campaign_id, monster_id, hp_current) VALUES ($1, $2, 22) RETURNING id`,
       [campaignId, monsterId],
     );
@@ -91,7 +91,7 @@ describe('weakness reveal read-path redaction (integration, live DB, throwaway f
 
     // Same redaction must hold on the list endpoint, not just GET by id.
     const playerList = (await listMonsterInstances(pool, campaignId, 'player')) as unknown as Array<{
-      id: number;
+      id: string;
       damage_resistances: string[] | null;
     }>;
     const row = playerList.find((mi) => mi.id === instanceId);

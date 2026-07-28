@@ -16,21 +16,21 @@ import {
 } from './encounters.js';
 
 describe('setParticipantPosition movement enforcement (integration, live DB, throwaway fixtures)', () => {
-  let dmUserId: number;
-  let campaignId: number;
-  let characterId: number;
-  let encounterId: number;
-  let participantId: number;
+  let dmUserId: string;
+  let campaignId: string;
+  let characterId: string;
+  let encounterId: string;
+  let participantId: string;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dmRes = await pool.query<{ id: number }>(
+    const dmRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Movement Test DM', 'x') RETURNING id`,
       [`movement-test-dm-${suffix}@example.test`],
     );
     dmUserId = dmRes.rows[0]!.id;
 
-    const campaignRes = await pool.query<{ id: number }>(
+    const campaignRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('Movement Test Campaign', $1, '2024') RETURNING id`,
       [dmUserId],
     );
@@ -39,7 +39,7 @@ describe('setParticipantPosition movement enforcement (integration, live DB, thr
     // speed 30 ft — the exact figure docs/rules/movement.md's dash worked
     // example uses, so a boundary of "30 ft accepted, more rejected" reads
     // directly against that doc.
-    const characterRes = await pool.query<{ id: number }>(
+    const characterRes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha,
           armor_class, speed, hp_max, hp_current)

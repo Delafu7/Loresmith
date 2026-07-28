@@ -29,7 +29,7 @@ export function createSocketServer(httpServer: HttpServer, sessionMiddleware: Re
   // fact — an unauthenticated socket should never be able to observe even a
   // 'connection' event server-side.
   io.use((socket, next) => {
-    const req = socket.request as { session?: { userId?: number } };
+    const req = socket.request as { session?: { userId?: string } };
     const userId = req.session?.userId;
     if (!userId) {
       next(new Error('UNAUTHENTICATED'));

@@ -2,15 +2,22 @@
 // `faction` must actually flow through getEncounterCombatSnapshot (the query
 // FULL_STATE_SYNC is built from), not just exist as unused columns. Uses the
 // seeded demo encounter (read-only assertions, no mutation), same fixture
-// convention as encounters.initiative.integration.test.ts.
+// convention as encounters.initiative.integration.test.ts. Looked up by name
+// rather than a hardcoded id — ids are UUIDs now, generated fresh per seed
+// run, not a stable literal like the old bigserial "1" was.
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';
 import { getEncounterCombatSnapshot } from './encounters.js';
 
-const DEMO_ENCOUNTER_ID = 1;
+let DEMO_ENCOUNTER_ID: string;
 
 describe('getEncounterCombatSnapshot size/faction fields (integration, live DB, read-only)', () => {
+  beforeAll(async () => {
+    const res = await pool.query<{ id: string }>(`SELECT id FROM encounters WHERE name = 'Ambush on the Old Road'`);
+    DEMO_ENCOUNTER_ID = res.rows[0]!.id;
+  });
+
   afterAll(async () => {
     await pool.end();
   });

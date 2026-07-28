@@ -10,6 +10,7 @@ import type { Server, Socket } from 'socket.io';
 import { pool } from '../db/pool.js';
 import { requireMembership } from '../services/authz.js';
 import { AppError } from '../middleware/errors.js';
+import { isUuid } from '../domain/ids.js';
 import { buildFullStateSyncPayload } from './broadcast.js';
 import { campaignRoom, encounterRoom } from './roomNames.js';
 import type { SocketData } from './types.js';
@@ -25,12 +26,12 @@ function errAck(err: unknown): AckResponse {
   return { ok: false, error: { code: 'INTERNAL', message } };
 }
 
-function userIdOf(socket: Socket): number {
+function userIdOf(socket: Socket): string {
   return (socket.data as SocketData).userId;
 }
 
-async function encounterCampaignId(encounterId: number): Promise<number> {
-  const result = await pool.query<{ campaign_id: number }>(
+async function encounterCampaignId(encounterId: string): Promise<string> {
+  const result = await pool.query<{ campaign_id: string }>(
     `SELECT campaign_id FROM encounters WHERE id = $1`,
     [encounterId],
   );
@@ -45,7 +46,7 @@ async function encounterCampaignId(encounterId: number): Promise<number> {
  * encounter in a campaign they DM. This is re-derived from the DB on every
  * join call — never cached, never trusted from a prior connection.
  */
-async function assertCanJoinEncounter(encounterId: number, campaignId: number, userId: number): Promise<void> {
+async function assertCanJoinEncounter(encounterId: string, campaignId: string, userId: string): Promise<void> {
   const role = await requireMembership(pool, campaignId, userId);
   if (role === 'dm') return;
 
@@ -63,11 +64,11 @@ async function assertCanJoinEncounter(encounterId: number, campaignId: number, u
 }
 
 export function registerRoomHandlers(io: Server, socket: Socket): void {
-  socket.on('join:campaign', async (payload: { campaignId?: number }, ack?: Ack) => {
+  socket.on('join:campaign', async (payload: { campaignId?: string }, ack?: Ack) => {
     try {
-      const campaignId = Number(payload?.campaignId);
-      if (!Number.isInteger(campaignId)) {
-        throw new AppError('VALIDATION_ERROR', 'campaignId must be an integer');
+      const campaignId = payload?.campaignId;
+      if (!isUuid(campaignId)) {
+        throw new AppError('VALIDATION_ERROR', 'campaignId must be a valid id');
       }
       const role = await requireMembership(pool, campaignId, userIdOf(socket));
       await socket.join(campaignRoom(campaignId));
@@ -77,11 +78,11 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
     }
   });
 
-  socket.on('join:encounter', async (payload: { encounterId?: number }, ack?: Ack) => {
+  socket.on('join:encounter', async (payload: { encounterId?: string }, ack?: Ack) => {
     try {
-      const encounterId = Number(payload?.encounterId);
-      if (!Number.isInteger(encounterId)) {
-        throw new AppError('VALIDATION_ERROR', 'encounterId must be an integer');
+      const encounterId = payload?.encounterId;
+      if (!isUuid(encounterId)) {
+        throw new AppError('VALIDATION_ERROR', 'encounterId must be a valid id');
       }
       const campaignId = await encounterCampaignId(encounterId);
       await assertCanJoinEncounter(encounterId, campaignId, userIdOf(socket));
@@ -101,11 +102,11 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
     }
   });
 
-  socket.on('request:sync', async (payload: { encounterId?: number }, ack?: Ack) => {
+  socket.on('request:sync', async (payload: { encounterId?: string }, ack?: Ack) => {
     try {
-      const encounterId = Number(payload?.encounterId);
-      if (!Number.isInteger(encounterId)) {
-        throw new AppError('VALIDATION_ERROR', 'encounterId must be an integer');
+      const encounterId = payload?.encounterId;
+      if (!isUuid(encounterId)) {
+        throw new AppError('VALIDATION_ERROR', 'encounterId must be a valid id');
       }
       // Re-derive from the socket's actual joined rooms, not the client's
       // say-so — a client could ask to sync an encounter it never joined.

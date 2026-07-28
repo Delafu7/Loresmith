@@ -23,8 +23,8 @@ import type { ApplyDamageInput } from '../schemas/damage.js';
 const MONSTER_STAT_BLOCK_JOIN = MONSTER_INSTANCE_STAT_BLOCK_SQL;
 
 interface MonsterInstanceRow {
-  id: number;
-  campaign_id: number;
+  id: string;
+  campaign_id: string;
   hp_current: number;
   hp_temp: number;
   hp_max_override: number | null;
@@ -35,7 +35,7 @@ interface MonsterInstanceRow {
 // DIFFERENT campaign 404s instead of leaking cross-campaign existence, even
 // if the actor happens to also be a member of that other campaign — the URL
 // asserts "this instance belongs to campaign :id" and that must hold.
-async function fetchScopedInstanceOrThrow(pool: Pool, campaignId: number, instanceId: number): Promise<MonsterInstanceRow> {
+async function fetchScopedInstanceOrThrow(pool: Pool, campaignId: string, instanceId: string): Promise<MonsterInstanceRow> {
   const result = await pool.query<MonsterInstanceRow>(
     `SELECT * FROM monster_instances WHERE id = $1 AND campaign_id = $2`,
     [instanceId, campaignId],
@@ -45,7 +45,7 @@ async function fetchScopedInstanceOrThrow(pool: Pool, campaignId: number, instan
   return row;
 }
 
-async function fetchInstanceOrThrow(pool: Pool, instanceId: number): Promise<MonsterInstanceRow> {
+async function fetchInstanceOrThrow(pool: Pool, instanceId: string): Promise<MonsterInstanceRow> {
   const result = await pool.query<MonsterInstanceRow>(`SELECT * FROM monster_instances WHERE id = $1`, [instanceId]);
   const row = result.rows[0];
   if (!row) throw notFound('Monster instance');
@@ -55,7 +55,7 @@ async function fetchInstanceOrThrow(pool: Pool, instanceId: number): Promise<Mon
 // HP is always visible now (hide/reveal was removed) — the only remaining
 // redaction is the three weakness fields (damage vulnerabilities/
 // resistances/immunities), still DM-only until revealed.
-export async function listMonsterInstances(pool: Pool, campaignId: number, role: CampaignRole) {
+export async function listMonsterInstances(pool: Pool, campaignId: string, role: CampaignRole) {
   const result = await pool.query(
     `SELECT mi.*, m.name AS monster_name, m.slug AS monster_slug, m.challenge_rating, m.hit_point_average,
             ${MONSTER_STAT_BLOCK_JOIN}
@@ -79,7 +79,7 @@ export async function listMonsterInstances(pool: Pool, campaignId: number, role:
 // (requireCampaignMember/requireRole already ran); these just add the
 // campaign-scoping 404 described above.
 
-export async function getMonsterInstance(pool: Pool, campaignId: number, instanceId: number, role: CampaignRole) {
+export async function getMonsterInstance(pool: Pool, campaignId: string, instanceId: string, role: CampaignRole) {
   const instance = await fetchScopedInstanceOrThrow(pool, campaignId, instanceId);
   const statBlockRow = await pool.query(
     `SELECT COALESCE(mi.hp_max_override, m.hit_point_average) AS hp_max, ${MONSTER_STAT_BLOCK_JOIN}
@@ -101,7 +101,7 @@ export async function getMonsterInstance(pool: Pool, campaignId: number, instanc
 // uniqueness check needs — see the uniqueLiving query below.
 export async function createMonsterInstance(
   pool: Pool,
-  campaignId: number,
+  campaignId: string,
   input: CreateMonsterInstanceInput,
 ) {
   const client = await pool.connect();
@@ -122,7 +122,7 @@ export async function createMonsterInstance(
     // campaign. "Unique" means unique across the whole system, among LIVING
     // instances only.
     if (monster.is_unique) {
-      const uniqueLiving = await client.query<{ campaign_id: number; campaign_name: string }>(
+      const uniqueLiving = await client.query<{ campaign_id: string; campaign_name: string }>(
         `SELECT mi.campaign_id, c.name AS campaign_name
          FROM monster_instances mi
          JOIN campaigns c ON c.id = mi.campaign_id
@@ -189,8 +189,8 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
 
 export async function updateMonsterInstance(
   pool: Pool,
-  campaignId: number,
-  instanceId: number,
+  campaignId: string,
+  instanceId: string,
   input: UpdateMonsterInstanceInput,
 ) {
   const current = await fetchScopedInstanceOrThrow(pool, campaignId, instanceId);
@@ -219,7 +219,7 @@ export async function updateMonsterInstance(
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const monsterResult = await client.query<{ id: number; name: string; is_unique: boolean }>(
+      const monsterResult = await client.query<{ id: string; name: string; is_unique: boolean }>(
         `SELECT m.id, m.name, m.is_unique FROM monsters m
          JOIN monster_instances mi ON mi.monster_id = m.id
          WHERE mi.id = $1 FOR UPDATE OF m`,
@@ -227,7 +227,7 @@ export async function updateMonsterInstance(
       );
       const monster = monsterResult.rows[0];
       if (monster?.is_unique) {
-        const uniqueLiving = await client.query<{ campaign_id: number; campaign_name: string }>(
+        const uniqueLiving = await client.query<{ campaign_id: string; campaign_name: string }>(
           `SELECT mi.campaign_id, c.name AS campaign_name
            FROM monster_instances mi
            JOIN campaigns c ON c.id = mi.campaign_id
@@ -265,7 +265,7 @@ export async function updateMonsterInstance(
   return result.rows[0];
 }
 
-export async function deleteMonsterInstance(pool: Pool, campaignId: number, instanceId: number): Promise<void> {
+export async function deleteMonsterInstance(pool: Pool, campaignId: string, instanceId: string): Promise<void> {
   await fetchScopedInstanceOrThrow(pool, campaignId, instanceId);
   await pool.query(`DELETE FROM monster_instances WHERE id = $1`, [instanceId]);
 }
@@ -275,10 +275,10 @@ export async function deleteMonsterInstance(pool: Pool, campaignId: number, inst
 // combat_participants row is per-encounter, and its sync_seq bump happens in
 // the SAME transaction as the HP update (PLAN.md §5.2).
 export interface EncounterHpSyncTarget {
-  encounter_id: number;
-  campaign_id: number;
+  encounter_id: string;
+  campaign_id: string;
   sync_seq: number;
-  participant_id: number;
+  participant_id: string;
 }
 
 export interface ApplyMonsterInstanceHpDeltaResult {
@@ -291,8 +291,8 @@ export interface ApplyMonsterInstanceHpDeltaResult {
 // DM role directly (HP tracking for monsters is DM-only, same as any NPC).
 export async function applyMonsterInstanceHpDelta(
   pool: Pool,
-  actorId: number,
-  instanceId: number,
+  actorId: string,
+  instanceId: string,
   input: MonsterInstanceHpDeltaInput,
 ): Promise<ApplyMonsterInstanceHpDeltaResult> {
   const instance = await fetchInstanceOrThrow(pool, instanceId);
@@ -363,8 +363,8 @@ export interface ApplyMonsterInstanceDamageResult {
 
 export async function applyMonsterInstanceDamage(
   pool: Pool,
-  actorId: number,
-  instanceId: number,
+  actorId: string,
+  instanceId: string,
   input: ApplyDamageInput,
 ): Promise<ApplyMonsterInstanceDamageResult> {
   const instance = await fetchInstanceOrThrow(pool, instanceId);

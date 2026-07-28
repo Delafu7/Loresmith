@@ -34,7 +34,7 @@ export interface CellOverride {
 }
 
 export interface Occupant {
-  participantId: number;
+  participantId: string;
   faction: Faction;
   sizeRank: number; // 0=Tiny .. 5=Gargantuan, see SIZE_RANK below
 }

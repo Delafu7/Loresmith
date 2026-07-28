@@ -15,7 +15,7 @@ export const monsterQuerySchema = editionQuerySchema.extend({
   // pattern as effectDefinitionQuerySchema below. A campaignId-scoped read
   // MUST be gated behind requireMembership at the route (see
   // routes/catalog.ts) — never trust this query param alone.
-  campaignId: z.coerce.number().int().positive().optional(),
+  campaignId: z.string().uuid().optional(),
   // REFACTOR-PLAN.md §1: powers /bestiary/campaign/:id (campaign-specific
   // creatures only, no global-catalog union) — requires campaignId; ignored
   // otherwise. The default (no flag) keeps today's "global + this campaign's
@@ -30,7 +30,7 @@ export type MonsterQuery = z.infer<typeof monsterQuerySchema>;
 // for these three resources. Same read-only, edition-filtered shape as every
 // other catalog list above.
 export const spellQuerySchema = editionQuerySchema.extend({
-  classId: z.coerce.number().int().positive().optional(),
+  classId: z.string().uuid().optional(),
 });
 export type SpellQuery = z.infer<typeof spellQuerySchema>;
 
@@ -44,6 +44,6 @@ export type ItemQuery = z.infer<typeof itemQuerySchema>;
 // owning_campaign_id IS NULL)) — campaignId is optional so a caller with no
 // campaign context yet still gets the global SRD-condition set.
 export const effectDefinitionQuerySchema = z.object({
-  campaignId: z.coerce.number().int().positive().optional(),
+  campaignId: z.string().uuid().optional(),
 });
 export type EffectDefinitionQuery = z.infer<typeof effectDefinitionQuerySchema>;

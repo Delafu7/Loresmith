@@ -15,7 +15,7 @@ import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
 import type { CreateCharacterItemInput, UpdateCharacterItemInput } from '../schemas/characterItems.js';
 
-export async function listCharacterItems(pool: Pool, actorId: number, characterId: number) {
+export async function listCharacterItems(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await requireMembership(pool, character.campaign_id, actorId);
   const result = await pool.query(
@@ -68,8 +68,8 @@ export interface UpdateCharacterItemResult {
 
 export async function addCharacterItem(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: CreateCharacterItemInput,
 ): Promise<UpdateCharacterItemResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -130,9 +130,9 @@ export async function addCharacterItem(
 
 export async function updateCharacterItem(
   pool: Pool,
-  actorId: number,
-  characterId: number,
-  characterItemId: number,
+  actorId: string,
+  characterId: string,
+  characterItemId: string,
   input: UpdateCharacterItemInput,
 ): Promise<UpdateCharacterItemResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -196,9 +196,9 @@ export async function updateCharacterItem(
 
 export async function removeCharacterItem(
   pool: Pool,
-  actorId: number,
-  characterId: number,
-  characterItemId: number,
+  actorId: string,
+  characterId: string,
+  characterItemId: string,
 ): Promise<void> {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);

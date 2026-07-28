@@ -6,14 +6,14 @@ import type { LoginInput, RegisterInput, UpdateThemeInput } from '../schemas/aut
 const BCRYPT_ROUNDS = 10;
 
 export interface UserRow {
-  id: number;
+  id: string;
   email: string;
   displayName: string;
   uiTheme: 'crimson' | 'amber' | 'ember';
 }
 
 export interface MembershipSummary {
-  campaignId: number;
+  campaignId: string;
   campaignName: string;
   role: 'dm' | 'player';
 }
@@ -25,7 +25,7 @@ export async function register(pool: Pool, input: RegisterInput): Promise<UserRo
   }
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
+  const result = await pool.query<{ id: string; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
     `INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3)
      RETURNING id, email, display_name, ui_theme`,
     [input.email, input.displayName, passwordHash],
@@ -36,7 +36,7 @@ export async function register(pool: Pool, input: RegisterInput): Promise<UserRo
 
 export async function login(pool: Pool, input: LoginInput): Promise<UserRow> {
   const result = await pool.query<
-    { id: number; email: string; display_name: string; password_hash: string; ui_theme: 'crimson' | 'amber' | 'ember' }
+    { id: string; email: string; display_name: string; password_hash: string; ui_theme: 'crimson' | 'amber' | 'ember' }
   >(
     `SELECT id, email, display_name, password_hash, ui_theme FROM users WHERE email = $1`,
     [input.email],
@@ -54,8 +54,8 @@ export async function login(pool: Pool, input: LoginInput): Promise<UserRow> {
   return { id: row.id, email: row.email, displayName: row.display_name, uiTheme: row.ui_theme };
 }
 
-export async function updateTheme(pool: Pool, userId: number, input: UpdateThemeInput): Promise<UserRow> {
-  const result = await pool.query<{ id: number; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
+export async function updateTheme(pool: Pool, userId: string, input: UpdateThemeInput): Promise<UserRow> {
+  const result = await pool.query<{ id: string; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
     `UPDATE users SET ui_theme = $1 WHERE id = $2 RETURNING id, email, display_name, ui_theme`,
     [input.uiTheme, userId],
   );
@@ -63,8 +63,8 @@ export async function updateTheme(pool: Pool, userId: number, input: UpdateTheme
   return { id: row.id, email: row.email, displayName: row.display_name, uiTheme: row.ui_theme };
 }
 
-export async function getMemberships(pool: Pool, userId: number): Promise<MembershipSummary[]> {
-  const result = await pool.query<{ campaign_id: number; campaign_name: string; role: 'dm' | 'player' }>(
+export async function getMemberships(pool: Pool, userId: string): Promise<MembershipSummary[]> {
+  const result = await pool.query<{ campaign_id: string; campaign_name: string; role: 'dm' | 'player' }>(
     `SELECT c.id AS campaign_id, c.name AS campaign_name, cm.role
      FROM campaign_members cm
      JOIN campaigns c ON c.id = cm.campaign_id

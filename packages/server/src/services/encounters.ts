@@ -38,8 +38,8 @@ import type {
 const UNROLLED_INITIATIVE = -9999;
 
 interface EncounterRow {
-  id: number;
-  campaign_id: number;
+  id: string;
+  campaign_id: string;
   status: 'preparing' | 'active' | 'paused' | 'completed';
   current_round: number;
   current_turn_index: number;
@@ -48,10 +48,10 @@ interface EncounterRow {
 }
 
 interface ParticipantRow {
-  id: number;
-  encounter_id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
+  id: string;
+  encounter_id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
   initiative_roll: number;
   initiative_tiebreak: number | null;
   turn_order: number;
@@ -87,8 +87,8 @@ interface ActionEconomySnapshot {
 
 async function fetchEncounterScoped(
   client: Pool | PoolClient,
-  campaignId: number,
-  encounterId: number,
+  campaignId: string,
+  encounterId: string,
 ): Promise<EncounterRow> {
   const result = await client.query<EncounterRow>(
     `SELECT * FROM encounters WHERE id = $1 AND campaign_id = $2`,
@@ -101,14 +101,14 @@ async function fetchEncounterScoped(
 
 // Used by the flat /encounters/:id/... action routes, which have no
 // campaignId in the URL — derives it from the row instead.
-async function fetchEncounterById(client: Pool | PoolClient, encounterId: number): Promise<EncounterRow> {
+async function fetchEncounterById(client: Pool | PoolClient, encounterId: string): Promise<EncounterRow> {
   const result = await client.query<EncounterRow>(`SELECT * FROM encounters WHERE id = $1`, [encounterId]);
   const row = result.rows[0];
   if (!row) throw notFound('Encounter');
   return row;
 }
 
-async function fetchParticipants(client: Pool | PoolClient, encounterId: number): Promise<ParticipantRow[]> {
+async function fetchParticipants(client: Pool | PoolClient, encounterId: string): Promise<ParticipantRow[]> {
   const result = await client.query<ParticipantRow>(
     `SELECT * FROM combat_participants WHERE encounter_id = $1 ORDER BY turn_order ASC`,
     [encounterId],
@@ -118,7 +118,7 @@ async function fetchParticipants(client: Pool | PoolClient, encounterId: number)
 
 // ---- CRUD (nested under /campaigns/:id/encounters, DM-gated at the route) ----
 
-export async function listEncounters(pool: Pool, campaignId: number) {
+export async function listEncounters(pool: Pool, campaignId: string) {
   const result = await pool.query(
     `SELECT * FROM encounters WHERE campaign_id = $1 ORDER BY created_at DESC`,
     [campaignId],
@@ -126,7 +126,7 @@ export async function listEncounters(pool: Pool, campaignId: number) {
   return result.rows;
 }
 
-export async function getEncounter(pool: Pool, campaignId: number, encounterId: number) {
+export async function getEncounter(pool: Pool, campaignId: string, encounterId: string) {
   const encounter = await fetchEncounterScoped(pool, campaignId, encounterId);
   const participants = await fetchParticipants(pool, encounterId);
   const map = await getEncounterMap(pool, encounterId);
@@ -139,7 +139,7 @@ export async function getEncounter(pool: Pool, campaignId: number, encounterId: 
 // campaign-level map entity). Membership is derived from the encounter row
 // itself, same pattern as requireEncounterDm in routes/encounters.ts, except
 // read access here only needs membership, not the DM role.
-export async function getEncounterFlat(pool: Pool, userId: number, encounterId: number) {
+export async function getEncounterFlat(pool: Pool, userId: string, encounterId: string) {
   const encounter = await fetchEncounterById(pool, encounterId);
   const role = await requireMembership(pool, encounter.campaign_id, userId);
   const full = await getEncounter(pool, encounter.campaign_id, encounterId);
@@ -156,9 +156,9 @@ export async function getEncounterFlat(pool: Pool, userId: number, encounterId: 
 // never need a second assets fetch just to render the map background.
 
 export interface EncounterMapRow {
-  id: number;
-  encounter_id: number;
-  background_asset_id: number | null;
+  id: string;
+  encounter_id: string;
+  background_asset_id: string | null;
   background_file_url: string | null;
   grid_columns: number;
   grid_rows: number;
@@ -166,7 +166,7 @@ export interface EncounterMapRow {
   feet_per_cell: number;
 }
 
-export async function getEncounterMap(pool: Pool | PoolClient, encounterId: number): Promise<EncounterMapRow | null> {
+export async function getEncounterMap(pool: Pool | PoolClient, encounterId: string): Promise<EncounterMapRow | null> {
   const result = await pool.query<EncounterMapRow>(
     `SELECT em.id, em.encounter_id, em.background_asset_id, ca.file_url AS background_file_url,
             em.grid_columns, em.grid_rows, em.cell_size_px, em.feet_per_cell
@@ -208,7 +208,7 @@ export interface MapCellOverrideRow {
   note: string | null;
 }
 
-export async function listMapCellOverrides(pool: Pool, encounterId: number): Promise<MapCellOverrideRow[]> {
+export async function listMapCellOverrides(pool: Pool, encounterId: string): Promise<MapCellOverrideRow[]> {
   const map = await getEncounterMap(pool, encounterId);
   if (!map) return [];
   const result = await pool.query<MapCellOverrideRow>(
@@ -233,7 +233,7 @@ export interface UpsertCellOverrideInput {
 
 export async function upsertMapCellOverride(
   pool: Pool,
-  encounterId: number,
+  encounterId: string,
   x: number,
   y: number,
   input: UpsertCellOverrideInput,
@@ -269,7 +269,7 @@ export async function upsertMapCellOverride(
 
 export async function deleteMapCellOverride(
   pool: Pool,
-  encounterId: number,
+  encounterId: string,
   x: number,
   y: number,
 ): Promise<{ encounter: EncounterRow; map: EncounterMapRow } | null> {
@@ -304,16 +304,16 @@ export async function deleteMapCellOverride(
 // services/assets.ts's authorizeAssetUpload.
 async function validateBackgroundAssetBelongsToCampaign(
   client: Pool | PoolClient,
-  campaignId: number,
-  backgroundAssetId: number | null | undefined,
+  campaignId: string,
+  backgroundAssetId: string | null | undefined,
 ): Promise<void> {
   if (backgroundAssetId === null || backgroundAssetId === undefined) return;
-  const result = await client.query<{ campaign_id: number }>(
+  const result = await client.query<{ campaign_id: string }>(
     `SELECT campaign_id FROM campaign_assets WHERE id = $1`,
     [backgroundAssetId],
   );
   const row = result.rows[0];
-  if (!row || Number(row.campaign_id) !== campaignId) {
+  if (!row || row.campaign_id !== campaignId) {
     throw notFound('Asset');
   }
 }
@@ -325,7 +325,7 @@ export interface EncounterMapMutationResult {
 
 export async function upsertEncounterMap(
   pool: Pool,
-  encounterId: number,
+  encounterId: string,
   input: UpsertEncounterMapInput,
 ): Promise<EncounterMapMutationResult> {
   const client = await pool.connect();
@@ -399,7 +399,7 @@ async function loadMovementContext(
   encounter: EncounterRow,
   participant: ParticipantRow,
 ): Promise<{ grid: MovementGrid; mover: MoverProfile; speedFt: number; remainingFt: number } | null> {
-  const mapRes = await client.query<{ id: number; feet_per_cell: number; grid_columns: number; grid_rows: number }>(
+  const mapRes = await client.query<{ id: string; feet_per_cell: number; grid_columns: number; grid_rows: number }>(
     `SELECT id, feet_per_cell, grid_columns, grid_rows FROM encounter_maps WHERE encounter_id = $1`,
     [encounter.id],
   );
@@ -457,7 +457,7 @@ async function loadMovementContext(
   );
   const occupants = new Map<string, Occupant>();
   for (const row of occupantsRes.rows) {
-    occupants.set(`${row.pos_x},${row.pos_y}`, { participantId: -1, faction: row.faction, sizeRank: sizeRankFor(row.size) });
+    occupants.set(`${row.pos_x},${row.pos_y}`, { participantId: '', faction: row.faction, sizeRank: sizeRankFor(row.size) });
   }
 
   const grid: MovementGrid = {
@@ -527,8 +527,8 @@ async function computeValidatedMoveCost(
 // yet" rendering, not a failure.
 export async function getParticipantReachableCells(
   pool: Pool,
-  encounterId: number,
-  participantId: number,
+  encounterId: string,
+  participantId: string,
 ): Promise<{ cells: string[]; remainingFt: number }> {
   const encounter = await fetchEncounterById(pool, encounterId);
   const participantRes = await pool.query<ParticipantRow>(
@@ -550,8 +550,8 @@ export async function getParticipantReachableCells(
 
 export async function setParticipantPosition(
   pool: Pool,
-  encounterId: number,
-  participantId: number,
+  encounterId: string,
+  participantId: string,
   input: SetParticipantPositionInput,
 ): Promise<ParticipantMutationResult> {
   const client = await pool.connect();
@@ -601,8 +601,8 @@ export async function setParticipantPosition(
 // DM/player visibility split needed since faction isn't HP-sensitive info).
 export async function setParticipantFaction(
   pool: Pool,
-  encounterId: number,
-  participantId: number,
+  encounterId: string,
+  participantId: string,
   input: SetParticipantFactionInput,
 ): Promise<ParticipantMutationResult> {
   const client = await pool.connect();
@@ -644,11 +644,11 @@ export async function setParticipantFaction(
 // precedent (e.g. computeNextTurn).
 export async function authorizeParticipantAction(
   pool: Pool,
-  actorId: number,
-  encounterId: number,
-  participantId: number,
+  actorId: string,
+  encounterId: string,
+  participantId: string,
 ): Promise<CampaignRole> {
-  const result = await pool.query<{ campaign_id: number; owner_user_id: number | null }>(
+  const result = await pool.query<{ campaign_id: string; owner_user_id: string | null }>(
     `SELECT e.campaign_id, c.owner_user_id
        FROM combat_participants cp
        JOIN encounters e ON e.id = cp.encounter_id
@@ -674,8 +674,8 @@ export async function authorizeParticipantAction(
 // transaction, same pattern as monsters.ts's createMonsterInstance.
 export async function applyActionEconomy(
   pool: Pool,
-  encounterId: number,
-  participantId: number,
+  encounterId: string,
+  participantId: string,
   input: ApplyActionEconomyInput,
 ): Promise<ParticipantMutationResult> {
   const client = await pool.connect();
@@ -752,8 +752,8 @@ export async function applyActionEconomy(
 // (docs/rules/actions.md §3's sharpest flagged edge case).
 export async function undoActionEconomy(
   pool: Pool,
-  encounterId: number,
-  participantId: number,
+  encounterId: string,
+  participantId: string,
 ): Promise<ParticipantMutationResult> {
   const client = await pool.connect();
   try {
@@ -812,9 +812,9 @@ export async function undoActionEconomy(
 // caller.
 
 export interface CombatSnapshotParticipant {
-  participant_id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
+  participant_id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
   name: string;
   initiative_roll: number;
   initiative_tiebreak: number | null;
@@ -866,7 +866,7 @@ export interface CombatSnapshot {
   participants: CombatSnapshotParticipant[];
 }
 
-export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encounterId: number): Promise<CombatSnapshot> {
+export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encounterId: string): Promise<CombatSnapshot> {
   const encounter = await fetchEncounterById(pool, encounterId);
   const result = await pool.query<CombatSnapshotParticipant>(
     `SELECT cp.id AS participant_id, cp.character_id, cp.monster_instance_id,
@@ -895,7 +895,7 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
   return { encounter, participants: result.rows };
 }
 
-export async function createEncounter(pool: Pool, campaignId: number, input: CreateEncounterInput) {
+export async function createEncounter(pool: Pool, campaignId: string, input: CreateEncounterInput) {
   const result = await pool.query(
     `INSERT INTO encounters (campaign_id, name) VALUES ($1, $2) RETURNING *`,
     [campaignId, input.name],
@@ -905,8 +905,8 @@ export async function createEncounter(pool: Pool, campaignId: number, input: Cre
 
 export async function updateEncounter(
   pool: Pool,
-  campaignId: number,
-  encounterId: number,
+  campaignId: string,
+  encounterId: string,
   input: UpdateEncounterInput,
 ) {
   await fetchEncounterScoped(pool, campaignId, encounterId);
@@ -917,14 +917,14 @@ export async function updateEncounter(
   return result.rows[0];
 }
 
-export async function deleteEncounter(pool: Pool, campaignId: number, encounterId: number): Promise<void> {
+export async function deleteEncounter(pool: Pool, campaignId: string, encounterId: string): Promise<void> {
   await fetchEncounterScoped(pool, campaignId, encounterId);
   await pool.query(`DELETE FROM encounters WHERE id = $1`, [encounterId]);
 }
 
 // ---- Lifecycle (flat /encounters/:id/start|end — campaign derived from the row) ----
 
-export async function startEncounter(pool: Pool, encounterId: number) {
+export async function startEncounter(pool: Pool, encounterId: string) {
   const encounter = await fetchEncounterById(pool, encounterId);
   if (encounter.status !== 'preparing') {
     throw new AppError('CONFLICT', `Cannot start an encounter in status '${encounter.status}' (must be 'preparing')`);
@@ -937,7 +937,7 @@ export async function startEncounter(pool: Pool, encounterId: number) {
   return result.rows[0];
 }
 
-export async function endEncounter(pool: Pool, encounterId: number) {
+export async function endEncounter(pool: Pool, encounterId: string) {
   const encounter = await fetchEncounterById(pool, encounterId);
   if (encounter.status !== 'active' && encounter.status !== 'paused') {
     throw new AppError('CONFLICT', `Cannot end an encounter in status '${encounter.status}'`);
@@ -965,7 +965,7 @@ export interface ParticipantMutationResult {
 
 export async function addParticipant(
   pool: Pool,
-  encounterId: number,
+  encounterId: string,
   input: AddParticipantInput,
 ): Promise<ParticipantMutationResult> {
   const client = await pool.connect();
@@ -1035,8 +1035,8 @@ export async function addParticipant(
 
 export async function removeParticipant(
   pool: Pool,
-  encounterId: number,
-  participantId: number,
+  encounterId: string,
+  participantId: string,
 ): Promise<ParticipantMutationResult> {
   const client = await pool.connect();
   try {
@@ -1066,8 +1066,8 @@ export async function removeParticipant(
 
 export async function setParticipantInitiative(
   pool: Pool,
-  encounterId: number,
-  participantId: number,
+  encounterId: string,
+  participantId: string,
   input: SetInitiativeInput,
 ) {
   const result = await pool.query(
@@ -1102,14 +1102,14 @@ export function computeNextTurn(
   return { nextIndex, nextRound: currentRound };
 }
 
-export async function rollInitiative(pool: Pool, encounterId: number, force: boolean) {
+export async function rollInitiative(pool: Pool, encounterId: string, force: boolean) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     // Dex modifiers for every participant, sourced from characters.dex or
     // (via the monster catalog) monsters.dex for monster instances.
-    const dexRes = await client.query<{ id: number; dex: number }>(
+    const dexRes = await client.query<{ id: string; dex: number }>(
       `SELECT cp.id, COALESCE(c.dex, m.dex) AS dex
        FROM combat_participants cp
        LEFT JOIN characters c ON c.id = cp.character_id
@@ -1176,14 +1176,14 @@ export async function rollInitiative(pool: Pool, encounterId: number, force: boo
 // 'permanent'/'special' are explicitly out of scope for automatic expiry
 // (DM removes those manually via DELETE /effects/:id), per this task's brief.
 export interface ExpiredEffectRow {
-  id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  effect_definition_id: number;
+  id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  effect_definition_id: string;
   duration_type: string;
   duration_value: number | null;
   concentration: boolean;
-  source_character_id: number | null;
+  source_character_id: string | null;
   effect_definition_name: string;
 }
 
@@ -1193,7 +1193,7 @@ export interface AdvanceTurnResult {
   expiredEffects: ExpiredEffectRow[];
 }
 
-export async function advanceTurn(pool: Pool, encounterId: number): Promise<AdvanceTurnResult> {
+export async function advanceTurn(pool: Pool, encounterId: string): Promise<AdvanceTurnResult> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1248,7 +1248,7 @@ export async function advanceTurn(pool: Pool, encounterId: number): Promise<Adva
     // but a 'rounds' effect un-decremented, or vice versa). Two-step: first
     // decrement every still-active 'rounds' effect on this encounter, then
     // soft-delete (removed_at) whichever of those just hit zero.
-    const decremented = await client.query<{ id: number; duration_value: number | null }>(
+    const decremented = await client.query<{ id: string; duration_value: number | null }>(
       `UPDATE active_effects
        SET duration_value = duration_value - 1
        WHERE encounter_id = $1 AND duration_type = 'rounds' AND removed_at IS NULL AND duration_value IS NOT NULL
@@ -1263,7 +1263,7 @@ export async function advanceTurn(pool: Pool, encounterId: number): Promise<Adva
         `UPDATE active_effects ae
          SET removed_at = now()
          FROM effect_definitions ed
-         WHERE ae.id = ANY($1::bigint[]) AND ed.id = ae.effect_definition_id
+         WHERE ae.id = ANY($1::uuid[]) AND ed.id = ae.effect_definition_id
          RETURNING ae.id, ae.character_id, ae.monster_instance_id, ae.effect_definition_id,
                    ae.duration_type, ae.duration_value, ae.concentration, ae.source_character_id,
                    ed.name AS effect_definition_name`,

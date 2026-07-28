@@ -13,14 +13,14 @@ import { isUniqueViolation } from './dbErrors.js';
 import type { ApplyEncounterEffectInput, ApplyTargetEffectInput } from '../schemas/effects.js';
 
 interface EffectDefinitionRow {
-  id: number;
+  id: string;
   name: string;
   default_duration_type: string;
   default_duration_value: number | null;
   concentration: boolean;
 }
 
-async function fetchEffectDefinitionOrThrow(pool: Pool, effectDefinitionId: number): Promise<EffectDefinitionRow> {
+async function fetchEffectDefinitionOrThrow(pool: Pool, effectDefinitionId: string): Promise<EffectDefinitionRow> {
   const result = await pool.query<EffectDefinitionRow>(`SELECT * FROM effect_definitions WHERE id = $1`, [effectDefinitionId]);
   const row = result.rows[0];
   if (!row) throw notFound('Effect definition');
@@ -48,12 +48,12 @@ async function fetchEffectDefinitionOrThrow(pool: Pool, effectDefinitionId: numb
 //     that combat's room to hear about it.
 
 export interface EncounterEffectSyncTarget {
-  encounter_id: number;
-  campaign_id: number;
+  encounter_id: string;
+  campaign_id: string;
   sync_seq: number;
 }
 
-async function bumpEncounterSyncSeq(client: PoolClient, encounterId: number): Promise<EncounterEffectSyncTarget> {
+async function bumpEncounterSyncSeq(client: PoolClient, encounterId: string): Promise<EncounterEffectSyncTarget> {
   const result = await client.query<EncounterEffectSyncTarget>(
     `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1
      RETURNING id AS encounter_id, campaign_id, sync_seq`,
@@ -66,8 +66,8 @@ async function bumpEncounterSyncSeq(client: PoolClient, encounterId: number): Pr
 
 async function bumpAffectedEncounters(
   client: PoolClient,
-  characterId: number | null,
-  monsterInstanceId: number | null,
+  characterId: string | null,
+  monsterInstanceId: string | null,
 ): Promise<EncounterEffectSyncTarget[]> {
   const column = characterId != null ? 'character_id' : 'monster_instance_id';
   const id = characterId ?? monsterInstanceId;
@@ -84,9 +84,9 @@ async function bumpAffectedEncounters(
 
 async function resolveEncounterSyncs(
   client: PoolClient,
-  encounterId: number | null,
-  characterId: number | null,
-  monsterInstanceId: number | null,
+  encounterId: string | null,
+  characterId: string | null,
+  monsterInstanceId: string | null,
 ): Promise<EncounterEffectSyncTarget[]> {
   return encounterId != null
     ? [await bumpEncounterSyncSeq(client, encounterId)]
@@ -94,14 +94,14 @@ async function resolveEncounterSyncs(
 }
 
 type ActiveEffectRow = Record<string, unknown> & {
-  id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  effect_definition_id: number;
+  id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  effect_definition_id: string;
   duration_type: string;
   duration_value: number | null;
   concentration: boolean;
-  source_character_id: number | null;
+  source_character_id: string | null;
 };
 
 export interface EffectMutationResult {
@@ -116,19 +116,19 @@ export interface EffectMutationResult {
 }
 
 interface InsertActiveEffectParams {
-  effectDefinitionId: number;
-  characterId: number | null;
-  monsterInstanceId: number | null;
-  encounterId: number | null;
-  sourceCharacterId?: number | null;
-  sourceSpellId?: number | null;
+  effectDefinitionId: string;
+  characterId: string | null;
+  monsterInstanceId: string | null;
+  encounterId: string | null;
+  sourceCharacterId?: string | null;
+  sourceSpellId?: string | null;
   sourceType: string;
   durationType?: string;
   durationValue?: number | null;
   stackCount?: number | null;
   appliedAtRound?: number | null;
   saveDc?: number | null;
-  saveAbilityId?: number | null;
+  saveAbilityId?: string | null;
   concentration?: boolean;
   notes?: string | null;
 }
@@ -230,9 +230,9 @@ async function insertActiveEffect(pool: Pool, params: InsertActiveEffectParams):
 
 async function assertTargetInCampaign(
   pool: Pool,
-  campaignId: number,
-  characterId: number | null,
-  monsterInstanceId: number | null,
+  campaignId: string,
+  characterId: string | null,
+  monsterInstanceId: string | null,
 ): Promise<void> {
   if (characterId != null) {
     const r = await pool.query(`SELECT 1 FROM characters WHERE id = $1 AND campaign_id = $2`, [characterId, campaignId]);
@@ -245,7 +245,7 @@ async function assertTargetInCampaign(
 
 // ---- Encounter-scoped effects (POST/GET /encounters/:id/effects) ----
 
-export async function listEncounterEffects(pool: Pool, encounterId: number, _role: CampaignRole) {
+export async function listEncounterEffects(pool: Pool, encounterId: string, _role: CampaignRole) {
   const result = await pool.query(
     `SELECT * FROM active_effects WHERE encounter_id = $1 AND removed_at IS NULL ORDER BY created_at ASC`,
     [encounterId],
@@ -261,8 +261,8 @@ export async function listEncounterEffects(pool: Pool, encounterId: number, _rol
 // rows). Mirrors listEncounterEffects: any campaign member may read, every
 // effect is visible to the whole party.
 
-export async function listCharacterEffects(pool: Pool, actorId: number, characterId: number) {
-  const charRes = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM characters WHERE id = $1`, [characterId]);
+export async function listCharacterEffects(pool: Pool, actorId: string, characterId: string) {
+  const charRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM characters WHERE id = $1`, [characterId]);
   const character = charRes.rows[0];
   if (!character) throw notFound('Character');
   await requireMembership(pool, character.campaign_id, actorId);
@@ -276,8 +276,8 @@ export async function listCharacterEffects(pool: Pool, actorId: number, characte
   return result.rows;
 }
 
-export async function listMonsterInstanceEffects(pool: Pool, actorId: number, monsterInstanceId: number) {
-  const instRes = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM monster_instances WHERE id = $1`, [monsterInstanceId]);
+export async function listMonsterInstanceEffects(pool: Pool, actorId: string, monsterInstanceId: string) {
+  const instRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM monster_instances WHERE id = $1`, [monsterInstanceId]);
   const instance = instRes.rows[0];
   if (!instance) throw notFound('Monster instance');
   await requireMembership(pool, instance.campaign_id, actorId);
@@ -293,8 +293,8 @@ export async function listMonsterInstanceEffects(pool: Pool, actorId: number, mo
 
 export async function applyEncounterEffect(
   pool: Pool,
-  encounterId: number,
-  campaignId: number,
+  encounterId: string,
+  campaignId: string,
   input: ApplyEncounterEffectInput,
 ): Promise<EffectMutationResult> {
   const characterId = input.characterId ?? null;
@@ -325,11 +325,11 @@ export async function applyEncounterEffect(
 
 export async function applyCharacterEffect(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   input: ApplyTargetEffectInput,
 ): Promise<EffectMutationResult> {
-  const charRes = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM characters WHERE id = $1`, [characterId]);
+  const charRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM characters WHERE id = $1`, [characterId]);
   const character = charRes.rows[0];
   if (!character) throw notFound('Character');
   const role = await requireMembership(pool, character.campaign_id, actorId);
@@ -356,11 +356,11 @@ export async function applyCharacterEffect(
 
 export async function applyMonsterInstanceEffect(
   pool: Pool,
-  actorId: number,
-  monsterInstanceId: number,
+  actorId: string,
+  monsterInstanceId: string,
   input: ApplyTargetEffectInput,
 ): Promise<EffectMutationResult> {
-  const instRes = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM monster_instances WHERE id = $1`, [monsterInstanceId]);
+  const instRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM monster_instances WHERE id = $1`, [monsterInstanceId]);
   const instance = instRes.rows[0];
   if (!instance) throw notFound('Monster instance');
   const role = await requireMembership(pool, instance.campaign_id, actorId);
@@ -388,15 +388,15 @@ export async function applyMonsterInstanceEffect(
 // ---- DELETE /effects/:id (flat — campaign derived from the target row) ----
 
 interface EffectOwnerRow {
-  id: number;
-  encounter_id: number | null;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  campaign_id: number;
+  id: string;
+  encounter_id: string | null;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  campaign_id: string;
   effect_definition_name: string;
 }
 
-export async function removeEffect(pool: Pool, actorId: number, effectId: number): Promise<EffectMutationResult> {
+export async function removeEffect(pool: Pool, actorId: string, effectId: string): Promise<EffectMutationResult> {
   const result = await pool.query<EffectOwnerRow>(
     `SELECT ae.id, ae.encounter_id, ae.character_id, ae.monster_instance_id, ed.name AS effect_definition_name,
             COALESCE(c.campaign_id, mi.campaign_id) AS campaign_id

@@ -12,12 +12,12 @@ import { fetchCharacterOrThrow } from './characters.js';
 import type { CreateDiceRollInput, ListDiceRollsQuery } from '../schemas/diceRolls.js';
 
 export interface DiceRollRow {
-  id: number;
-  campaign_id: number;
-  user_id: number;
-  character_id: number | null;
-  monster_instance_id: number | null;
-  encounter_id: number | null;
+  id: string;
+  campaign_id: string;
+  user_id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  encounter_id: string | null;
   roll_type: string;
   roll_context: string | null;
   d20_rolls: number[];
@@ -39,8 +39,8 @@ export function rollDie(sides: number): number {
 
 export async function rollDice(
   pool: Pool,
-  campaignId: number,
-  actorId: number,
+  campaignId: string,
+  actorId: string,
   role: CampaignRole,
   input: CreateDiceRollInput,
 ): Promise<DiceRollRow> {
@@ -51,41 +51,41 @@ export async function rollDice(
   // characterId 404s rather than 403s, same "don't leak existence of another
   // campaign's row" convention as services/monsterCatalog.ts's
   // fetchHomebrewMonsterOrThrow.
-  let characterId: number | null = null;
+  let characterId: string | null = null;
   if (input.characterId !== undefined) {
     const character = await fetchCharacterOrThrow(pool, input.characterId);
-    if (Number(character.campaign_id) !== campaignId) throw notFound('Character');
+    if (character.campaign_id !== campaignId) throw notFound('Character');
     requireOwnerOrDm(role, character.owner_user_id, actorId);
     characterId = input.characterId;
   }
 
   // ---- monsterInstanceId: DM-only (players never roll for monsters), and
   // must belong to this campaign.
-  let monsterInstanceId: number | null = null;
+  let monsterInstanceId: string | null = null;
   if (input.monsterInstanceId !== undefined) {
     if (role !== 'dm') {
       throw new AppError('FORBIDDEN_ROLE', 'Only the DM can roll for a monster instance');
     }
-    const instanceRes = await pool.query<{ campaign_id: number }>(
+    const instanceRes = await pool.query<{ campaign_id: string }>(
       `SELECT campaign_id FROM monster_instances WHERE id = $1`,
       [input.monsterInstanceId],
     );
     const instanceRow = instanceRes.rows[0];
-    if (!instanceRow || Number(instanceRow.campaign_id) !== campaignId) throw notFound('Monster instance');
+    if (!instanceRow || instanceRow.campaign_id !== campaignId) throw notFound('Monster instance');
     monsterInstanceId = input.monsterInstanceId;
   }
 
   // ---- encounterId: optional (rolls can happen outside combat), but if
   // supplied it must belong to this campaign — same cross-campaign 404
   // convention as above.
-  let encounterId: number | null = null;
+  let encounterId: string | null = null;
   if (input.encounterId !== undefined) {
-    const encounterRes = await pool.query<{ campaign_id: number }>(
+    const encounterRes = await pool.query<{ campaign_id: string }>(
       `SELECT campaign_id FROM encounters WHERE id = $1`,
       [input.encounterId],
     );
     const encounterRow = encounterRes.rows[0];
-    if (!encounterRow || Number(encounterRow.campaign_id) !== campaignId) throw notFound('Encounter');
+    if (!encounterRow || encounterRow.campaign_id !== campaignId) throw notFound('Encounter');
     encounterId = input.encounterId;
   }
 
@@ -148,7 +148,7 @@ const PAGE_SIZE = 30;
 
 interface DecodedCursor {
   createdAt: string;
-  id: number;
+  id: string;
 }
 
 function encodeCursor(row: Pick<DiceRollRow, 'created_at' | 'id'>): string {
@@ -180,7 +180,7 @@ export interface ListDiceRollsResult {
 
 export async function listDiceRolls(
   pool: Pool,
-  campaignId: number,
+  campaignId: string,
   _role: CampaignRole,
   query: ListDiceRollsQuery,
 ): Promise<ListDiceRollsResult> {

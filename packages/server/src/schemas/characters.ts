@@ -13,10 +13,10 @@ const abilityScore = z.number().int().min(1).max(30);
 const sharedCharacterShape = {
   name: z.string().min(1).max(200),
   isPc: z.boolean(),
-  ownerUserId: z.number().int().positive().optional().nullable(),
-  raceId: z.number().int().positive().optional().nullable(),
-  subraceId: z.number().int().positive().optional().nullable(),
-  backgroundId: z.number().int().positive().optional().nullable(),
+  ownerUserId: z.string().uuid().optional().nullable(),
+  raceId: z.string().uuid().optional().nullable(),
+  subraceId: z.string().uuid().optional().nullable(),
+  backgroundId: z.string().uuid().optional().nullable(),
   alignment: z.string().max(50).optional().nullable(),
   str: abilityScore,
   dex: abilityScore,
@@ -32,7 +32,7 @@ const sharedCharacterShape = {
   hitDiceRemaining: z.record(z.string(), z.number().int()).optional().nullable(),
   exhaustionLevel: z.number().int().min(0).max(6),
   senses: z.string().max(500).optional().nullable(),
-  languages: z.array(z.number().int().positive()).optional().nullable(),
+  languages: z.array(z.string().uuid()).optional().nullable(),
   notes: z.string().max(20000).optional().nullable(),
   // REFACTOR-PLAN.md §6 / docs/rules/attacks-and-damage.md §2.4 — permanent/
   // build-derived resistance sources (a Dwarf's poison resistance, etc.).
@@ -65,8 +65,8 @@ export type HpDeltaInput = z.infer<typeof hpDeltaSchema>;
 
 export const replaceClassesSchema = z.array(
   z.object({
-    classId: z.number().int().positive(),
-    subclassId: z.number().int().positive().optional().nullable(),
+    classId: z.string().uuid(),
+    subclassId: z.string().uuid().optional().nullable(),
     level: z.number().int().min(1).max(20),
   }),
 );
@@ -74,7 +74,7 @@ export type ReplaceClassesInput = z.infer<typeof replaceClassesSchema>;
 
 export const replaceSkillProficienciesSchema = z.array(
   z.object({
-    skillId: z.number().int().positive(),
+    skillId: z.string().uuid(),
     level: z.enum(['proficient', 'expertise']),
   }),
 );
@@ -82,7 +82,7 @@ export type ReplaceSkillProficienciesInput = z.infer<typeof replaceSkillProficie
 
 export const replaceSavingThrowProficienciesSchema = z.array(
   z.object({
-    abilityScoreId: z.number().int().positive(),
+    abilityScoreId: z.string().uuid(),
   }),
 );
 export type ReplaceSavingThrowProficienciesInput = z.infer<typeof replaceSavingThrowProficienciesSchema>;

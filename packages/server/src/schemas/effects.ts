@@ -11,16 +11,16 @@ const sourceTypeEnum = z.enum(['spell', 'class_feature', 'monster_ability', 'ite
 // defaults on every call; a caller can still override for a homebrew/one-off
 // duration (e.g. "poisoned for exactly 3 rounds by this specific trap").
 const baseApplyEffectShape = {
-  effectDefinitionId: z.number().int().positive(),
-  sourceCharacterId: z.number().int().positive().optional().nullable(),
-  sourceSpellId: z.number().int().positive().optional().nullable(),
+  effectDefinitionId: z.string().uuid(),
+  sourceCharacterId: z.string().uuid().optional().nullable(),
+  sourceSpellId: z.string().uuid().optional().nullable(),
   sourceType: sourceTypeEnum.default('manual'),
   durationType: durationTypeEnum.optional(),
   durationValue: z.number().int().optional().nullable(),
   stackCount: z.number().int().optional().nullable(),
   appliedAtRound: z.number().int().optional().nullable(),
   saveDc: z.number().int().optional().nullable(),
-  saveAbilityId: z.number().int().positive().optional().nullable(),
+  saveAbilityId: z.string().uuid().optional().nullable(),
   concentration: z.boolean().optional(),
   notes: z.string().max(5000).optional().nullable(),
 };
@@ -37,8 +37,8 @@ export type ApplyTargetEffectInput = z.infer<typeof applyTargetEffectSchema>;
 export const applyEncounterEffectSchema = z
   .object({
     ...baseApplyEffectShape,
-    characterId: z.number().int().positive().optional(),
-    monsterInstanceId: z.number().int().positive().optional(),
+    characterId: z.string().uuid().optional(),
+    monsterInstanceId: z.string().uuid().optional(),
   })
   .refine((v) => (v.characterId != null) !== (v.monsterInstanceId != null), {
     message: 'Exactly one of characterId or monsterInstanceId must be provided',

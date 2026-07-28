@@ -15,38 +15,38 @@ import { pool } from '../db/pool.js';
 import { authorizeParticipantAction } from './encounters.js';
 
 describe('authorizeParticipantAction (integration, live DB, throwaway fixtures)', () => {
-  let dmUserId: number;
-  let playerAUserId: number;
-  let playerBUserId: number;
-  let campaignId: number;
-  let encounterId: number;
-  let participantAId: number; // owned by playerA
-  let participantBId: number; // owned by playerB
-  let participantNpcId: number; // NPC character, no owner
-  let participantMonsterId: number; // monster instance, no owning character at all
+  let dmUserId: string;
+  let playerAUserId: string;
+  let playerBUserId: string;
+  let campaignId: string;
+  let encounterId: string;
+  let participantAId: string; // owned by playerA
+  let participantBId: string; // owned by playerB
+  let participantNpcId: string; // NPC character, no owner
+  let participantMonsterId: string; // monster instance, no owning character at all
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    const dmRes = await pool.query<{ id: number }>(
+    const dmRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'ActionEconomy Test DM', 'x') RETURNING id`,
       [`action-economy-authz-dm-${suffix}@example.test`],
     );
     dmUserId = dmRes.rows[0]!.id;
 
-    const playerARes = await pool.query<{ id: number }>(
+    const playerARes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'ActionEconomy Test Player A', 'x') RETURNING id`,
       [`action-economy-authz-player-a-${suffix}@example.test`],
     );
     playerAUserId = playerARes.rows[0]!.id;
 
-    const playerBRes = await pool.query<{ id: number }>(
+    const playerBRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'ActionEconomy Test Player B', 'x') RETURNING id`,
       [`action-economy-authz-player-b-${suffix}@example.test`],
     );
     playerBUserId = playerBRes.rows[0]!.id;
 
-    const campaignRes = await pool.query<{ id: number }>(
+    const campaignRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('ActionEconomy Authz Test Campaign', $1, '2024') RETURNING id`,
       [dmUserId],
     );
@@ -56,7 +56,7 @@ describe('authorizeParticipantAction (integration, live DB, throwaway fixtures)'
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player')`, [campaignId, playerAUserId]);
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player')`, [campaignId, playerBUserId]);
 
-    const charARes = await pool.query<{ id: number }>(
+    const charARes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current)
        VALUES ($1, true, $2, $2, 'PC A', 10, 10, 10, 10, 10, 10, 12, 30, 10, 10)
@@ -65,7 +65,7 @@ describe('authorizeParticipantAction (integration, live DB, throwaway fixtures)'
     );
     const characterAId = charARes.rows[0]!.id;
 
-    const charBRes = await pool.query<{ id: number }>(
+    const charBRes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current)
        VALUES ($1, true, $2, $2, 'PC B', 10, 10, 10, 10, 10, 10, 12, 30, 10, 10)
@@ -74,7 +74,7 @@ describe('authorizeParticipantAction (integration, live DB, throwaway fixtures)'
     );
     const characterBId = charBRes.rows[0]!.id;
 
-    const npcRes = await pool.query<{ id: number }>(
+    const npcRes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current)
        VALUES ($1, false, NULL, $2, 'Ownerless NPC', 10, 10, 10, 10, 10, 10, 12, 30, 10, 10)
@@ -83,26 +83,26 @@ describe('authorizeParticipantAction (integration, live DB, throwaway fixtures)'
     );
     const npcId = npcRes.rows[0]!.id;
 
-    const monsterCatalogRes = await pool.query<{ id: number }>(`SELECT id FROM monsters LIMIT 1`);
+    const monsterCatalogRes = await pool.query<{ id: string }>(`SELECT id FROM monsters LIMIT 1`);
     if (!monsterCatalogRes.rows[0]) {
       throw new Error('Expected at least one seeded monster catalog row for this test');
     }
     const monsterCatalogId = monsterCatalogRes.rows[0].id;
 
-    const monsterInstanceRes = await pool.query<{ id: number }>(
+    const monsterInstanceRes = await pool.query<{ id: string }>(
       `INSERT INTO monster_instances (campaign_id, monster_id, hp_current) VALUES ($1, $2, 10) RETURNING id`,
       [campaignId, monsterCatalogId],
     );
     const monsterInstanceId = monsterInstanceRes.rows[0]!.id;
 
-    const encounterRes = await pool.query<{ id: number }>(
+    const encounterRes = await pool.query<{ id: string }>(
       `INSERT INTO encounters (campaign_id, name, status) VALUES ($1, 'Authz Test Encounter', 'active') RETURNING id`,
       [campaignId],
     );
     encounterId = encounterRes.rows[0]!.id;
 
-    async function seatParticipant(characterId: number | null, monsterInstanceId: number | null, turnOrder: number): Promise<number> {
-      const res = await pool.query<{ id: number }>(
+    async function seatParticipant(characterId: string | null, monsterInstanceId: string | null, turnOrder: number): Promise<string> {
+      const res = await pool.query<{ id: string }>(
         `INSERT INTO combat_participants (encounter_id, character_id, monster_instance_id, initiative_roll, turn_order)
          VALUES ($1, $2, $3, 10, $4) RETURNING id`,
         [encounterId, characterId, monsterInstanceId, turnOrder],
@@ -157,7 +157,7 @@ describe('authorizeParticipantAction (integration, live DB, throwaway fixtures)'
   });
 
   it('a non-member of the campaign is rejected before ownership is even considered', async () => {
-    const outsiderRes = await pool.query<{ id: number }>(
+    const outsiderRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Outsider', 'x') RETURNING id`,
       [`action-economy-authz-outsider-${Date.now()}@example.test`],
     );
@@ -172,7 +172,9 @@ describe('authorizeParticipantAction (integration, live DB, throwaway fixtures)'
   });
 
   it('404s for a participant id that does not belong to the given encounter', async () => {
-    await expect(authorizeParticipantAction(pool, dmUserId, encounterId, -1)).rejects.toMatchObject({
+    await expect(
+      authorizeParticipantAction(pool, dmUserId, encounterId, '00000000-0000-0000-0000-000000000000'),
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
   });

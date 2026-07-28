@@ -9,7 +9,7 @@ import { z } from 'zod';
 // asset_type='image' (see services/assets.ts) — 'handout' is reserved for a
 // later phase, so there is nothing for a caller to choose yet.
 export const createAssetFieldsSchema = z.object({
-  characterId: z.coerce.number().int().positive().optional(),
+  characterId: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
 });
 export type CreateAssetFieldsInput = z.infer<typeof createAssetFieldsSchema>;

@@ -6,6 +6,7 @@ import { requireDm, requireMembership } from '../services/authz.js';
 import { applyEncounterEffectSchema } from '../schemas/effects.js';
 import * as effectsService from '../services/effects.js';
 import { getIo, broadcastEffectApplied, broadcastEffectExpired } from '../sockets/broadcast.js';
+import { isUuid } from '../domain/ids.js';
 
 // Mounted at /encounters — sibling to the start/end/participants/roll-
 // initiative/advance-turn action routes in routes/encounters.ts. Kept in its
@@ -13,9 +14,9 @@ import { getIo, broadcastEffectApplied, broadcastEffectExpired } from '../socket
 // exact same requireEncounterDm-style derivation: no campaignId in the URL,
 // so membership (for GET, any role) / DM role (for POST) is derived from the
 // encounter row itself.
-async function loadEncounterCampaignId(encounterId: number): Promise<number> {
-  if (!Number.isInteger(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
-  const result = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
+async function loadEncounterCampaignId(encounterId: string): Promise<string> {
+  if (!isUuid(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
+  const result = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
   const row = result.rows[0];
   if (!row) throw notFound('Encounter');
   return row.campaign_id;
@@ -25,7 +26,7 @@ export const encounterEffectsRouter = Router();
 encounterEffectsRouter.use(requireAuth);
 
 encounterEffectsRouter.get('/:id/effects', async (req, res) => {
-  const encounterId = Number(req.params.id);
+  const encounterId = (req.params.id as string);
   const campaignId = await loadEncounterCampaignId(encounterId);
   const role = await requireMembership(pool, campaignId, req.user!.id);
   const effects = await effectsService.listEncounterEffects(pool, encounterId, role);
@@ -33,7 +34,7 @@ encounterEffectsRouter.get('/:id/effects', async (req, res) => {
 });
 
 encounterEffectsRouter.post('/:id/effects', async (req, res) => {
-  const encounterId = Number(req.params.id);
+  const encounterId = (req.params.id as string);
   const campaignId = await loadEncounterCampaignId(encounterId);
   const role = await requireMembership(pool, campaignId, req.user!.id);
   requireDm(role);
@@ -59,7 +60,7 @@ export const effectsRouter = Router();
 effectsRouter.use(requireAuth);
 
 effectsRouter.delete('/:id', async (req, res) => {
-  const { effect, effectDefinitionName, encounterSyncs } = await effectsService.removeEffect(pool, req.user!.id, Number(req.params.id));
+  const { effect, effectDefinitionName, encounterSyncs } = await effectsService.removeEffect(pool, req.user!.id, (req.params.id as string));
   const io = getIo(req.app);
   for (const sync of encounterSyncs) {
     await broadcastEffectExpired(io, sync, effect, effectDefinitionName);

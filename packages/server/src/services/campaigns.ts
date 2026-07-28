@@ -10,7 +10,7 @@ import type {
   UpdateSessionLogInput,
 } from '../schemas/campaigns.js';
 
-export async function createCampaign(pool: Pool, actorId: number, input: CreateCampaignInput) {
+export async function createCampaign(pool: Pool, actorId: string, input: CreateCampaignInput) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -34,7 +34,7 @@ export async function createCampaign(pool: Pool, actorId: number, input: CreateC
   }
 }
 
-export async function listCampaignsForUser(pool: Pool, userId: number) {
+export async function listCampaignsForUser(pool: Pool, userId: string) {
   const result = await pool.query(
     `SELECT c.*, cm.role AS my_role
      FROM campaigns c
@@ -46,14 +46,14 @@ export async function listCampaignsForUser(pool: Pool, userId: number) {
   return result.rows;
 }
 
-export async function getCampaign(pool: Pool, campaignId: number) {
+export async function getCampaign(pool: Pool, campaignId: string) {
   const result = await pool.query(`SELECT * FROM campaigns WHERE id = $1`, [campaignId]);
   const row = result.rows[0];
   if (!row) throw notFound('Campaign');
   return row;
 }
 
-export async function updateCampaign(pool: Pool, campaignId: number, input: UpdateCampaignInput) {
+export async function updateCampaign(pool: Pool, campaignId: string, input: UpdateCampaignInput) {
   const sets: string[] = [];
   const values: unknown[] = [];
   let i = 1;
@@ -83,14 +83,14 @@ export async function updateCampaign(pool: Pool, campaignId: number, input: Upda
   return row;
 }
 
-export async function deleteCampaign(pool: Pool, campaignId: number): Promise<void> {
+export async function deleteCampaign(pool: Pool, campaignId: string): Promise<void> {
   const result = await pool.query(`DELETE FROM campaigns WHERE id = $1`, [campaignId]);
   if (result.rowCount === 0) throw notFound('Campaign');
 }
 
 // ---- Members ----
 
-export async function listMembers(pool: Pool, campaignId: number) {
+export async function listMembers(pool: Pool, campaignId: string) {
   const result = await pool.query(
     `SELECT cm.id, cm.campaign_id, cm.user_id, cm.role, cm.joined_at, u.email, u.display_name
      FROM campaign_members cm
@@ -102,8 +102,8 @@ export async function listMembers(pool: Pool, campaignId: number) {
   return result.rows;
 }
 
-export async function addMember(pool: Pool, campaignId: number, input: AddMemberInput) {
-  const userRes = await pool.query<{ id: number }>(`SELECT id FROM users WHERE email = $1`, [input.email]);
+export async function addMember(pool: Pool, campaignId: string, input: AddMemberInput) {
+  const userRes = await pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [input.email]);
   const user = userRes.rows[0];
   if (!user) throw new AppError('NOT_FOUND', 'No user with that email exists');
 
@@ -122,7 +122,7 @@ export async function addMember(pool: Pool, campaignId: number, input: AddMember
   return result.rows[0];
 }
 
-export async function updateMember(pool: Pool, campaignId: number, targetUserId: number, input: UpdateMemberInput) {
+export async function updateMember(pool: Pool, campaignId: string, targetUserId: string, input: UpdateMemberInput) {
   const result = await pool.query(
     `UPDATE campaign_members SET role = $1 WHERE campaign_id = $2 AND user_id = $3 RETURNING *`,
     [input.role, campaignId, targetUserId],
@@ -132,9 +132,9 @@ export async function updateMember(pool: Pool, campaignId: number, targetUserId:
   return row;
 }
 
-export async function removeMember(pool: Pool, campaignId: number, targetUserId: number): Promise<void> {
+export async function removeMember(pool: Pool, campaignId: string, targetUserId: string): Promise<void> {
   const campaign = await getCampaign(pool, campaignId);
-  if (Number(campaign.dm_user_id) === Number(targetUserId)) {
+  if (campaign.dm_user_id === targetUserId) {
     throw new AppError('CONFLICT', "Cannot remove the campaign's owning DM from membership; delete the campaign instead");
   }
   const result = await pool.query(
@@ -146,7 +146,7 @@ export async function removeMember(pool: Pool, campaignId: number, targetUserId:
 
 // ---- Session log (game-night log, NOT the HTTP auth session) ----
 
-export async function listSessionLogs(pool: Pool, campaignId: number) {
+export async function listSessionLogs(pool: Pool, campaignId: string) {
   const result = await pool.query(
     `SELECT * FROM sessions WHERE campaign_id = $1 ORDER BY session_number ASC`,
     [campaignId],
@@ -154,14 +154,14 @@ export async function listSessionLogs(pool: Pool, campaignId: number) {
   return result.rows;
 }
 
-export async function getSessionLog(pool: Pool, campaignId: number, sessionId: number) {
+export async function getSessionLog(pool: Pool, campaignId: string, sessionId: string) {
   const result = await pool.query(`SELECT * FROM sessions WHERE id = $1 AND campaign_id = $2`, [sessionId, campaignId]);
   const row = result.rows[0];
   if (!row) throw notFound('Session log entry');
   return row;
 }
 
-export async function createSessionLog(pool: Pool, campaignId: number, input: CreateSessionLogInput) {
+export async function createSessionLog(pool: Pool, campaignId: string, input: CreateSessionLogInput) {
   try {
     const result = await pool.query(
       `INSERT INTO sessions (campaign_id, session_number, title, played_at, recap)
@@ -177,7 +177,7 @@ export async function createSessionLog(pool: Pool, campaignId: number, input: Cr
   }
 }
 
-export async function updateSessionLog(pool: Pool, campaignId: number, sessionId: number, input: UpdateSessionLogInput) {
+export async function updateSessionLog(pool: Pool, campaignId: string, sessionId: string, input: UpdateSessionLogInput) {
   const sets: string[] = [];
   const values: unknown[] = [];
   let i = 1;
@@ -206,7 +206,7 @@ export async function updateSessionLog(pool: Pool, campaignId: number, sessionId
   }
 }
 
-export async function deleteSessionLog(pool: Pool, campaignId: number, sessionId: number): Promise<void> {
+export async function deleteSessionLog(pool: Pool, campaignId: string, sessionId: string): Promise<void> {
   const result = await pool.query(`DELETE FROM sessions WHERE id = $1 AND campaign_id = $2`, [sessionId, campaignId]);
   if (result.rowCount === 0) throw notFound('Session log entry');
 }

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 export const createCharacterSpellSchema = z.object({
-  spellId: z.number().int().positive(),
-  classId: z.number().int().positive().optional().nullable(),
+  spellId: z.string().uuid(),
+  classId: z.string().uuid().optional().nullable(),
   isPrepared: z.boolean().default(false),
   alwaysPrepared: z.boolean().default(false),
   source: z.enum(['class', 'race', 'feat', 'item']).default('class'),
@@ -23,6 +23,6 @@ export type UpdateCharacterSpellInput = z.infer<typeof updateCharacterSpellSchem
 // return a clear VALIDATION_ERROR listing the candidates rather than
 // guessing or silently acting on the first match.
 export const spellRowQuerySchema = z.object({
-  classId: z.coerce.number().int().positive().optional(),
+  classId: z.string().uuid().optional(),
 });
 export type SpellRowQuery = z.infer<typeof spellRowQuerySchema>;

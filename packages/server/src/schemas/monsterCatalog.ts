@@ -70,7 +70,7 @@ const homebrewMonsterShape = {
   // Must belong to the SAME campaign that will own this monster —
   // service-layer check, same "app-layer, not declarative" precedent as
   // services/assets.ts's authorizeAssetUpload characterId check.
-  artAssetId: z.number().int().positive().optional().nullable(),
+  artAssetId: z.string().uuid().optional().nullable(),
   // REFACTOR-PLAN.md §1.1: a plain URL, distinct from artAssetId (which only
   // works for homebrew rows uploaded into a campaign's own asset library) —
   // this one also works for global/seeded monsters that have no campaign to

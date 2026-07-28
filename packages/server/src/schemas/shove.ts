@@ -7,7 +7,7 @@ import { z } from 'zod';
 // from the same catalog/campaign-instance data services/shove.ts already
 // has to load anyway for the size check.
 export const performShoveSchema = z.object({
-  targetParticipantId: z.number().int().positive(),
+  targetParticipantId: z.string().uuid(),
   desiredEffect: z.enum(['push_5ft', 'knock_prone']),
   defenderSkill: z.enum(['athletics', 'acrobatics']),
   // DM adjudication escape hatch (PLAN.md's hp_max_override/

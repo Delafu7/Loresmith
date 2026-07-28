@@ -35,8 +35,8 @@ interface RevealRow {
  */
 export async function resolveReveals(
   pool: Pool | PoolClient,
-  campaignId: number,
-  monsterInstanceId: number,
+  campaignId: string,
+  monsterInstanceId: string,
 ): Promise<Map<string, RevealState>> {
   const [rowsRes, campaignRes] = await Promise.all([
     pool.query<RevealRow>(
@@ -81,7 +81,7 @@ function serialize(state: Map<string, RevealState>): SerializedReveal[] {
 // instances/monsters, so the true value has to be looked up separately.
 export async function getTrueFieldValues(
   pool: Pool,
-  monsterInstanceId: number,
+  monsterInstanceId: string,
   fieldKeys: string[],
 ): Promise<Record<string, unknown>> {
   const result = await pool.query(
@@ -95,8 +95,8 @@ export async function getTrueFieldValues(
 
 // ---- DM-facing read/write of raw reveal state (for the eye-icon grid) ----
 
-async function fetchMonsterInstanceCampaignId(pool: Pool, monsterInstanceId: number): Promise<number> {
-  const result = await pool.query<{ campaign_id: number }>(
+async function fetchMonsterInstanceCampaignId(pool: Pool, monsterInstanceId: string): Promise<string> {
+  const result = await pool.query<{ campaign_id: string }>(
     `SELECT campaign_id FROM monster_instances WHERE id = $1`,
     [monsterInstanceId],
   );
@@ -105,7 +105,7 @@ async function fetchMonsterInstanceCampaignId(pool: Pool, monsterInstanceId: num
   return row.campaign_id;
 }
 
-export async function getMonsterInstanceReveals(pool: Pool, actorId: number, monsterInstanceId: number): Promise<SerializedReveal[]> {
+export async function getMonsterInstanceReveals(pool: Pool, actorId: string, monsterInstanceId: string): Promise<SerializedReveal[]> {
   const campaignId = await fetchMonsterInstanceCampaignId(pool, monsterInstanceId);
   const role = await requireMembership(pool, campaignId, actorId);
   requireDm(role);
@@ -118,10 +118,10 @@ export async function getMonsterInstanceReveals(pool: Pool, actorId: number, mon
 // applyHpDelta, so the route can broadcast REVEAL_CHANGED per encounter
 // after commit.
 export interface EncounterRevealSyncTarget {
-  encounter_id: number;
-  campaign_id: number;
+  encounter_id: string;
+  campaign_id: string;
   sync_seq: number;
-  participant_id: number;
+  participant_id: string;
 }
 
 export interface UpdateRevealsResult {
@@ -131,8 +131,8 @@ export interface UpdateRevealsResult {
 
 export async function updateMonsterInstanceReveals(
   pool: Pool,
-  actorId: number,
-  monsterInstanceId: number,
+  actorId: string,
+  monsterInstanceId: string,
   input: UpdateRevealsInput,
 ): Promise<UpdateRevealsResult> {
   const campaignId = await fetchMonsterInstanceCampaignId(pool, monsterInstanceId);
@@ -195,8 +195,8 @@ export async function updateMonsterInstanceReveals(
  * and active_effects.visible_to_players) was removed along with those two
  * mechanisms; this is the one piece of it still meaningful.
  */
-export async function resetRevealsForEncounter(pool: Pool, actorId: number, encounterId: number): Promise<{ campaignId: number }> {
-  const encRes = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
+export async function resetRevealsForEncounter(pool: Pool, actorId: string, encounterId: string): Promise<{ campaignId: string }> {
+  const encRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
   const encounter = encRes.rows[0];
   if (!encounter) throw notFound('Encounter');
   const role = await requireMembership(pool, encounter.campaign_id, actorId);

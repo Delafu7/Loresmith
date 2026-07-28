@@ -19,34 +19,34 @@ import { applyMonsterInstanceDamage, createMonsterInstance } from './monsters.js
 import { addCharacterAttack, listCharacterAttacks } from './characterAttacks.js';
 
 describe('damage/attacks authorization (integration, live DB, throwaway fixtures)', () => {
-  let dmUserId: number;
-  let playerAUserId: number;
-  let playerBUserId: number;
-  let campaignId: number;
-  let characterAId: number; // owned by playerA
-  let monsterInstanceId: number;
+  let dmUserId: string;
+  let playerAUserId: string;
+  let playerBUserId: string;
+  let campaignId: string;
+  let characterAId: string; // owned by playerA
+  let monsterInstanceId: string;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dmRes = await pool.query<{ id: number }>(
+    const dmRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'DamageAuthz Test DM', 'x') RETURNING id`,
       [`damage-authz-dm-${suffix}@example.test`],
     );
     dmUserId = dmRes.rows[0]!.id;
 
-    const playerARes = await pool.query<{ id: number }>(
+    const playerARes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'DamageAuthz Test Player A', 'x') RETURNING id`,
       [`damage-authz-player-a-${suffix}@example.test`],
     );
     playerAUserId = playerARes.rows[0]!.id;
 
-    const playerBRes = await pool.query<{ id: number }>(
+    const playerBRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'DamageAuthz Test Player B', 'x') RETURNING id`,
       [`damage-authz-player-b-${suffix}@example.test`],
     );
     playerBUserId = playerBRes.rows[0]!.id;
 
-    const campaignRes = await pool.query<{ id: number }>(
+    const campaignRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('DamageAuthz Test Campaign', $1, '2024') RETURNING id`,
       [dmUserId],
     );
@@ -55,7 +55,7 @@ describe('damage/attacks authorization (integration, live DB, throwaway fixtures
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player')`, [campaignId, playerAUserId]);
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player')`, [campaignId, playerBUserId]);
 
-    const characterARes = await pool.query<{ id: number }>(
+    const characterARes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current)
        VALUES ($1, true, $2, $2, 'DamageAuthz PC A', 10, 10, 10, 10, 10, 10, 12, 30, 20, 20)
@@ -64,7 +64,7 @@ describe('damage/attacks authorization (integration, live DB, throwaway fixtures
     );
     characterAId = characterARes.rows[0]!.id;
 
-    const monsterCatalogRes = await pool.query<{ id: number }>(`SELECT id FROM monsters LIMIT 1`);
+    const monsterCatalogRes = await pool.query<{ id: string }>(`SELECT id FROM monsters LIMIT 1`);
     if (!monsterCatalogRes.rows[0]) throw new Error('Expected at least one seeded monster catalog row for this test');
     const instance = await createMonsterInstance(pool, campaignId, {
       monsterId: monsterCatalogRes.rows[0].id,
@@ -77,7 +77,7 @@ describe('damage/attacks authorization (integration, live DB, throwaway fixtures
       isRecurring: false,
       notes: null,
     });
-    monsterInstanceId = (instance as { id: number }).id;
+    monsterInstanceId = (instance as { id: string }).id;
   });
 
   afterAll(async () => {
@@ -110,7 +110,7 @@ describe('damage/attacks authorization (integration, live DB, throwaway fixtures
   });
 
   it('a non-member is rejected before ownership is even considered', async () => {
-    const outsiderRes = await pool.query<{ id: number }>(
+    const outsiderRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'DamageAuthz Outsider', 'x') RETURNING id`,
       [`damage-authz-outsider-${Date.now()}@example.test`],
     );

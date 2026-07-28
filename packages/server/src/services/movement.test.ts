@@ -98,7 +98,7 @@ describe('computePathCost — difficult terrain', () => {
     // Cell (1,0) is both a difficult-terrain override AND occupied by a
     // passable (same-faction) participant — two distinct "difficult" sources.
     grid.overrides.set('1,0', { costType: 'difficult', medium: 'ground', specialCostFt: null });
-    grid.occupants.set('1,0', { participantId: 999, faction: 'player', sizeRank: 2 });
+    grid.occupants.set('1,0', { participantId: 'occupant-999', faction: 'player', sizeRank: 2 });
     const result = computePathCost(grid, mover(), { x: 0, y: 0 }, { x: 1, y: 0 });
     expect(result!.costFt).toBe(10); // 5 * 2, not 5 * 4
   });
@@ -148,39 +148,39 @@ describe('computePathCost — dash is a budget concern, not a cost-function conc
 describe('computePathCost — occupancy passability', () => {
   it('a same-side (player/ally) occupied cell is passable, costs difficult-terrain rate', () => {
     const grid = emptyGrid();
-    grid.occupants.set('1,0', { participantId: 1, faction: 'ally', sizeRank: 2 });
+    grid.occupants.set('1,0', { participantId: 'occupant-1', faction: 'ally', sizeRank: 2 });
     const result = computePathCost(grid, mover({ faction: 'player' }), { x: 0, y: 0 }, { x: 1, y: 0 });
     expect(result!.costFt).toBe(10); // 5 * 2
   });
 
   it('2014: a hostile same-size occupant blocks the path outright', () => {
     const grid = emptyGrid({ columns: 3, rows: 1, edition: '2014' });
-    grid.occupants.set('1,0', { participantId: 1, faction: 'enemy', sizeRank: 2 });
+    grid.occupants.set('1,0', { participantId: 'occupant-1', faction: 'enemy', sizeRank: 2 });
     const result = computePathCost(grid, mover({ faction: 'player', sizeRank: 2 }), { x: 0, y: 0 }, { x: 2, y: 0 });
     expect(result).toBeNull();
   });
 
   it('2014: a hostile occupant >=2 size categories different is passable (difficult-terrain rate)', () => {
     const grid = emptyGrid({ columns: 3, rows: 1, edition: '2014' });
-    grid.occupants.set('1,0', { participantId: 1, faction: 'enemy', sizeRank: 0 }); // Tiny
+    grid.occupants.set('1,0', { participantId: 'occupant-1', faction: 'enemy', sizeRank: 0 }); // Tiny
     const result = computePathCost(grid, mover({ faction: 'player', sizeRank: 3 }), { x: 0, y: 0 }, { x: 2, y: 0 }); // Large mover
     expect(result!.costFt).toBe(15); // 5 (normal cell 1) + 10 (difficult cell 2)
   });
 
   it('2024: a same-size hostile occupant blocks; a Tiny hostile occupant is passable', () => {
     const grid2024 = emptyGrid({ columns: 3, rows: 1, edition: '2024' });
-    grid2024.occupants.set('1,0', { participantId: 1, faction: 'enemy', sizeRank: 2 });
+    grid2024.occupants.set('1,0', { participantId: 'occupant-1', faction: 'enemy', sizeRank: 2 });
     expect(computePathCost(grid2024, mover({ faction: 'player', sizeRank: 2 }), { x: 0, y: 0 }, { x: 2, y: 0 })).toBeNull();
 
     const gridTiny = emptyGrid({ columns: 3, rows: 1, edition: '2024' });
-    gridTiny.occupants.set('1,0', { participantId: 1, faction: 'enemy', sizeRank: 0 });
+    gridTiny.occupants.set('1,0', { participantId: 'occupant-1', faction: 'enemy', sizeRank: 0 });
     const result = computePathCost(gridTiny, mover({ faction: 'player', sizeRank: 2 }), { x: 0, y: 0 }, { x: 2, y: 0 });
     expect(result!.costFt).toBe(15);
   });
 
   it('neutral faction is nonhostile to everyone (passable, difficult-terrain rate)', () => {
     const grid = emptyGrid();
-    grid.occupants.set('1,0', { participantId: 1, faction: 'neutral', sizeRank: 2 });
+    grid.occupants.set('1,0', { participantId: 'occupant-1', faction: 'neutral', sizeRank: 2 });
     const result = computePathCost(grid, mover({ faction: 'enemy' }), { x: 0, y: 0 }, { x: 1, y: 0 });
     expect(result!.costFt).toBe(10);
   });

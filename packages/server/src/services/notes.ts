@@ -7,32 +7,32 @@ import type { CampaignRole } from './authz.js';
 import type { CreateNoteInput, UpdateNoteInput } from '../schemas/notes.js';
 
 interface NoteRow {
-  id: number;
-  campaign_id: number;
-  author_user_id: number;
+  id: string;
+  campaign_id: string;
+  author_user_id: string;
   [key: string]: unknown;
 }
 
-async function fetchNoteScoped(pool: Pool, campaignId: number, noteId: number): Promise<NoteRow> {
+async function fetchNoteScoped(pool: Pool, campaignId: string, noteId: string): Promise<NoteRow> {
   const result = await pool.query<NoteRow>(`SELECT * FROM notes WHERE id = $1 AND campaign_id = $2`, [noteId, campaignId]);
   const row = result.rows[0];
   if (!row) throw notFound('Note');
   return row;
 }
 
-export async function listNotes(pool: Pool, campaignId: number, _role: CampaignRole) {
+export async function listNotes(pool: Pool, campaignId: string, _role: CampaignRole) {
   const result = await pool.query(`SELECT * FROM notes WHERE campaign_id = $1 ORDER BY created_at DESC`, [campaignId]);
   return result.rows;
 }
 
-export async function getNote(pool: Pool, campaignId: number, noteId: number, _role: CampaignRole) {
+export async function getNote(pool: Pool, campaignId: string, noteId: string, _role: CampaignRole) {
   return fetchNoteScoped(pool, campaignId, noteId);
 }
 
 export async function createNote(
   pool: Pool,
-  campaignId: number,
-  actorId: number,
+  campaignId: string,
+  actorId: string,
   _role: CampaignRole,
   input: CreateNoteInput,
 ) {
@@ -47,14 +47,14 @@ export async function createNote(
 
 export async function updateNote(
   pool: Pool,
-  campaignId: number,
-  noteId: number,
-  actorId: number,
+  campaignId: string,
+  noteId: string,
+  actorId: string,
   role: CampaignRole,
   input: UpdateNoteInput,
 ) {
   const note = await fetchNoteScoped(pool, campaignId, noteId);
-  if (role === 'player' && Number(note.author_user_id) !== Number(actorId)) {
+  if (role === 'player' && note.author_user_id !== actorId) {
     throw new AppError('FORBIDDEN_NOT_OWNER', 'You can only edit notes you authored');
   }
 
@@ -79,9 +79,9 @@ export async function updateNote(
   return result.rows[0];
 }
 
-export async function deleteNote(pool: Pool, campaignId: number, noteId: number, actorId: number, role: CampaignRole): Promise<void> {
+export async function deleteNote(pool: Pool, campaignId: string, noteId: string, actorId: string, role: CampaignRole): Promise<void> {
   const note = await fetchNoteScoped(pool, campaignId, noteId);
-  if (role === 'player' && Number(note.author_user_id) !== Number(actorId)) {
+  if (role === 'player' && note.author_user_id !== actorId) {
     throw new AppError('FORBIDDEN_NOT_OWNER', 'You can only delete notes you authored');
   }
   await pool.query(`DELETE FROM notes WHERE id = $1`, [noteId]);

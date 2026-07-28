@@ -13,7 +13,7 @@ type SpellcastingType = 'full' | 'half' | 'third' | 'pact' | 'none';
 // ---- Multiclass prerequisites ----
 
 export interface MulticlassPrereqFailure {
-  classId: number;
+  classId: string;
   className: string;
   abilityIndex: string;
   required: number;
@@ -21,7 +21,7 @@ export interface MulticlassPrereqFailure {
 }
 
 interface MulticlassPrereqRow {
-  class_id: number;
+  class_id: string;
   class_name: string;
   ability_index: string;
   minimum_score: number;
@@ -53,7 +53,7 @@ interface AbilityScores {
 export async function validateMulticlassPrerequisites(
   db: Pool | PoolClient,
   character: AbilityScores,
-  classIds: number[],
+  classIds: string[],
 ): Promise<void> {
   const distinctClassIds = [...new Set(classIds)];
   if (distinctClassIds.length <= 1) return;
@@ -63,7 +63,7 @@ export async function validateMulticlassPrerequisites(
      FROM class_multiclass_prerequisites cmp
      JOIN classes c ON c.id = cmp.class_id
      JOIN ability_scores a ON a.id = cmp.ability_score_id
-     WHERE cmp.class_id = ANY($1::bigint[])`,
+     WHERE cmp.class_id = ANY($1::uuid[])`,
     [distinctClassIds],
   );
 
@@ -125,12 +125,12 @@ const MULTICLASS_MULTIPLIER: Partial<Record<SpellcastingType, number>> = {
 };
 
 interface CharacterClassRow {
-  class_id: number;
+  class_id: string;
   level: number;
   spellcasting_type: SpellcastingType;
 }
 
-async function fetchCharacterClasses(db: Pool | PoolClient, characterId: number): Promise<CharacterClassRow[]> {
+async function fetchCharacterClasses(db: Pool | PoolClient, characterId: string): Promise<CharacterClassRow[]> {
   const result = await db.query<CharacterClassRow>(
     `SELECT cc.class_id, cc.level, c.spellcasting_type
      FROM character_classes cc JOIN classes c ON c.id = cc.class_id
@@ -154,7 +154,7 @@ function slotLevelEntries(spellSlots: Record<string, number> | null): Array<[lev
   return entries;
 }
 
-async function fetchOwnSpellSlots(db: Pool | PoolClient, classId: number, level: number): Promise<Record<string, number> | null> {
+async function fetchOwnSpellSlots(db: Pool | PoolClient, classId: string, level: number): Promise<Record<string, number> | null> {
   const result = await db.query<{ spell_slots: Record<string, number> | null }>(
     `SELECT spell_slots FROM class_levels WHERE class_id = $1 AND level = $2`,
     [classId, level],
@@ -196,7 +196,7 @@ const SPELL_SLOT_KEY_RE = /^(spell_slot|warlock_pact_slot)_\d+$/;
  * refreshed and current_value is clamped DOWN to the new max (never bumped
  * up) — this is a recompute of the cap, not a free refill of spent slots.
  */
-export async function recomputeSpellSlots(db: Pool | PoolClient, characterId: number): Promise<void> {
+export async function recomputeSpellSlots(db: Pool | PoolClient, characterId: string): Promise<void> {
   const classes = await fetchCharacterClasses(db, characterId);
   const targets = new Map<string, number>();
 

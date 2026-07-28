@@ -23,27 +23,27 @@ import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlo
 
 describe('multiclass spell slots + prerequisites (integration, rolled-back transaction)', () => {
   let client: PoolClient;
-  let campaignId: number;
-  let userId: number;
-  let paladinClassId: number;
-  let warlockClassId: number;
-  let rangerClassId: number;
-  let fighterClassId: number;
+  let campaignId: string;
+  let userId: string;
+  let paladinClassId: string;
+  let warlockClassId: string;
+  let rangerClassId: string;
+  let fighterClassId: string;
 
   beforeAll(async () => {
     client = await pool.connect();
     await client.query('BEGIN');
 
-    const campaignRes = await client.query<{ id: number }>(`SELECT id FROM campaigns ORDER BY id LIMIT 1`);
+    const campaignRes = await client.query<{ id: string }>(`SELECT id FROM campaigns ORDER BY id LIMIT 1`);
     if (campaignRes.rows.length === 0) throw new Error('Expected at least one seeded campaign to exist');
     campaignId = campaignRes.rows[0]!.id;
 
-    const userRes = await client.query<{ id: number }>(`SELECT id FROM users ORDER BY id LIMIT 1`);
+    const userRes = await client.query<{ id: string }>(`SELECT id FROM users ORDER BY id LIMIT 1`);
     if (userRes.rows.length === 0) throw new Error('Expected at least one seeded user to exist');
     userId = userRes.rows[0]!.id;
 
-    async function classIdFor(indexKey: string): Promise<number> {
-      const res = await client.query<{ id: number }>(
+    async function classIdFor(indexKey: string): Promise<string> {
+      const res = await client.query<{ id: string }>(
         `SELECT id FROM classes WHERE index_key = $1 AND edition_scope = '2024'`,
         [indexKey],
       );
@@ -63,8 +63,8 @@ describe('multiclass spell slots + prerequisites (integration, rolled-back trans
     await pool.end();
   });
 
-  async function makeCharacter(name: string): Promise<number> {
-    const res = await client.query<{ id: number }>(
+  async function makeCharacter(name: string): Promise<string> {
+    const res = await client.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha, armor_class, hp_max, hp_current)
        VALUES ($1, true, $2, $2, $3, 10, 10, 10, 10, 10, 10, 10, 10, 10)

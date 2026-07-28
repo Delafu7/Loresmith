@@ -9,7 +9,7 @@ import { requireMembership } from './authz.js';
 import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
 import type { ResourceAmountInput } from '../schemas/resources.js';
 
-export async function listResourcePools(pool: Pool, actorId: number, characterId: number) {
+export async function listResourcePools(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await requireMembership(pool, character.campaign_id, actorId);
   const result = await pool.query(
@@ -28,8 +28,8 @@ export async function listResourcePools(pool: Pool, actorId: number, characterId
  */
 export async function spendResource(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   resourceKey: string,
   input: ResourceAmountInput,
 ) {
@@ -62,8 +62,8 @@ export async function spendResource(
 
 export async function recoverResource(
   pool: Pool,
-  actorId: number,
-  characterId: number,
+  actorId: string,
+  characterId: string,
   resourceKey: string,
   input: ResourceAmountInput,
 ) {

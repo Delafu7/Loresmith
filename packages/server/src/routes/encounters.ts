@@ -4,6 +4,7 @@ import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
 import { AppError, notFound } from '../middleware/errors.js';
+import { isUuid } from '../domain/ids.js';
 import { requireMembership, requireDm } from '../services/authz.js';
 import {
   addParticipantSchema,
@@ -57,18 +58,18 @@ campaignEncountersRouter.post('/', requireRole('dm'), async (req, res) => {
 });
 
 campaignEncountersRouter.get('/:encounterId', async (req, res) => {
-  const encounter = await encountersService.getEncounter(pool, req.campaignId!, Number(req.params.encounterId));
+  const encounter = await encountersService.getEncounter(pool, req.campaignId!, (req.params.encounterId as string));
   res.json({ encounter });
 });
 
 campaignEncountersRouter.patch('/:encounterId', requireRole('dm'), async (req, res) => {
   const input = updateEncounterSchema.parse(req.body);
-  const encounter = await encountersService.updateEncounter(pool, req.campaignId!, Number(req.params.encounterId), input);
+  const encounter = await encountersService.updateEncounter(pool, req.campaignId!, (req.params.encounterId as string), input);
   res.json({ encounter });
 });
 
 campaignEncountersRouter.delete('/:encounterId', requireRole('dm'), async (req, res) => {
-  await encountersService.deleteEncounter(pool, req.campaignId!, Number(req.params.encounterId));
+  await encountersService.deleteEncounter(pool, req.campaignId!, (req.params.encounterId as string));
   res.status(204).send();
 });
 
@@ -77,10 +78,10 @@ campaignEncountersRouter.delete('/:encounterId', requireRole('dm'), async (req, 
 // middleware derives it from the encounter row itself, then applies the
 // usual membership + DM-role checks (combat control is a DM tool).
 async function requireEncounterDm(req: Request, _res: Response, next: NextFunction): Promise<void> {
-  const encounterId = Number(req.params.id);
-  if (!Number.isInteger(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
+  const encounterId = (req.params.id as string);
+  if (!isUuid(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
 
-  const result = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
+  const result = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
   const row = result.rows[0];
   if (!row) throw notFound('Encounter');
 
@@ -99,9 +100,9 @@ async function requireEncounterDm(req: Request, _res: Response, next: NextFuncti
 // without Express, matching requireEncounterDm's own "thin wrapper around a
 // services/authz.ts call" shape just above.
 async function requireOwnParticipantOrDm(req: Request, _res: Response, next: NextFunction): Promise<void> {
-  const encounterId = Number(req.params.id);
-  const participantId = Number(req.params.pid);
-  if (!Number.isInteger(encounterId) || !Number.isInteger(participantId)) {
+  const encounterId = (req.params.id as string);
+  const participantId = (req.params.pid as string);
+  if (!isUuid(encounterId) || !isUuid(participantId)) {
     throw new AppError('VALIDATION_ERROR', 'Invalid encounter or participant id');
   }
   await encountersService.authorizeParticipantAction(pool, req.user!.id, encounterId, participantId);
@@ -115,18 +116,18 @@ encountersRouter.use(requireAuth);
 // full-screen route reached with only an encounter id, no campaignId in the
 // URL). Membership-gated, not DM-only — players need to view the map too.
 encountersRouter.get('/:id', async (req, res) => {
-  const encounter = await encountersService.getEncounterFlat(pool, req.user!.id, Number(req.params.id));
+  const encounter = await encountersService.getEncounterFlat(pool, req.user!.id, (req.params.id as string));
   res.json({ encounter });
 });
 
 encountersRouter.post('/:id/start', requireEncounterDm, async (req, res) => {
-  const encounter = await encountersService.startEncounter(pool, Number(req.params.id));
+  const encounter = await encountersService.startEncounter(pool, (req.params.id as string));
   broadcastCombatStarted(getIo(req.app), encounter);
   res.json({ encounter });
 });
 
 encountersRouter.post('/:id/end', requireEncounterDm, async (req, res) => {
-  const encounter = await encountersService.endEncounter(pool, Number(req.params.id));
+  const encounter = await encountersService.endEncounter(pool, (req.params.id as string));
   broadcastCombatEnded(getIo(req.app), encounter);
   res.json({ encounter });
 });
@@ -135,7 +136,7 @@ encountersRouter.post('/:id/end', requireEncounterDm, async (req, res) => {
 // "weaknesses hidden" — a single fresh FULL_STATE_SYNC instead of a pile of
 // per-field REVEAL_CHANGED events.
 encountersRouter.post('/:id/reveals/reset', requireEncounterDm, async (req, res) => {
-  const encounterId = Number(req.params.id);
+  const encounterId = (req.params.id as string);
   const { campaignId } = await entityFieldRevealService.resetRevealsForEncounter(pool, req.user!.id, encounterId);
   await broadcastFullStateResync(getIo(req.app), encounterId, campaignId);
   res.status(204).send();
@@ -143,7 +144,7 @@ encountersRouter.post('/:id/reveals/reset', requireEncounterDm, async (req, res)
 
 encountersRouter.post('/:id/participants', requireEncounterDm, async (req, res) => {
   const input = addParticipantSchema.parse(req.body);
-  const { encounter, participant } = await encountersService.addParticipant(pool, Number(req.params.id), input);
+  const { encounter, participant } = await encountersService.addParticipant(pool, (req.params.id as string), input);
   const io = getIo(req.app);
   broadcastParticipantJoined(io, encounter, participant);
   await pushEncounterRoomJoinForOwner(io, pool, encounter.id, encounter.campaign_id, participant.character_id);
@@ -152,7 +153,7 @@ encountersRouter.post('/:id/participants', requireEncounterDm, async (req, res) 
 
 encountersRouter.delete('/:id/participants/:pid', requireEncounterDm, async (req, res) => {
   const { encounter, participant } = await encountersService.removeParticipant(
-    pool, Number(req.params.id), Number(req.params.pid),
+    pool, (req.params.id as string), (req.params.pid as string),
   );
   broadcastParticipantLeft(getIo(req.app), encounter, participant);
   res.status(204).send();
@@ -161,20 +162,20 @@ encountersRouter.delete('/:id/participants/:pid', requireEncounterDm, async (req
 encountersRouter.patch('/:id/participants/:pid/initiative', requireEncounterDm, async (req, res) => {
   const input = setInitiativeSchema.parse(req.body);
   const participant = await encountersService.setParticipantInitiative(
-    pool, Number(req.params.id), Number(req.params.pid), input,
+    pool, (req.params.id as string), (req.params.pid as string), input,
   );
   res.json({ participant });
 });
 
 encountersRouter.post('/:id/roll-initiative', requireEncounterDm, async (req, res) => {
   const input = rollInitiativeSchema.parse(req.body ?? {});
-  const result = await encountersService.rollInitiative(pool, Number(req.params.id), input.force);
+  const result = await encountersService.rollInitiative(pool, (req.params.id as string), input.force);
   broadcastInitiativeRolled(getIo(req.app), result.encounter, result.participants);
   res.json(result);
 });
 
 encountersRouter.post('/:id/advance-turn', requireEncounterDm, async (req, res) => {
-  const result = await encountersService.advanceTurn(pool, Number(req.params.id));
+  const result = await encountersService.advanceTurn(pool, (req.params.id as string));
   const io = getIo(req.app);
   broadcastTurnAdvanced(io, result.encounter, result.participants);
   // Round-based effects that just hit zero duration (services/encounters.ts's
@@ -193,7 +194,7 @@ encountersRouter.post('/:id/advance-turn', requireEncounterDm, async (req, res) 
 // etc. — placing tokens and configuring the map is a DM tool.
 encountersRouter.put('/:id/map', requireEncounterDm, async (req, res) => {
   const input = upsertEncounterMapSchema.parse(req.body);
-  const { encounter, map } = await encountersService.upsertEncounterMap(pool, Number(req.params.id), input);
+  const { encounter, map } = await encountersService.upsertEncounterMap(pool, (req.params.id as string), input);
   broadcastMapUpdated(getIo(req.app), encounter, map);
   res.json({ map: encountersService.formatMapForWire(map) });
 });
@@ -201,7 +202,7 @@ encountersRouter.put('/:id/map', requireEncounterDm, async (req, res) => {
 encountersRouter.patch('/:id/participants/:pid/position', requireEncounterDm, async (req, res) => {
   const input = setParticipantPositionSchema.parse(req.body);
   const { encounter, participant } = await encountersService.setParticipantPosition(
-    pool, Number(req.params.id), Number(req.params.pid), input,
+    pool, (req.params.id as string), (req.params.pid as string), input,
   );
   broadcastTokenMoved(getIo(req.app), encounter, participant);
   res.json({ participant });
@@ -213,21 +214,21 @@ encountersRouter.patch('/:id/participants/:pid/position', requireEncounterDm, as
 // reachable cells too, not just the DM. Reuses requireOwnParticipantOrDm's
 // shape (owner-or-DM), same as the action-economy route just below.
 encountersRouter.get('/:id/participants/:pid/reachable', requireOwnParticipantOrDm, async (req, res) => {
-  const result = await encountersService.getParticipantReachableCells(pool, Number(req.params.id), Number(req.params.pid));
+  const result = await encountersService.getParticipantReachableCells(pool, (req.params.id as string), (req.params.pid as string));
   res.json(result);
 });
 
 // Terrain cell overrides (REFACTOR-PLAN.md §4). DM-only, same guard as the
 // rest of the map-configuration surface above.
 encountersRouter.get('/:id/map/cell-overrides', requireEncounterDm, async (req, res) => {
-  const overrides = await encountersService.listMapCellOverrides(pool, Number(req.params.id));
+  const overrides = await encountersService.listMapCellOverrides(pool, (req.params.id as string));
   res.json({ overrides });
 });
 
 encountersRouter.put('/:id/map/cell-overrides/:x/:y', requireEncounterDm, async (req, res) => {
   const input = upsertCellOverrideSchema.parse(req.body);
   const { encounter, map } = await encountersService.upsertMapCellOverride(
-    pool, Number(req.params.id), Number(req.params.x), Number(req.params.y), input,
+    pool, (req.params.id as string), Number(req.params.x), Number(req.params.y), input,
   );
   broadcastMapUpdated(getIo(req.app), encounter, map);
   res.status(204).send();
@@ -235,7 +236,7 @@ encountersRouter.put('/:id/map/cell-overrides/:x/:y', requireEncounterDm, async 
 
 encountersRouter.delete('/:id/map/cell-overrides/:x/:y', requireEncounterDm, async (req, res) => {
   const result = await encountersService.deleteMapCellOverride(
-    pool, Number(req.params.id), Number(req.params.x), Number(req.params.y),
+    pool, (req.params.id as string), Number(req.params.x), Number(req.params.y),
   );
   if (result) broadcastMapUpdated(getIo(req.app), result.encounter, result.map);
   res.status(204).send();
@@ -249,7 +250,7 @@ encountersRouter.delete('/:id/map/cell-overrides/:x/:y', requireEncounterDm, asy
 encountersRouter.patch('/:id/participants/:pid/faction', requireEncounterDm, async (req, res) => {
   const input = setParticipantFactionSchema.parse(req.body);
   const { encounter, participant } = await encountersService.setParticipantFaction(
-    pool, Number(req.params.id), Number(req.params.pid), input,
+    pool, (req.params.id as string), (req.params.pid as string), input,
   );
   broadcastParticipantFactionChanged(getIo(req.app), encounter, participant);
   res.json({ participant });
@@ -258,7 +259,7 @@ encountersRouter.patch('/:id/participants/:pid/faction', requireEncounterDm, asy
 encountersRouter.patch('/:id/participants/:pid/action-economy', requireOwnParticipantOrDm, async (req, res) => {
   const input = applyActionEconomySchema.parse(req.body);
   const { encounter, participant } = await encountersService.applyActionEconomy(
-    pool, Number(req.params.id), Number(req.params.pid), input,
+    pool, (req.params.id as string), (req.params.pid as string), input,
   );
   broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
   res.json({ participant });
@@ -269,7 +270,7 @@ encountersRouter.patch('/:id/participants/:pid/action-economy', requireOwnPartic
 // this stays on requireEncounterDm rather than requireOwnParticipantOrDm.
 encountersRouter.post('/:id/participants/:pid/action-economy/undo', requireEncounterDm, async (req, res) => {
   const { encounter, participant } = await encountersService.undoActionEconomy(
-    pool, Number(req.params.id), Number(req.params.pid),
+    pool, (req.params.id as string), (req.params.pid as string),
   );
   broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
   res.json({ participant });
@@ -280,7 +281,7 @@ encountersRouter.post('/:id/participants/:pid/action-economy/undo', requireEncou
 // behalf of whichever PC's turn it is, same as every other combat mutation.
 encountersRouter.post('/:id/participants/:pid/shove', requireEncounterDm, async (req, res) => {
   const input = performShoveSchema.parse(req.body);
-  const shove = await performShove(pool, Number(req.params.id), Number(req.params.pid), req.user!.id, input);
+  const shove = await performShove(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
   const io = getIo(req.app);
   broadcastActionEconomyChanged(io, shove.encounter, shove.participant);
   await broadcastDiceRolled(io, shove.encounter.campaign_id, shove.attackerRoll);

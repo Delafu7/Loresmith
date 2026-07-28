@@ -35,7 +35,7 @@ function homebrewSlug(name: string): string {
   return `${slugify(name)}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-async function fetchCampaignEditionOrThrow(pool: Pool, campaignId: number): Promise<string> {
+async function fetchCampaignEditionOrThrow(pool: Pool, campaignId: string): Promise<string> {
   const result = await pool.query<{ srd_edition: string }>(`SELECT srd_edition FROM campaigns WHERE id = $1`, [campaignId]);
   const row = result.rows[0];
   if (!row) throw notFound('Campaign');
@@ -48,24 +48,24 @@ async function fetchCampaignEditionOrThrow(pool: Pool, campaignId: number): Prom
 // services/assets.ts's authorizeAssetUpload characterId check.
 async function validateArtAssetBelongsToCampaign(
   pool: Pool,
-  campaignId: number,
-  artAssetId: number | null | undefined,
+  campaignId: string,
+  artAssetId: string | null | undefined,
 ): Promise<void> {
   if (artAssetId === null || artAssetId === undefined) return;
-  const result = await pool.query<{ campaign_id: number }>(
+  const result = await pool.query<{ campaign_id: string }>(
     `SELECT campaign_id FROM campaign_assets WHERE id = $1`,
     [artAssetId],
   );
   const row = result.rows[0];
-  if (!row || Number(row.campaign_id) !== campaignId) {
+  if (!row || row.campaign_id !== campaignId) {
     throw notFound('Asset');
   }
 }
 
 interface MonsterRow {
-  id: number;
+  id: string;
   is_homebrew: boolean;
-  owning_campaign_id: number | null;
+  owning_campaign_id: string | null;
   [key: string]: unknown;
 }
 
@@ -75,7 +75,7 @@ interface MonsterRow {
 // existence of another campaign's homebrew row, and never treats a global
 // row as "editable, just not by you." Global rows are unreachable via this
 // path regardless of role, full stop.
-async function fetchHomebrewMonsterOrThrow(pool: Pool, campaignId: number, monsterId: number): Promise<MonsterRow> {
+async function fetchHomebrewMonsterOrThrow(pool: Pool, campaignId: string, monsterId: string): Promise<MonsterRow> {
   const result = await pool.query<MonsterRow>(
     `SELECT * FROM monsters WHERE id = $1 AND owning_campaign_id = $2`,
     [monsterId, campaignId],
@@ -85,7 +85,7 @@ async function fetchHomebrewMonsterOrThrow(pool: Pool, campaignId: number, monst
   return row;
 }
 
-export async function createHomebrewMonster(pool: Pool, campaignId: number, input: CreateHomebrewMonsterInput) {
+export async function createHomebrewMonster(pool: Pool, campaignId: string, input: CreateHomebrewMonsterInput) {
   await validateArtAssetBelongsToCampaign(pool, campaignId, input.artAssetId);
   // Always the owning campaign's own edition, never caller-supplied: a
   // homebrew row is only ever visible inside that one campaign (listMonsters
@@ -173,8 +173,8 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
 
 export async function updateHomebrewMonster(
   pool: Pool,
-  campaignId: number,
-  monsterId: number,
+  campaignId: string,
+  monsterId: string,
   input: UpdateHomebrewMonsterInput,
 ) {
   await fetchHomebrewMonsterOrThrow(pool, campaignId, monsterId);
@@ -206,7 +206,7 @@ export async function updateHomebrewMonster(
   return result.rows[0];
 }
 
-export async function deleteHomebrewMonster(pool: Pool, campaignId: number, monsterId: number): Promise<void> {
+export async function deleteHomebrewMonster(pool: Pool, campaignId: string, monsterId: string): Promise<void> {
   await fetchHomebrewMonsterOrThrow(pool, campaignId, monsterId);
 
   // monster_instances.monster_id has no ON DELETE clause (1784269739666), so

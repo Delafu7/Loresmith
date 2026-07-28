@@ -59,6 +59,6 @@ export const assetsRouter = Router();
 assetsRouter.use(requireAuth);
 
 assetsRouter.delete('/:id', async (req, res) => {
-  await assetsService.deleteAsset(pool, req.user!.id, Number(req.params.id));
+  await assetsService.deleteAsset(pool, req.user!.id, (req.params.id as string));
   res.status(204).send();
 });

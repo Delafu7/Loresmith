@@ -13,7 +13,7 @@ import type { CreateMonsterInstanceInput } from '../schemas/monsters.js';
 
 function instanceInput(overrides: Partial<CreateMonsterInstanceInput> = {}): CreateMonsterInstanceInput {
   return {
-    monsterId: 0, // overwritten per-call
+    monsterId: '', // overwritten per-call
     customName: null,
     hpMaxOverride: null,
     armorClassOverride: null,
@@ -27,31 +27,31 @@ function instanceInput(overrides: Partial<CreateMonsterInstanceInput> = {}): Cre
 }
 
 describe('unique monster instance enforcement (integration, live DB, throwaway fixtures)', () => {
-  let dmUserId: number;
-  let campaignAId: number;
-  let campaignBId: number;
-  let monsterId: number;
+  let dmUserId: string;
+  let campaignAId: string;
+  let campaignBId: string;
+  let monsterId: string;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dmRes = await pool.query<{ id: number }>(
+    const dmRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Uniqueness Test DM', 'x') RETURNING id`,
       [`uniqueness-test-dm-${suffix}@example.test`],
     );
     dmUserId = dmRes.rows[0]!.id;
 
-    const campaignARes = await pool.query<{ id: number }>(
+    const campaignARes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('Uniqueness Test Campaign A', $1, '2024') RETURNING id`,
       [dmUserId],
     );
     campaignAId = campaignARes.rows[0]!.id;
-    const campaignBRes = await pool.query<{ id: number }>(
+    const campaignBRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('Uniqueness Test Campaign B', $1, '2024') RETURNING id`,
       [dmUserId],
     );
     campaignBId = campaignBRes.rows[0]!.id;
 
-    const monsterRes = await pool.query<{ id: number }>(
+    const monsterRes = await pool.query<{ id: string }>(
       `INSERT INTO monsters
          (slug, name, edition_scope, size, creature_type, armor_class, hit_point_average, hit_dice,
           speed, str, dex, con, int, wis, cha, challenge_rating, xp_value, actions, is_unique)
@@ -92,23 +92,23 @@ describe('unique monster instance enforcement (integration, live DB, throwaway f
       code: 'CONFLICT',
     });
 
-    await updateMonsterInstance(pool, campaignAId, (first as { id: number }).id, { status: 'dead' });
+    await updateMonsterInstance(pool, campaignAId, (first as { id: string }).id, { status: 'dead' });
   });
 
   it('a dead instance no longer blocks a fresh spawn — old per-campaign/any-status check is gone', async () => {
     const first = await createMonsterInstance(pool, campaignAId, instanceInput({ monsterId }));
-    await updateMonsterInstance(pool, campaignAId, (first as { id: number }).id, { status: 'dead' });
+    await updateMonsterInstance(pool, campaignAId, (first as { id: string }).id, { status: 'dead' });
 
     // No living instance anywhere now, so this must succeed.
     const second = await createMonsterInstance(pool, campaignBId, instanceInput({ monsterId }));
     expect((second as { status: string }).status).toBe('alive');
 
-    await updateMonsterInstance(pool, campaignBId, (second as { id: number }).id, { status: 'dead' });
+    await updateMonsterInstance(pool, campaignBId, (second as { id: string }).id, { status: 'dead' });
   });
 
   it('reviving an instance back to alive is blocked if another instance is already living elsewhere', async () => {
     const first = await createMonsterInstance(pool, campaignAId, instanceInput({ monsterId }));
-    await updateMonsterInstance(pool, campaignAId, (first as { id: number }).id, { status: 'dead' });
+    await updateMonsterInstance(pool, campaignAId, (first as { id: string }).id, { status: 'dead' });
 
     const second = await createMonsterInstance(pool, campaignBId, instanceInput({ monsterId }));
     expect((second as { status: string }).status).toBe('alive');
@@ -116,9 +116,9 @@ describe('unique monster instance enforcement (integration, live DB, throwaway f
     // Reviving the first instance would create a second living instance —
     // must be rejected the same way a fresh spawn would be.
     await expect(
-      updateMonsterInstance(pool, campaignAId, (first as { id: number }).id, { status: 'alive' }),
+      updateMonsterInstance(pool, campaignAId, (first as { id: string }).id, { status: 'alive' }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
 
-    await updateMonsterInstance(pool, campaignBId, (second as { id: number }).id, { status: 'dead' });
+    await updateMonsterInstance(pool, campaignBId, (second as { id: string }).id, { status: 'dead' });
   });
 });

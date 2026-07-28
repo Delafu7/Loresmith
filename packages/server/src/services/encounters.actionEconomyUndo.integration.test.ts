@@ -7,26 +7,26 @@ import { pool } from '../db/pool.js';
 import { addParticipant, applyActionEconomy, createEncounter, undoActionEconomy } from './encounters.js';
 
 describe('object interaction + action-economy undo (integration, live DB, throwaway fixtures)', () => {
-  let dmUserId: number;
-  let campaignId: number;
-  let encounterId: number;
-  let participantId: number;
+  let dmUserId: string;
+  let campaignId: string;
+  let encounterId: string;
+  let participantId: string;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dmRes = await pool.query<{ id: number }>(
+    const dmRes = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'ActionEconomyUndo Test DM', 'x') RETURNING id`,
       [`action-economy-undo-dm-${suffix}@example.test`],
     );
     dmUserId = dmRes.rows[0]!.id;
 
-    const campaignRes = await pool.query<{ id: number }>(
+    const campaignRes = await pool.query<{ id: string }>(
       `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('ActionEconomyUndo Test Campaign', $1, '2024') RETURNING id`,
       [dmUserId],
     );
     campaignId = campaignRes.rows[0]!.id;
 
-    const characterRes = await pool.query<{ id: number }>(
+    const characterRes = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current)
        VALUES ($1, true, $2, $2, 'ActionEconomyUndo Test PC', 10, 10, 10, 10, 10, 10, 12, 30, 10, 10)

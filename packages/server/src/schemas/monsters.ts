@@ -6,7 +6,7 @@ import { z } from 'zod';
 // reintroduce them (e.g. status back to 'alive') whenever that key is
 // omitted from a PATCH body.
 const sharedMonsterInstanceShape = {
-  monsterId: z.number().int().positive(),
+  monsterId: z.string().uuid(),
   customName: z.string().max(200).optional().nullable(),
   hpMaxOverride: z.number().int().positive().optional().nullable(),
   // Phase 3.5 (PLAN.md §3.5): the manual AC escape hatch for creature
