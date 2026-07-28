@@ -1,9 +1,22 @@
 import { z } from 'zod';
 
+// campaignId is optional so a caller with no campaign context yet still
+// gets the global SRD set — supplying one additionally unions in that
+// campaign's own homebrew rows for whichever entity this is used to query.
+// A campaignId-scoped read MUST be gated behind requireMembership at the
+// route (see routes/catalog.ts) — never trust this query param alone.
 export const editionQuerySchema = z.object({
   edition: z.enum(['2014', '2024', 'both']).optional(),
+  campaignId: z.string().uuid().optional(),
 });
 export type EditionQuery = z.infer<typeof editionQuerySchema>;
+
+// For the two catalog lookups with no edition concept at all (alignments,
+// damage-types) but which still gained homebrew scoping.
+export const campaignScopedQuerySchema = z.object({
+  campaignId: z.string().uuid().optional(),
+});
+export type CampaignScopedQuery = z.infer<typeof campaignScopedQuerySchema>;
 
 export const monsterQuerySchema = editionQuerySchema.extend({
   creatureType: z.string().optional(),

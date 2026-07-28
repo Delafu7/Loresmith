@@ -17,6 +17,7 @@ import { authRouter } from './routes/auth.js';
 import { campaignsRouter } from './routes/campaigns.js';
 import { campaignCharactersRouter, charactersRouter } from './routes/characters.js';
 import { catalogRouter } from './routes/catalog.js';
+import { campaignCatalogRouter } from './routes/catalogHomebrew.js';
 import {
   campaignMonsterInstancesRouter,
   campaignMonstersRouter,
@@ -105,6 +106,7 @@ async function main(): Promise<void> {
   app.use('/campaigns/:id/dice-rolls', diceRollsRouter);
   app.use('/campaigns/:id/rests', campaignRestsRouter);
   app.use('/campaigns/:id/assets', campaignAssetsRouter);
+  app.use('/campaigns/:id/catalog', campaignCatalogRouter);
   app.use('/campaigns', campaignsRouter); // handles /, /:id, /:id/members, /:id/sessions itself
 
   // Flat resource-id-keyed routers. encounterEffectsRouter is mounted
