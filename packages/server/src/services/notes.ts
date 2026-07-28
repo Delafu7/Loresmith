@@ -86,3 +86,39 @@ export async function deleteNote(pool: Pool, campaignId: string, noteId: string,
   }
   await pool.query(`DELETE FROM notes WHERE id = $1`, [noteId]);
 }
+
+// Same "read the row, drop id/timestamps, re-insert every remaining column"
+// copy approach as duplicateCharacter (services/characters.ts), so this
+// doesn't drift out of sync as the table gains columns. Same owner-or-DM
+// authorization as update/delete above. author_user_id is re-stamped to the
+// actor doing the duplicating, not necessarily the original author.
+export async function duplicateNote(
+  pool: Pool,
+  campaignId: string,
+  noteId: string,
+  actorId: string,
+  role: CampaignRole,
+) {
+  const source = await fetchNoteScoped(pool, campaignId, noteId);
+  if (role === 'player' && source.author_user_id !== actorId) {
+    throw new AppError('FORBIDDEN_NOT_OWNER', 'You can only duplicate notes you authored');
+  }
+
+  const omit = new Set(['id', 'created_at', 'updated_at']);
+  const columns: string[] = [];
+  const values: unknown[] = [];
+  for (const [col, val] of Object.entries(source)) {
+    if (omit.has(col) || col.endsWith('_legacy')) continue;
+    columns.push(col);
+    if (col === 'title') values.push(`${String(val)} (Copy)`);
+    else if (col === 'author_user_id') values.push(actorId);
+    else values.push(val);
+  }
+
+  const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+  const result = await pool.query(
+    `INSERT INTO notes (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+    values,
+  );
+  return result.rows[0];
+}

@@ -35,3 +35,8 @@ notesRouter.delete('/:noteId', async (req, res) => {
   await notesService.deleteNote(pool, req.campaignId!, (req.params.noteId as string), req.user!.id, req.campaignRole!);
   res.status(204).send();
 });
+
+notesRouter.post('/:noteId/duplicate', async (req, res) => {
+  const note = await notesService.duplicateNote(pool, req.campaignId!, (req.params.noteId as string), req.user!.id, req.campaignRole!);
+  res.status(201).json({ note });
+});
