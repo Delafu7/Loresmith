@@ -8,7 +8,6 @@ import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Fe
 import { Field, Input, Textarea } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
 
 export function NotesPage() {
   const { campaignId, role } = useCampaignShell();
@@ -23,22 +22,12 @@ export function NotesPage() {
 
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  // Only meaningful for the DM — per the notes service, players are always
-  // forced to visible_to_players=true and can never hide a note from the
-  // table, so the toggle is never even rendered for a player creating one.
-  const [visibleToPlayers, setVisibleToPlayers] = useState(false);
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      api.post<{ note: Note }>(`/campaigns/${campaignId}/notes`, {
-        title,
-        body,
-        visibleToPlayers: role === 'dm' ? visibleToPlayers : undefined,
-      }),
+    mutationFn: () => api.post<{ note: Note }>(`/campaigns/${campaignId}/notes`, { title, body }),
     onSuccess: () => {
       setTitle('');
       setBody('');
-      setVisibleToPlayers(false);
       setShowCreate(false);
       void queryClient.invalidateQueries({ queryKey: ['notes', campaignId] });
     },
@@ -72,17 +61,6 @@ export function NotesPage() {
           <Field label="Body" htmlFor="noteBody">
             <Textarea id="noteBody" required rows={5} value={body} onChange={(e) => setBody(e.target.value)} />
           </Field>
-          {role === 'dm' && (
-            <label className="flex min-h-11 items-center gap-2 text-sm text-stone-300">
-              <input
-                type="checkbox"
-                checked={visibleToPlayers}
-                onChange={(e) => setVisibleToPlayers(e.target.checked)}
-                className="size-4"
-              />
-              Visible to players
-            </label>
-          )}
           {createMutation.isError && <ErrorBanner message={errorMessage(createMutation.error)} />}
           <Button type="submit" variant="primary" disabled={createMutation.isPending}>
             {createMutation.isPending ? 'Saving…' : 'Save note'}
@@ -103,11 +81,6 @@ export function NotesPage() {
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-medium text-stone-100">{note.title}</h3>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {role === 'dm' && (
-                      <Badge variant={note.visible_to_players ? 'accent' : 'neutral'}>
-                        {note.visible_to_players ? 'Visible to players' : 'DM only'}
-                      </Badge>
-                    )}
                     {canModify && (
                       <button
                         type="button"

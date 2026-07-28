@@ -4,7 +4,6 @@ import type { EffectDefinitionCatalog } from '../lib/types';
 export interface ApplyEffectFormInput {
   effectDefinitionId: number;
   durationValue: number | null;
-  visibleToPlayers: boolean;
 }
 
 // DM-only "apply an effect/condition" control (PLAN.md §6.2's
@@ -25,7 +24,6 @@ export function EffectApplyDialog({
   const [open, setOpen] = useState(false);
   const [effectDefinitionId, setEffectDefinitionId] = useState('');
   const [durationValue, setDurationValue] = useState('');
-  const [visibleToPlayers, setVisibleToPlayers] = useState(true);
 
   if (!open) {
     return (
@@ -44,7 +42,6 @@ export function EffectApplyDialog({
     setOpen(false);
     setEffectDefinitionId('');
     setDurationValue('');
-    setVisibleToPlayers(true);
   }
 
   function submit() {
@@ -53,7 +50,6 @@ export function EffectApplyDialog({
     onApply({
       effectDefinitionId: id,
       durationValue: durationValue.trim() === '' ? null : Number(durationValue),
-      visibleToPlayers,
     });
     reset();
   }
@@ -92,14 +88,6 @@ export function EffectApplyDialog({
           className="w-20 rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
         />
       </div>
-      <label className="flex items-center gap-1 text-[10px] text-stone-400 pb-1">
-        <input
-          type="checkbox"
-          checked={visibleToPlayers}
-          onChange={(e) => setVisibleToPlayers(e.target.checked)}
-        />
-        Visible to players
-      </label>
       <button
         type="button"
         disabled={!effectDefinitionId || pending}

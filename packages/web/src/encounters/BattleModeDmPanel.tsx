@@ -8,17 +8,16 @@
 
 import type { Dispatch, SetStateAction } from 'react';
 import type { Character, MonsterCatalogEntry, MonsterInstance } from '../lib/types';
-import { isExactHp } from '../lib/types';
 import type { EncounterLiveState } from './useEncounterLive';
-import { HPBar, HPBandPill } from '../components/HPBar';
+import { HPBar } from '../components/HPBar';
 import { EmptyState } from '../components/Feedback';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { TurnTorch } from '../components/TurnTorch';
 import {
   ActionButton,
   AddParticipantForm,
-  ParticipantArmorClassReveal,
   ParticipantStatLookup,
+  ParticipantWeaknessReveal,
   ResetRevealsButton,
 } from './CombatTracker';
 
@@ -84,7 +83,6 @@ export function BattleModeDmPanel({
       <ol className="space-y-1.5">
         {live.participants.map((p) => {
           const isActive = p.participantId === live.activeParticipantId;
-          const isNpcOrMonster = !(p.characterId != null && characters?.find((c) => c.id === p.characterId)?.is_pc);
           return (
             <li
               key={p.participantId}
@@ -99,11 +97,9 @@ export function BattleModeDmPanel({
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   <span className="text-stone-500 border border-stone-700 rounded px-1" title="Armor Class">
-                    AC {p.armorClass ?? '?'}
+                    AC {p.armorClass}
                   </span>
-                  {isNpcOrMonster && (
-                    <ParticipantArmorClassReveal characterId={p.characterId} monsterInstanceId={p.monsterInstanceId} />
-                  )}
+                  {p.monsterInstanceId != null && <ParticipantWeaknessReveal monsterInstanceId={p.monsterInstanceId} />}
                   <button
                     type="button"
                     onClick={() => setExpandedParticipantId((id) => (id === p.participantId ? null : p.participantId))}
@@ -117,11 +113,7 @@ export function BattleModeDmPanel({
                 </div>
               </div>
               <div className="mt-1.5">
-                {isExactHp(p.hp) ? (
-                  <HPBar current={p.hp.hpCurrent} max={p.hp.hpMax} temp={p.hp.hpTemp} />
-                ) : (
-                  <HPBandPill band={p.hp.band} />
-                )}
+                <HPBar current={p.hp.hpCurrent} max={p.hp.hpMax} temp={p.hp.hpTemp} />
               </div>
               {expandedParticipantId === p.participantId && (
                 <ParticipantStatLookup

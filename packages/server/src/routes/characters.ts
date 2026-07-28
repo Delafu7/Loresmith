@@ -17,7 +17,6 @@ import { createCharacterAttackSchema, updateCharacterAttackSchema } from '../sch
 import { createCharacterSpellSchema, spellRowQuerySchema, updateCharacterSpellSchema } from '../schemas/characterSpells.js';
 import { applyTargetEffectSchema } from '../schemas/effects.js';
 import { resourceAmountSchema } from '../schemas/resources.js';
-import { updateRevealsSchema } from '../schemas/reveals.js';
 import { applyDamageSchema } from '../schemas/damage.js';
 import * as charactersService from '../services/characters.js';
 import * as characterItemsService from '../services/characterItems.js';
@@ -25,14 +24,12 @@ import * as characterAttacksService from '../services/characterAttacks.js';
 import * as characterSpellsService from '../services/characterSpells.js';
 import * as effectsService from '../services/effects.js';
 import * as resourcePoolsService from '../services/resourcePools.js';
-import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import {
   getIo,
   broadcastHpChanged,
   broadcastEffectApplied,
   broadcastEffectExpired,
   broadcastArmorClassChanged,
-  broadcastRevealChanged,
 } from '../sockets/broadcast.js';
 import type { Server } from 'socket.io';
 import type { ArmorClassEncounterSync } from '../services/armorClass.js';
@@ -151,14 +148,13 @@ charactersRouter.patch('/:id/hp', async (req, res) => {
   const { character, encounterSyncs } = await charactersService.applyHpDelta(pool, req.user!.id, Number(req.params.id), input);
   const io = getIo(req.app);
   for (const sync of encounterSyncs) {
-    await broadcastHpChanged(io, {
+    broadcastHpChanged(io, {
       encounterId: sync.encounter_id,
       campaignId: sync.campaign_id,
       seq: sync.sync_seq,
       participantId: sync.participant_id,
       characterId: Number(req.params.id),
       monsterInstanceId: null,
-      hpVisibility: sync.hp_visibility,
       hpCurrent: character.hp_current as number,
       hpMax: character.hp_max as number,
       hpTemp: character.hp_temp as number,
@@ -177,14 +173,13 @@ charactersRouter.post('/:id/apply-damage', async (req, res) => {
   const result = await charactersService.applyDamage(pool, req.user!.id, Number(req.params.id), input);
   const io = getIo(req.app);
   for (const sync of result.encounterSyncs) {
-    await broadcastHpChanged(io, {
+    broadcastHpChanged(io, {
       encounterId: sync.encounter_id,
       campaignId: sync.campaign_id,
       seq: sync.sync_seq,
       participantId: sync.participant_id,
       characterId: Number(req.params.id),
       monsterInstanceId: null,
-      hpVisibility: sync.hp_visibility,
       hpCurrent: result.character.hp_current as number,
       hpMax: result.character.hp_max as number,
       hpTemp: result.character.hp_temp as number,
@@ -354,38 +349,4 @@ charactersRouter.post('/:id/effects', async (req, res) => {
     await broadcastEffectApplied(io, sync, effect, effectDefinitionName);
   }
   res.status(201).json({ effect });
-});
-
-// ---- Reveal engine (PLAN.md §11) — DM-only, entity_field_reveals ----
-
-charactersRouter.get('/:id/reveals', async (req, res) => {
-  const fields = await entityFieldRevealService.getCharacterReveals(pool, req.user!.id, Number(req.params.id));
-  res.json({ fields });
-});
-
-charactersRouter.patch('/:id/reveals', async (req, res) => {
-  const input = updateRevealsSchema.parse(req.body);
-  const characterId = Number(req.params.id);
-  const result = await entityFieldRevealService.updateCharacterReveals(pool, req.user!.id, characterId, input);
-
-  const fieldKeys = result.fields.map((f) => f.fieldKey);
-  const trueValues = await entityFieldRevealService.getTrueFieldValues(pool, 'character', { characterId }, fieldKeys);
-  const io = getIo(req.app);
-  for (const sync of result.encounterSyncs) {
-    for (const field of result.fields) {
-      await broadcastRevealChanged(io, {
-        encounterId: sync.encounter_id,
-        campaignId: sync.campaign_id,
-        seq: sync.sync_seq,
-        participantId: sync.participant_id,
-        characterId,
-        monsterInstanceId: null,
-        fieldKey: field.fieldKey,
-        revealed: field.revealed,
-        playerOverride: field.playerOverride,
-        trueValue: trueValues[field.fieldKey],
-      });
-    }
-  }
-  res.json({ fields: result.fields });
 });

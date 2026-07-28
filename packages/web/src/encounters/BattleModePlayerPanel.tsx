@@ -12,11 +12,10 @@ import type { Dispatch, SetStateAction } from 'react';
 import { api } from '../lib/api';
 import { abilityModifier } from '../lib/dnd-math';
 import type { Character, CharacterItem } from '../lib/types';
-import { isExactHp } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useItemsCatalog } from '../lib/useCatalog';
 import type { EncounterLiveState } from './useEncounterLive';
-import { HPBar, HPBandPill } from '../components/HPBar';
+import { HPBar } from '../components/HPBar';
 import { EmptyState, ErrorBanner, errorMessage } from '../components/Feedback';
 import { DiceRoller } from '../components/DiceRoller';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
@@ -111,14 +110,10 @@ function PlayerPanelBody({
           <span className="font-semibold text-stone-100 truncate">{participant.name}</span>
         </div>
         <div className="mt-2">
-          {isExactHp(participant.hp) ? (
-            <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} />
-          ) : (
-            <HPBandPill band={participant.hp.band} />
-          )}
+          <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} />
         </div>
         <p className="text-xs text-stone-500 mt-1" title="Armor Class">
-          AC {participant.armorClass ?? '?'}
+          AC {participant.armorClass}
         </p>
       </div>
 

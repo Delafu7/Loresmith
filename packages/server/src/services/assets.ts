@@ -20,22 +20,12 @@ interface AssetRow {
   mime_type: string;
   file_size_bytes: number;
   title: string | null;
-  visible_to_players: boolean;
   created_at: string;
 }
 
-export async function listAssets(pool: Pool, campaignId: number, role: CampaignRole): Promise<AssetRow[]> {
-  if (role === 'dm') {
-    const result = await pool.query<AssetRow>(
-      `SELECT * FROM campaign_assets WHERE campaign_id = $1 ORDER BY created_at DESC`,
-      [campaignId],
-    );
-    return result.rows;
-  }
-  // Players never see visible_to_players=false rows — filtered at the query
-  // level, matching the notes/active_effects visibility precedent.
+export async function listAssets(pool: Pool, campaignId: number, _role: CampaignRole): Promise<AssetRow[]> {
   const result = await pool.query<AssetRow>(
-    `SELECT * FROM campaign_assets WHERE campaign_id = $1 AND visible_to_players = true ORDER BY created_at DESC`,
+    `SELECT * FROM campaign_assets WHERE campaign_id = $1 ORDER BY created_at DESC`,
     [campaignId],
   );
   return result.rows;
@@ -84,24 +74,21 @@ export async function createAsset(
   pool: Pool,
   campaignId: number,
   actorId: number,
-  role: CampaignRole,
+  _role: CampaignRole,
   fields: CreateAssetFieldsInput,
   file: UploadedFileInfo,
 ): Promise<AssetRow> {
   const fileUrl = `/uploads/campaigns/${campaignId}/${path.basename(file.path)}`;
-  // Players are never allowed to hide an asset from the rest of the table —
-  // same "DM-only visibility control" rule as notes.createNote.
-  const visibleToPlayers = role === 'player' ? true : (fields.visibleToPlayers ?? true);
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const inserted = await client.query<AssetRow>(
       `INSERT INTO campaign_assets
-         (campaign_id, uploaded_by_user_id, asset_type, file_url, mime_type, file_size_bytes, title, visible_to_players)
-       VALUES ($1,$2,'image',$3,$4,$5,$6,$7)
+         (campaign_id, uploaded_by_user_id, asset_type, file_url, mime_type, file_size_bytes, title)
+       VALUES ($1,$2,'image',$3,$4,$5,$6)
        RETURNING *`,
-      [campaignId, actorId, fileUrl, file.mimeType, file.sizeBytes, fields.title ?? null, visibleToPlayers],
+      [campaignId, actorId, fileUrl, file.mimeType, file.sizeBytes, fields.title ?? null],
     );
     const asset = inserted.rows[0]!;
 

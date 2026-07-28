@@ -6,7 +6,6 @@ import type { Campaign, Character, CampaignMember } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
-import { HPBandPill } from '../components/HPBar';
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
 import { AbilityScoreGenerator } from './AbilityScoreGenerator';
 
@@ -274,13 +273,9 @@ function CharacterCard({ character, campaignId }: { character: Character; campai
           {!character.is_alive && <span className="text-xs text-red-400 font-semibold">DECEASED</span>}
         </div>
         <div className="flex items-center gap-3 text-xs text-stone-400 mt-1">
-          {character.hp_band ? (
-            <HPBandPill band={character.hp_band} />
-          ) : (
-            <span>
-              HP {character.hp_current}/{character.hp_max}
-            </span>
-          )}
+          <span>
+            HP {character.hp_current}/{character.hp_max}
+          </span>
           <span>AC {character.armor_class}</span>
           <span>DEX {formatModifier(abilityModifier(character.dex))}</span>
         </div>

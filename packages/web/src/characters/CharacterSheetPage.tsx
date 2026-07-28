@@ -22,7 +22,7 @@ import {
   useSubclassesCatalog,
 } from '../lib/useCatalog';
 import { AbilityScoreGrid } from '../components/AbilityScoreGrid';
-import { HPBar, HPBandPill } from '../components/HPBar';
+import { HPBar } from '../components/HPBar';
 import { HpAdjustForm } from '../components/HpAdjustForm';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
@@ -34,44 +34,9 @@ import { InventoryPanel } from './InventoryPanel';
 import { CharacterAttacksPanel } from './CharacterAttacksPanel';
 import { ResourcePoolPanel } from './ResourcePoolPanel';
 import { CharacterEffectsPanel } from './CharacterEffectsPanel';
-import { RevealToggle } from '../components/RevealToggle';
-import { useReveals } from '../lib/useReveal';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { proficiencyBonusForLevel } from '../lib/dnd-math';
 import type { ProficiencyLevel } from '../components/ProficiencyToggle';
-
-// Fields an NPC character exposes to the reveal engine (mirrors the server's
-// CHARACTER_REVEALABLE_FIELDS registry — src/domain/revealFields.ts on the
-// server; kept as a local literal here rather than shared across packages
-// since nothing else in this monorepo shares domain constants across the
-// client/server boundary yet).
-const NPC_REVEALABLE_FIELDS: Array<{ key: string; label: string }> = [
-  { key: 'armor_class', label: 'Armor Class' },
-  { key: 'speed', label: 'Speed' },
-  { key: 'senses', label: 'Senses' },
-  { key: 'languages', label: 'Languages' },
-  { key: 'notes', label: 'Notes' },
-];
-
-function RevealPanel({ characterId }: { characterId: number }) {
-  const { fieldState, setRevealed, isSaving } = useReveals('character', characterId);
-  return (
-    <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Reveal to players</h3>
-      <ul className="flex flex-wrap gap-x-5 gap-y-2">
-        {NPC_REVEALABLE_FIELDS.map(({ key, label }) => {
-          const revealed = fieldState(key)?.revealed ?? false;
-          return (
-            <li key={key} className="flex items-center gap-2">
-              <RevealToggle revealed={revealed} disabled={isSaving} label={label} onToggle={() => void setRevealed(key, !revealed)} />
-              <span className="text-sm text-stone-400">{label}</span>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
 
 export function CharacterSheetPage() {
   const params = useParams<{ characterId: string }>();
@@ -307,18 +272,10 @@ export function CharacterSheetPage() {
         </div>
       </header>
 
-      {/* Reveal engine (PLAN.md §11) — NPCs only; PCs are always fully
-          visible to the party, same exemption the server applies. */}
-      {role === 'dm' && !character.is_pc && <RevealPanel characterId={characterId} />}
-
       {/* HP panel */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Hit points</h3>
-        {character.hp_band ? (
-          <HPBandPill band={character.hp_band} />
-        ) : (
-          <HPBar current={character.hp_current!} max={character.hp_max!} temp={character.hp_temp!} />
-        )}
+        <HPBar current={character.hp_current} max={character.hp_max} temp={character.hp_temp} />
         {editable && (
           <HpAdjustForm
             disabled={hpMutation.isPending}

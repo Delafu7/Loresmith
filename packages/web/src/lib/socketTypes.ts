@@ -1,15 +1,13 @@
 // Socket.io event payload shapes, mirroring packages/server/src/sockets/broadcast.ts.
-// Every broadcast carries {encounterId, campaignId, seq, serverTimestamp}; HP_CHANGED
-// is the one event with a per-connection visibility split (exact vs banded/hidden),
-// decided server-side — the client only ever renders whichever `hp` shape arrives.
+// Every broadcast carries {encounterId, campaignId, seq, serverTimestamp}. HP is
+// always visible to every role now (hide/reveal was removed) — every event
+// carries the same exact `hp` shape regardless of who receives it.
 
 import type {
   ActiveEffectSummary,
   DiceRollKeep,
   DiceRollType,
   EffectDurationType,
-  HpBand,
-  HpVisibility,
   EncounterStatus,
 } from './types';
 
@@ -51,7 +49,6 @@ export interface ParticipantJoinedEvent extends Envelope {
     monsterInstanceId: number | null;
     initiativeRoll: number;
     turnOrder: number;
-    hpVisibility: HpVisibility;
   };
 }
 
@@ -68,7 +65,7 @@ export interface HpChangedEvent extends Envelope {
   characterId: number | null;
   monsterInstanceId: number | null;
   changeType: 'damage' | 'heal' | 'none';
-  hp: { hpCurrent: number; hpMax: number; hpTemp: number } | { band: HpBand };
+  hp: { hpCurrent: number; hpMax: number; hpTemp: number };
 }
 
 // Battle map (Phase 3.3) — same shape on FULL_STATE_SYNC.map, MAP_UPDATED,
@@ -101,15 +98,11 @@ export interface FullStateSyncEvent extends Envelope {
     initiativeRoll: number;
     initiativeTiebreak: number | null;
     turnOrder: number;
-    hpVisibility: HpVisibility;
-    hp: { hpCurrent: number; hpMax: number; hpTemp: number } | { band: HpBand };
+    hp: { hpCurrent: number; hpMax: number; hpTemp: number };
     effects: ActiveEffectSummary[];
     posX: number | null;
     posY: number | null;
-    // null for a non-PC participant whose armorClass reveal isn't currently
-    // revealed to this socket's role (PLAN.md §11.6) — PCs are always the
-    // true value, same exemption HP redaction already gives them.
-    armorClass: number | null;
+    armorClass: number;
     actionUsed: boolean;
     bonusActionUsed: boolean;
     reactionUsed: boolean;
@@ -184,16 +177,17 @@ export interface EffectAppliedEvent extends Envelope {
 
 export type EffectExpiredEvent = EffectAppliedEvent;
 
-// REVEAL_CHANGED (PLAN.md §11.6) — one event per field per encounter sync,
-// same "not batched" reasoning as EFFECT_APPLIED/EFFECT_EXPIRED above.
-// `value` is already fully resolved server-side for this socket's role
-// (true value for DM, override-or-true-value for a revealed player, null
-// for a still-hidden one) — never branch on `revealed` client-side to
-// decide what to render, just render `value` as-is.
+// REVEAL_CHANGED — the one surviving DM/player redaction split: a monster
+// instance's damage vulnerabilities/resistances/immunities can be
+// individually hidden/revealed. One event per field per PATCH, same "not
+// batched" reasoning as EFFECT_APPLIED/EFFECT_EXPIRED above. `value` is
+// already fully resolved server-side for this socket's role (true value for
+// DM, override-or-true-value for a revealed player, null for a still-hidden
+// one) — never branch on `revealed` client-side to decide what to render,
+// just render `value` as-is.
 export interface RevealChangedEvent extends Envelope {
   participantId: number;
-  characterId: number | null;
-  monsterInstanceId: number | null;
+  monsterInstanceId: number;
   fieldKey: string;
   revealed: boolean;
   value: unknown;

@@ -22,7 +22,6 @@ const baseApplyEffectShape = {
   saveDc: z.number().int().optional().nullable(),
   saveAbilityId: z.number().int().positive().optional().nullable(),
   concentration: z.boolean().optional(),
-  visibleToPlayers: z.boolean().default(true),
   notes: z.string().max(5000).optional().nullable(),
 };
 

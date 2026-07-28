@@ -25,7 +25,6 @@ export function ImageUploadField({
   campaignId,
   characterId,
   title,
-  visibleToPlayers,
   onUploaded,
   label = 'Upload image',
 }: {
@@ -33,7 +32,6 @@ export function ImageUploadField({
   /** Set to target this upload at a specific character's portrait (POST body's `characterId` field). */
   characterId?: number;
   title?: string;
-  visibleToPlayers?: boolean;
   onUploaded: (asset: CampaignAsset) => void;
   label?: string;
 }) {
@@ -56,7 +54,6 @@ export function ImageUploadField({
       formData.append('file', file);
       if (characterId !== undefined) formData.append('characterId', String(characterId));
       if (title) formData.append('title', title);
-      if (visibleToPlayers !== undefined) formData.append('visibleToPlayers', String(visibleToPlayers));
       return api.upload<{ asset: CampaignAsset }>(`/campaigns/${campaignId}/assets`, formData);
     },
     onSettled: () => {

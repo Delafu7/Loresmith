@@ -21,9 +21,7 @@ export async function getUserDashboard(pool: Pool, userId: number) {
     [userId],
   );
 
-  // Notes this user wrote themselves, across every campaign they belong to
-  // — a player's own notes are always visible_to_players=true regardless of
-  // role (services/notes.ts's createNote), so no visibility filter needed.
+  // Notes this user wrote themselves, across every campaign they belong to.
   const myNotesRes = await pool.query(
     `SELECT n.*, camp.name AS campaign_name
      FROM notes n
@@ -34,17 +32,13 @@ export async function getUserDashboard(pool: Pool, userId: number) {
     [userId, RECENT_NOTES_LIMIT],
   );
 
-  // Recent notes from ANY author across this user's campaigns — same
-  // per-campaign visibility rule as services/notes.ts's listNotes
-  // (DM sees everything in campaigns they DM, players only see
-  // visible_to_players=true), but evaluated per-row via the campaign_members
-  // join since a user can be DM in one campaign and a player in another.
+  // Recent notes from ANY author across this user's campaigns — every note
+  // is visible to the whole campaign now (hide/reveal was removed).
   const campaignNotesRes = await pool.query(
     `SELECT n.*, camp.name AS campaign_name
      FROM notes n
      JOIN campaign_members cm ON cm.campaign_id = n.campaign_id AND cm.user_id = $1
      JOIN campaigns camp ON camp.id = n.campaign_id
-     WHERE cm.role = 'dm' OR n.visible_to_players = true
      ORDER BY n.created_at DESC
      LIMIT $2`,
     [userId, RECENT_NOTES_LIMIT],

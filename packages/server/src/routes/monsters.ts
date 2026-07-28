@@ -119,14 +119,13 @@ monsterInstancesRouter.patch('/:id/hp', async (req, res) => {
   );
   const io = getIo(req.app);
   for (const sync of encounterSyncs) {
-    await broadcastHpChanged(io, {
+    broadcastHpChanged(io, {
       encounterId: sync.encounter_id,
       campaignId: sync.campaign_id,
       seq: sync.sync_seq,
       participantId: sync.participant_id,
       characterId: null,
       monsterInstanceId: Number(req.params.id),
-      hpVisibility: sync.hp_visibility,
       hpCurrent: monsterInstance.hp_current as number,
       hpMax: (monsterInstance.hp_max_override as number | null) ?? (monsterInstance.hit_point_average as number),
       hpTemp: monsterInstance.hp_temp as number,
@@ -143,14 +142,13 @@ monsterInstancesRouter.post('/:id/apply-damage', async (req, res) => {
   const result = await monstersService.applyMonsterInstanceDamage(pool, req.user!.id, Number(req.params.id), input);
   const io = getIo(req.app);
   for (const sync of result.encounterSyncs) {
-    await broadcastHpChanged(io, {
+    broadcastHpChanged(io, {
       encounterId: sync.encounter_id,
       campaignId: sync.campaign_id,
       seq: sync.sync_seq,
       participantId: sync.participant_id,
       characterId: null,
       monsterInstanceId: Number(req.params.id),
-      hpVisibility: sync.hp_visibility,
       hpCurrent: result.monsterInstance.hp_current as number,
       hpMax: (result.monsterInstance.hp_max_override as number | null) ?? (result.monsterInstance.hit_point_average as number),
       hpTemp: result.monsterInstance.hp_temp as number,
@@ -185,7 +183,7 @@ monsterInstancesRouter.post('/:id/effects', async (req, res) => {
   res.status(201).json({ effect });
 });
 
-// ---- Reveal engine (PLAN.md §11) — DM-only, entity_field_reveals ----
+// ---- Weakness reveals — DM-only, entity_field_reveals ----
 
 monsterInstancesRouter.get('/:id/reveals', async (req, res) => {
   const fields = await entityFieldRevealService.getMonsterInstanceReveals(pool, req.user!.id, Number(req.params.id));
@@ -198,7 +196,7 @@ monsterInstancesRouter.patch('/:id/reveals', async (req, res) => {
   const result = await entityFieldRevealService.updateMonsterInstanceReveals(pool, req.user!.id, monsterInstanceId, input);
 
   const fieldKeys = result.fields.map((f) => f.fieldKey);
-  const trueValues = await entityFieldRevealService.getTrueFieldValues(pool, 'monster_instance', { monsterInstanceId }, fieldKeys);
+  const trueValues = await entityFieldRevealService.getTrueFieldValues(pool, monsterInstanceId, fieldKeys);
   const io = getIo(req.app);
   for (const sync of result.encounterSyncs) {
     for (const field of result.fields) {
@@ -207,7 +205,6 @@ monsterInstancesRouter.patch('/:id/reveals', async (req, res) => {
         campaignId: sync.campaign_id,
         seq: sync.sync_seq,
         participantId: sync.participant_id,
-        characterId: null,
         monsterInstanceId,
         fieldKey: field.fieldKey,
         revealed: field.revealed,

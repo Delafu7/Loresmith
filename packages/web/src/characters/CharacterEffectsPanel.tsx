@@ -9,8 +9,9 @@ import { ErrorBanner, errorMessage } from '../components/Feedback';
 /**
  * Active effects applied to this character OUTSIDE combat (PLAN.md's
  * POST /characters/:id/effects, encounter_id = null). Any campaign member
- * may view (players see only visible_to_players rows, filtered server-side);
- * apply/remove are DM-only, matching services/effects.ts's requireDm gate.
+ * may view — every effect is visible to the whole party (hide/reveal was
+ * removed); apply/remove are DM-only, matching services/effects.ts's
+ * requireDm gate.
  *
  * The read side (GET /characters/:id/effects) didn't exist in the Phase 2
  * backend this was built against — only the encounter-scoped GET and the
@@ -42,7 +43,6 @@ export function CharacterEffectsPanel({
       api.post<{ effect: ActiveEffect }>(`/characters/${characterId}/effects`, {
         effectDefinitionId: input.effectDefinitionId,
         durationValue: input.durationValue,
-        visibleToPlayers: input.visibleToPlayers,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['character', characterId, 'effects'] });

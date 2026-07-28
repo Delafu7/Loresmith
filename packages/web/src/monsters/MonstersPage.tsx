@@ -6,7 +6,7 @@ import type { MonsterCatalogEntry, MonsterInstance, StatBlockEntry } from '../li
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useDamageTypesCatalog } from '../lib/useCatalog';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
-import { HPBar, HPBandPill } from '../components/HPBar';
+import { HPBar } from '../components/HPBar';
 import { HpAdjustForm } from '../components/HpAdjustForm';
 import { StatBlock } from '../components/StatBlock';
 import { DiceRoller } from '../components/DiceRoller';
@@ -260,18 +260,12 @@ export function MonstersPage() {
                   </button>
                 </div>
               </div>
-              {mi.hp_band ? (
-                <HPBandPill band={mi.hp_band} />
-              ) : (
-                <HPBar current={mi.hp_current!} max={mi.hp_max_override ?? mi.hit_point_average ?? 1} temp={mi.hp_temp!} />
-              )}
-              {!mi.hp_band && (
-                <HpAdjustForm
-                  compact
-                  disabled={hpMutation.isPending}
-                  onApply={(delta, tempDelta) => hpMutation.mutate({ id: mi.id, delta, tempDelta })}
-                />
-              )}
+              <HPBar current={mi.hp_current} max={mi.hp_max_override ?? mi.hit_point_average ?? 1} temp={mi.hp_temp} />
+              <HpAdjustForm
+                compact
+                disabled={hpMutation.isPending}
+                onApply={(delta, tempDelta) => hpMutation.mutate({ id: mi.id, delta, tempDelta })}
+              />
               <MonsterInstanceAttacks
                 instance={mi}
                 monster={bestiaryQuery.data?.monsters.find((m) => m.id === mi.monster_id)}

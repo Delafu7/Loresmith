@@ -23,7 +23,6 @@ import type {
   ParticipantFactionChangedEvent,
   ParticipantJoinedEvent,
   ParticipantLeftEvent,
-  RevealChangedEvent,
   TokenMovedEvent,
   TurnAdvancedEvent,
 } from '../lib/socketTypes';
@@ -339,23 +338,6 @@ export function useEncounterLive(encounterId: number | undefined) {
       });
     }
 
-    // Only 'armorClass' is a field this row shape carries today (PLAN.md
-    // §11.6) — a REVEAL_CHANGED for any other fieldKey (traits, senses, ...)
-    // is a no-op here since the combat tracker row has nowhere to put it;
-    // those surface instead wherever the full stat block itself is rendered.
-    function onRevealChanged(payload: RevealChangedEvent) {
-      if (payload.encounterId !== encounterId || payload.fieldKey !== 'armor_class') return;
-      withSeqCheck(payload.seq, () => {
-        patch((prev) => ({
-          ...prev,
-          seq: payload.seq,
-          participants: prev.participants.map((p) =>
-            p.participantId === payload.participantId ? { ...p, armorClass: payload.value as number | null } : p,
-          ),
-        }));
-      });
-    }
-
     socket.on('connect', joinAndSync);
     socket.on('FULL_STATE_SYNC', setFullState);
     socket.on('COMBAT_STARTED', onCombatStarted);
@@ -372,7 +354,6 @@ export function useEncounterLive(encounterId: number | undefined) {
     socket.on('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
     socket.on('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
     socket.on('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);
-    socket.on('REVEAL_CHANGED', onRevealChanged);
 
     joinAndSync();
 
@@ -393,7 +374,6 @@ export function useEncounterLive(encounterId: number | undefined) {
       socket.off('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
       socket.off('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
       socket.off('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);
-      socket.off('REVEAL_CHANGED', onRevealChanged);
     };
   }, [encounterId, connected, socket, queryClient]);
 

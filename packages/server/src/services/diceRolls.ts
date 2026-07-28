@@ -26,7 +26,6 @@ export interface DiceRollRow {
   dice_count: number;
   modifier: number;
   result_total: number;
-  visible_to_players: boolean;
   created_at: Date;
 }
 
@@ -90,16 +89,6 @@ export async function rollDice(
     encounterId = input.encounterId;
   }
 
-  // ---- visibleToPlayers: only a DM may hide a roll. A player's own attempt
-  // to set it false is silently forced back to true rather than rejected —
-  // this is a CREATE endpoint, so it follows services/notes.ts's
-  // createNote precedent (`role === 'player' ? true : ...`), not
-  // updateNote's precedent of throwing FORBIDDEN_ROLE — that rejection only
-  // applies on the PATCH path, where a player is trying to flip visibility
-  // on an already-existing row out from under it. Defaults to true when
-  // omitted, matching the migration's column default.
-  const visibleToPlayers = role === 'player' ? true : (input.visibleToPlayers ?? true);
-
   // ---- server RNG: advantage/disadvantage always rolls exactly 2 d20s (the
   // schema's .refine already guarantees diceSides===20 whenever keep isn't
   // 'normal') and keeps the max/min; 'normal' rolls `diceCount` dice of
@@ -124,8 +113,8 @@ export async function rollDice(
   const result = await pool.query<DiceRollRow>(
     `INSERT INTO dice_rolls
        (campaign_id, user_id, character_id, monster_instance_id, encounter_id, roll_type, roll_context,
-        d20_rolls, keep, dice_sides, dice_count, modifier, result_total, visible_to_players)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING *`,
     [
       campaignId,
@@ -141,7 +130,6 @@ export async function rollDice(
       input.diceCount,
       input.modifier,
       resultTotal,
-      visibleToPlayers,
     ],
   );
   return result.rows[0]!;
@@ -193,17 +181,11 @@ export interface ListDiceRollsResult {
 export async function listDiceRolls(
   pool: Pool,
   campaignId: number,
-  role: CampaignRole,
+  _role: CampaignRole,
   query: ListDiceRollsQuery,
 ): Promise<ListDiceRollsResult> {
   const conditions = ['campaign_id = $1'];
   const values: unknown[] = [campaignId];
-
-  // Players never see visible_to_players=false rows — filtered at the query
-  // level (same as services/notes.ts's listNotes), not just hidden client-side.
-  if (role === 'player') {
-    conditions.push('visible_to_players = true');
-  }
 
   if (query.encounterId !== undefined) {
     values.push(query.encounterId);

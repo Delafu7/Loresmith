@@ -11,11 +11,10 @@ import type {
   SnapshotParticipant,
   StatBlockEntry,
 } from '../lib/types';
-import { isExactHp } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useEncounterLive } from './useEncounterLive';
 import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
-import { HPBar, HPBandPill } from '../components/HPBar';
+import { HPBar } from '../components/HPBar';
 import { HpAdjustForm } from '../components/HpAdjustForm';
 import { EffectBadge } from '../components/EffectBadge';
 import { EffectApplyDialog, type ApplyEffectFormInput } from '../components/EffectApplyDialog';
@@ -31,24 +30,36 @@ import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { BattleMode } from './BattleMode';
 import { AttackRoller, type AttackTarget, type NormalizedAttack } from './AttackRoller';
 
-// One per non-PC participant row (characters or monster instances — never
-// PCs, matching the server-side exemption in services/entityFieldReveal.ts:
-// there's no reason to hide a party member's own AC from the rest of the
-// party). Pulled out as its own component, not inlined in the row map, since
+const WEAKNESS_FIELDS: Array<{ key: string; label: string }> = [
+  { key: 'damage_vulnerabilities', label: 'Vuln' },
+  { key: 'damage_resistances', label: 'Resist' },
+  { key: 'damage_immunities', label: 'Immune' },
+];
+
+// One per monster-instance participant row — the one thing the hide/reveal
+// removal kept: a DM can reveal a creature's damage vulnerabilities/
+// resistances/immunities to players as they're discovered. Never rendered
+// for character participants (weaknesses only exist on monster instances).
+// Pulled out as its own component, not inlined in the row map, since
 // useReveals is a hook and each row needs its own independent query/mutation
-// state (PLAN.md §11.7).
-export function ParticipantArmorClassReveal({ characterId, monsterInstanceId }: { characterId: number | null; monsterInstanceId: number | null }) {
-  const entityType = characterId != null ? 'character' : 'monster_instance';
-  const entityId = characterId ?? monsterInstanceId ?? undefined;
-  const { fieldState, setRevealed, isSaving } = useReveals(entityType, entityId);
-  const revealed = fieldState('armor_class')?.revealed ?? false;
+// state.
+export function ParticipantWeaknessReveal({ monsterInstanceId }: { monsterInstanceId: number }) {
+  const { fieldState, setRevealed, isSaving } = useReveals(monsterInstanceId);
   return (
-    <RevealToggle
-      revealed={revealed}
-      disabled={isSaving}
-      label="AC"
-      onToggle={() => void setRevealed('armor_class', !revealed)}
-    />
+    <div className="flex items-center gap-1">
+      {WEAKNESS_FIELDS.map(({ key, label }) => {
+        const revealed = fieldState(key)?.revealed ?? false;
+        return (
+          <RevealToggle
+            key={key}
+            revealed={revealed}
+            disabled={isSaving}
+            label={label}
+            onToggle={() => void setRevealed(key, !revealed)}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -275,7 +286,6 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
           : { monsterInstanceId: participant.monsterInstanceId }),
         effectDefinitionId: input.effectDefinitionId,
         durationValue: input.durationValue,
-        visibleToPlayers: input.visibleToPlayers,
       }),
     // Same "no cache write" discipline as hpMutation — EFFECT_APPLIED over
     // the socket is the source of truth (see useEncounterLive.ts).
@@ -437,12 +447,9 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
                   className="text-xs text-stone-500 border border-stone-700 rounded px-1 flex-shrink-0"
                   title="Armor Class"
                 >
-                  AC {p.armorClass ?? '?'}
+                  AC {p.armorClass}
                 </span>
-                {isDm &&
-                  !(p.characterId != null && charactersQuery.data?.characters.find((c) => c.id === p.characterId)?.is_pc) && (
-                    <ParticipantArmorClassReveal characterId={p.characterId} monsterInstanceId={p.monsterInstanceId} />
-                  )}
+                {isDm && p.monsterInstanceId != null && <ParticipantWeaknessReveal monsterInstanceId={p.monsterInstanceId} />}
                 <span
                   className={`text-xs rounded px-1 flex-shrink-0 border ${
                     p.posX != null && p.posY != null
@@ -460,11 +467,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
 
               <div className="flex items-center gap-3">
                 <div className="min-w-[8rem]">
-                  {isExactHp(p.hp) ? (
-                    <HPBar current={p.hp.hpCurrent} max={p.hp.hpMax} temp={p.hp.hpTemp} />
-                  ) : (
-                    <HPBandPill band={p.hp.band} />
-                  )}
+                  <HPBar current={p.hp.hpCurrent} max={p.hp.hpMax} temp={p.hp.hpTemp} />
                 </div>
                 {isDm && (
                   <button
@@ -617,10 +620,8 @@ export function ActionButton({
   );
 }
 
-// "Reset reveals for this encounter" (PLAN.md §11.5) — scoped narrower than
-// HideEverythingButton (CampaignShell.tsx): only entities currently seated
-// in THIS encounter, and hp_visibility goes back to 'banded' (combat's
-// default) rather than 'hidden'.
+// Resets every monster instance currently seated in THIS encounter back to
+// "weaknesses hidden" — the one thing the hide/reveal removal kept.
 export function ResetRevealsButton({ encounterId }: { encounterId: number }) {
   const mutation = useMutation({
     mutationFn: () => api.post<void>(`/encounters/${encounterId}/reveals/reset`),
@@ -630,7 +631,7 @@ export function ResetRevealsButton({ encounterId }: { encounterId: number }) {
       variant="danger"
       pending={mutation.isPending}
       onClick={() => {
-        if (confirm('Reset reveals for this encounter? Every participant here goes back to hidden/banded.')) {
+        if (confirm('Reset weakness reveals for this encounter? Every monster here goes back to hidden.')) {
           mutation.mutate();
         }
       }}

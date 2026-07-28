@@ -1,5 +1,5 @@
-// Session/lore notes. Players never see visible_to_players=false rows —
-// filtered at the query level (PLAN.md §4.1), not just left to the client.
+// Session/lore notes — visible to the whole campaign now (hide/reveal was
+// removed; notes.visible_to_players no longer exists).
 
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
@@ -10,53 +10,37 @@ interface NoteRow {
   id: number;
   campaign_id: number;
   author_user_id: number;
-  visible_to_players: boolean;
   [key: string]: unknown;
 }
 
-async function fetchNoteScoped(pool: Pool, campaignId: number, noteId: number, role: CampaignRole): Promise<NoteRow> {
+async function fetchNoteScoped(pool: Pool, campaignId: number, noteId: number): Promise<NoteRow> {
   const result = await pool.query<NoteRow>(`SELECT * FROM notes WHERE id = $1 AND campaign_id = $2`, [noteId, campaignId]);
   const row = result.rows[0];
-  // A DM-hidden note 404s for a player exactly like a nonexistent one would —
-  // otherwise a 403 would leak "a hidden note exists here".
-  if (!row || (role === 'player' && !row.visible_to_players)) {
-    throw notFound('Note');
-  }
+  if (!row) throw notFound('Note');
   return row;
 }
 
-export async function listNotes(pool: Pool, campaignId: number, role: CampaignRole) {
-  if (role === 'dm') {
-    const result = await pool.query(`SELECT * FROM notes WHERE campaign_id = $1 ORDER BY created_at DESC`, [campaignId]);
-    return result.rows;
-  }
-  const result = await pool.query(
-    `SELECT * FROM notes WHERE campaign_id = $1 AND visible_to_players = true ORDER BY created_at DESC`,
-    [campaignId],
-  );
+export async function listNotes(pool: Pool, campaignId: number, _role: CampaignRole) {
+  const result = await pool.query(`SELECT * FROM notes WHERE campaign_id = $1 ORDER BY created_at DESC`, [campaignId]);
   return result.rows;
 }
 
-export async function getNote(pool: Pool, campaignId: number, noteId: number, role: CampaignRole) {
-  return fetchNoteScoped(pool, campaignId, noteId, role);
+export async function getNote(pool: Pool, campaignId: number, noteId: number, _role: CampaignRole) {
+  return fetchNoteScoped(pool, campaignId, noteId);
 }
 
 export async function createNote(
   pool: Pool,
   campaignId: number,
   actorId: number,
-  role: CampaignRole,
+  _role: CampaignRole,
   input: CreateNoteInput,
 ) {
-  // Players can jot down their own notes, but can never hide a note from the
-  // rest of the table — that's a DM-only tool (secrets, unrevealed lore).
-  const visibleToPlayers = role === 'player' ? true : (input.visibleToPlayers ?? false);
-
   const result = await pool.query(
-    `INSERT INTO notes (campaign_id, session_id, character_id, author_user_id, title, body, visible_to_players)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO notes (campaign_id, session_id, character_id, author_user_id, title, body)
+     VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING *`,
-    [campaignId, input.sessionId ?? null, input.characterId ?? null, actorId, input.title, input.body, visibleToPlayers],
+    [campaignId, input.sessionId ?? null, input.characterId ?? null, actorId, input.title, input.body],
   );
   return result.rows[0];
 }
@@ -69,22 +53,16 @@ export async function updateNote(
   role: CampaignRole,
   input: UpdateNoteInput,
 ) {
-  const note = await fetchNoteScoped(pool, campaignId, noteId, role);
-  if (role === 'player') {
-    if (Number(note.author_user_id) !== Number(actorId)) {
-      throw new AppError('FORBIDDEN_NOT_OWNER', 'You can only edit notes you authored');
-    }
-    if (input.visibleToPlayers === false) {
-      throw new AppError('FORBIDDEN_ROLE', 'Players cannot hide notes from the rest of the table');
-    }
-    delete input.visibleToPlayers; // players can't grant themselves DM-only visibility control either
+  const note = await fetchNoteScoped(pool, campaignId, noteId);
+  if (role === 'player' && Number(note.author_user_id) !== Number(actorId)) {
+    throw new AppError('FORBIDDEN_NOT_OWNER', 'You can only edit notes you authored');
   }
 
   const sets: string[] = [];
   const values: unknown[] = [];
   let i = 1;
   const columnByKey: Record<string, string> = {
-    title: 'title', body: 'body', sessionId: 'session_id', characterId: 'character_id', visibleToPlayers: 'visible_to_players',
+    title: 'title', body: 'body', sessionId: 'session_id', characterId: 'character_id',
   };
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined) continue;
@@ -102,7 +80,7 @@ export async function updateNote(
 }
 
 export async function deleteNote(pool: Pool, campaignId: number, noteId: number, actorId: number, role: CampaignRole): Promise<void> {
-  const note = await fetchNoteScoped(pool, campaignId, noteId, role);
+  const note = await fetchNoteScoped(pool, campaignId, noteId);
   if (role === 'player' && Number(note.author_user_id) !== Number(actorId)) {
     throw new AppError('FORBIDDEN_NOT_OWNER', 'You can only delete notes you authored');
   }

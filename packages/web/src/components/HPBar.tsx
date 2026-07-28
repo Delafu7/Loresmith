@@ -1,4 +1,8 @@
-import type { HpBand } from '../lib/types';
+// Decorative status label only (Healthy/Injured/.../Down) — computed
+// client-side from the always-visible exact HP numbers. Not related to the
+// old hide/reveal "banded" visibility mode, which was removed; HP is always
+// exact for every role now.
+type HpBand = 'Healthy' | 'Injured' | 'Bloodied' | 'Critical' | 'Down';
 
 const BAND_COLOR: Record<HpBand, string> = {
   Healthy: 'bg-emerald-600',
@@ -36,16 +40,6 @@ export function HPBar({ current, max, temp = 0 }: { current: number; max: number
         {tempPct > 0 && <div className="h-full bg-sky-500 transition-all" style={{ width: `${tempPct}%` }} />}
       </div>
     </div>
-  );
-}
-
-/** Banded-HP variant: a pill for player clients that never received exact numbers. */
-export function HPBandPill({ band }: { band: HpBand }) {
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium bg-stone-800 ${BAND_TEXT[band]}`}>
-      <span className={`h-2 w-2 rounded-full ${BAND_COLOR[band]}`} />
-      {band}
-    </span>
   );
 }
 

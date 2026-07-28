@@ -42,9 +42,6 @@ export const createDiceRollSchema = z
     characterId: z.number().int().positive().optional(),
     monsterInstanceId: z.number().int().positive().optional(),
     encounterId: z.number().int().positive().optional(),
-    // Players are always forced to true server-side; only a DM's supplied
-    // value is honored. See services/diceRolls.ts's rollDice.
-    visibleToPlayers: z.boolean().optional(),
   })
   // Advantage/disadvantage is a d20-only 5e concept (roll 2, keep one) — any
   // other die size always rolls `diceCount` independent dice with no

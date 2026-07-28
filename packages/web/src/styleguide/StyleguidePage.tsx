@@ -71,7 +71,6 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     initiativeRoll: 18,
     initiativeTiebreak: null,
     turnOrder: 0,
-    hpVisibility: 'exact',
     hp: { hpCurrent: 58, hpMax: 64, hpTemp: 0 },
     effects: [
       {
@@ -106,8 +105,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     initiativeRoll: 16,
     initiativeTiebreak: null,
     turnOrder: 1,
-    hpVisibility: 'banded',
-    hp: { band: 'Bloodied' },
+    hp: { hpCurrent: 12, hpMax: 48, hpTemp: 0 },
     effects: [],
     posX: 0,
     posY: 0,
@@ -131,7 +129,6 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     initiativeRoll: 9,
     initiativeTiebreak: null,
     turnOrder: 2,
-    hpVisibility: 'exact',
     hp: { hpCurrent: 18, hpMax: 26, hpTemp: 0 },
     effects: [],
     posX: 5,

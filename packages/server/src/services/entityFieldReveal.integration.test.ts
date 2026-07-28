@@ -1,22 +1,24 @@
-// Integration test for the reveal engine's end-to-end read path (PLAN.md
-// §11.8): a player-role GET must never contain an unrevealed field's true
-// value, even before any WebSocket involvement — this exercises the real
-// wiring in services/characters.ts (getCharacter/listCharacters), not just
+// Integration test for the (now narrow) weakness-reveal engine's end-to-end
+// read path: a player-role GET must never contain an unrevealed monster
+// instance's damage vulnerabilities/resistances/immunities, even before any
+// WebSocket involvement — this exercises the real wiring in
+// services/monsters.ts (getMonsterInstance/listMonsterInstances), not just
 // the pure redactEntityFields unit (entityFieldReveal.test.ts). Throwaway
-// campaign/user/character fixtures, same isolation convention as
+// campaign/user/monster fixtures, same isolation convention as
 // rests.performRest.integration.test.ts — never touches the seeded demo
 // campaign.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';
-import { getCharacter, listCharacters } from './characters.js';
-import { updateCharacterReveals } from './entityFieldReveal.js';
+import { getMonsterInstance, listMonsterInstances } from './monsters.js';
+import { updateMonsterInstanceReveals } from './entityFieldReveal.js';
 
-describe('reveal engine read-path redaction (integration, live DB, throwaway fixtures)', () => {
+describe('weakness reveal read-path redaction (integration, live DB, throwaway fixtures)', () => {
   let dmUserId: number;
   let playerUserId: number;
   let campaignId: number;
-  let npcId: number;
+  let monsterId: number;
+  let instanceId: number;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -41,20 +43,30 @@ describe('reveal engine read-path redaction (integration, live DB, throwaway fix
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'dm')`, [campaignId, dmUserId]);
     await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player')`, [campaignId, playerUserId]);
 
-    const npcRes = await pool.query<{ id: number }>(
-      `INSERT INTO characters
-         (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha,
-          armor_class, hp_max, hp_current, notes)
-       VALUES ($1, false, NULL, $2, 'Reveal Test NPC', 10, 10, 10, 10, 10, 10, 15, 10, 10, 'Secretly a doppelganger')
+    const monsterRes = await pool.query<{ id: number }>(
+      `INSERT INTO monsters
+         (slug, name, edition_scope, size, creature_type, armor_class, hit_point_average, hit_dice, speed,
+          str, dex, con, int, wis, cha, damage_vulnerabilities, damage_resistances, damage_immunities,
+          challenge_rating, xp_value, actions)
+       VALUES ($1, 'Reveal Test Ooze', '2024', 'Medium', 'ooze', 8, 22, '4d8+4', '{"walk":10}',
+               11, 8, 16, 1, 6, 1, ARRAY['radiant'], ARRAY['cold','fire'], ARRAY['poison'],
+               2, 450, '[{"name":"Pseudopod","description":"Melee attack"}]'::jsonb)
        RETURNING id`,
-      [campaignId, dmUserId],
+      [`reveal-test-ooze-${suffix}`],
     );
-    npcId = npcRes.rows[0]!.id;
+    monsterId = monsterRes.rows[0]!.id;
+
+    const instanceRes = await pool.query<{ id: number }>(
+      `INSERT INTO monster_instances (campaign_id, monster_id, hp_current) VALUES ($1, $2, 22) RETURNING id`,
+      [campaignId, monsterId],
+    );
+    instanceId = instanceRes.rows[0]!.id;
   });
 
   afterAll(async () => {
     try {
       if (campaignId) await pool.query(`DELETE FROM campaigns WHERE id = $1`, [campaignId]);
+      if (monsterId) await pool.query(`DELETE FROM monsters WHERE id = $1`, [monsterId]);
     } finally {
       if (dmUserId) await pool.query(`DELETE FROM users WHERE id = $1`, [dmUserId]);
       if (playerUserId) await pool.query(`DELETE FROM users WHERE id = $1`, [playerUserId]);
@@ -62,44 +74,56 @@ describe('reveal engine read-path redaction (integration, live DB, throwaway fix
     }
   });
 
-  it('a fresh NPC defaults to hidden armor_class/notes for a player, but true values for the DM', async () => {
-    const dmView = (await getCharacter(pool, dmUserId, npcId)) as unknown as { armor_class: number; notes: string };
-    expect(dmView.armor_class).toBe(15);
-    expect(dmView.notes).toBe('Secretly a doppelganger');
+  it('a fresh monster instance defaults to hidden weaknesses for a player, but true values for the DM', async () => {
+    const dmView = (await getMonsterInstance(pool, campaignId, instanceId, 'dm')) as unknown as {
+      damage_resistances: string[];
+      damage_immunities: string[];
+    };
+    expect(dmView.damage_resistances).toEqual(['cold', 'fire']);
+    expect(dmView.damage_immunities).toEqual(['poison']);
 
-    const playerView = (await getCharacter(pool, playerUserId, npcId)) as unknown as { armor_class: number | null; notes: string | null };
-    expect(playerView.armor_class).toBeNull();
-    expect(playerView.notes).toBeNull();
+    const playerView = (await getMonsterInstance(pool, campaignId, instanceId, 'player')) as unknown as {
+      damage_resistances: string[] | null;
+      damage_immunities: string[] | null;
+    };
+    expect(playerView.damage_resistances).toBeNull();
+    expect(playerView.damage_immunities).toBeNull();
 
     // Same redaction must hold on the list endpoint, not just GET by id.
-    const playerList = (await listCharacters(pool, campaignId, 'player')) as unknown as Array<{ id: number; armor_class: number | null }>;
-    const npcRow = playerList.find((c) => c.id === npcId);
-    expect(npcRow?.armor_class).toBeNull();
+    const playerList = (await listMonsterInstances(pool, campaignId, 'player')) as unknown as Array<{
+      id: number;
+      damage_resistances: string[] | null;
+    }>;
+    const row = playerList.find((mi) => mi.id === instanceId);
+    expect(row?.damage_resistances).toBeNull();
   });
 
   it('revealing a field as DM makes the true value visible to a player, without touching other fields', async () => {
-    await updateCharacterReveals(pool, dmUserId, npcId, { fields: [{ fieldKey: 'armor_class', revealed: true }] });
+    await updateMonsterInstanceReveals(pool, dmUserId, instanceId, { fields: [{ fieldKey: 'damage_resistances', revealed: true }] });
 
-    const playerView = (await getCharacter(pool, playerUserId, npcId)) as unknown as { armor_class: number | null; notes: string | null };
-    expect(playerView.armor_class).toBe(15);
-    expect(playerView.notes).toBeNull(); // still hidden — revealing one field must not leak others
+    const playerView = (await getMonsterInstance(pool, campaignId, instanceId, 'player')) as unknown as {
+      damage_resistances: string[] | null;
+      damage_immunities: string[] | null;
+    };
+    expect(playerView.damage_resistances).toEqual(['cold', 'fire']);
+    expect(playerView.damage_immunities).toBeNull(); // still hidden — revealing one field must not leak others
   });
 
   it('a playerOverride is served to the player instead of the true value, while the DM still sees the truth', async () => {
-    await updateCharacterReveals(pool, dmUserId, npcId, {
-      fields: [{ fieldKey: 'notes', revealed: true, playerOverride: 'Something about it feels wrong.' }],
+    await updateMonsterInstanceReveals(pool, dmUserId, instanceId, {
+      fields: [{ fieldKey: 'damage_immunities', revealed: true, playerOverride: 'Seems immune to something...' }],
     });
 
-    const playerView = (await getCharacter(pool, playerUserId, npcId)) as unknown as { notes: string | null };
-    expect(playerView.notes).toBe('Something about it feels wrong.');
+    const playerView = (await getMonsterInstance(pool, campaignId, instanceId, 'player')) as unknown as { damage_immunities: unknown };
+    expect(playerView.damage_immunities).toBe('Seems immune to something...');
 
-    const dmView = (await getCharacter(pool, dmUserId, npcId)) as unknown as { notes: string | null };
-    expect(dmView.notes).toBe('Secretly a doppelganger');
+    const dmView = (await getMonsterInstance(pool, campaignId, instanceId, 'dm')) as unknown as { damage_immunities: unknown };
+    expect(dmView.damage_immunities).toEqual(['poison']);
   });
 
   it('a player cannot write reveal state (DM-only), even for a campaign they are a member of', async () => {
     await expect(
-      updateCharacterReveals(pool, playerUserId, npcId, { fields: [{ fieldKey: 'armor_class', revealed: true }] }),
+      updateMonsterInstanceReveals(pool, playerUserId, instanceId, { fields: [{ fieldKey: 'damage_resistances', revealed: true }] }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN_ROLE' });
   });
 });

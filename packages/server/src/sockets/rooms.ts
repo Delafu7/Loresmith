@@ -93,8 +93,8 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
       // join:encounter" — push it immediately so the client doesn't need a
       // second round-trip, without skipping the explicit request:sync path
       // below (used for later on-demand resyncs, e.g. after a seq gap).
-      const role = await requireMembership(pool, campaignId, userIdOf(socket));
-      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, role);
+      await requireMembership(pool, campaignId, userIdOf(socket));
+      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId);
       socket.emit('FULL_STATE_SYNC', syncPayload);
     } catch (err) {
       ack?.(errAck(err));
@@ -113,8 +113,8 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
         throw new AppError('FORBIDDEN_ROLE', 'Not joined to this encounter room');
       }
       const campaignId = await encounterCampaignId(encounterId);
-      const role = await requireMembership(pool, campaignId, userIdOf(socket));
-      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, role);
+      await requireMembership(pool, campaignId, userIdOf(socket));
+      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId);
       socket.emit('FULL_STATE_SYNC', syncPayload);
       ack?.({ ok: true });
     } catch (err) {

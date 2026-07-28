@@ -104,10 +104,6 @@ export function DiceRollHistoryPage() {
   );
 }
 
-// DICE_ROLLED's payload has no `visibleToPlayers` field at all (see
-// socketTypes.ts) — server-side room filtering already guarantees this
-// event only reaches a client allowed to see it, so `true` is accurate from
-// the receiving client's own point of view regardless of role.
 function socketPayloadToDiceRoll(payload: DiceRolledEvent): DiceRoll {
   return {
     id: payload.id,
@@ -124,7 +120,6 @@ function socketPayloadToDiceRoll(payload: DiceRolledEvent): DiceRoll {
     dice_count: payload.diceCount,
     modifier: payload.modifier,
     result_total: payload.resultTotal,
-    visible_to_players: true,
     created_at: payload.createdAt,
   };
 }

@@ -3,8 +3,8 @@
 // target. All apply/remove endpoints are DM-only per PLAN.md's
 // authorization matrix (conditions/effects are a DM tool, same bucket as HP
 // tracking for NPCs/monster instances); GET is readable by any campaign
-// member, filtered by visible_to_players for players (same pattern as
-// notes.visible_to_players).
+// member — every effect is visible to the whole party now (hide/reveal was
+// removed).
 
 import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
@@ -102,7 +102,6 @@ type ActiveEffectRow = Record<string, unknown> & {
   duration_value: number | null;
   concentration: boolean;
   source_character_id: number | null;
-  visible_to_players: boolean;
 };
 
 export interface EffectMutationResult {
@@ -131,7 +130,6 @@ interface InsertActiveEffectParams {
   saveDc?: number | null;
   saveAbilityId?: number | null;
   concentration?: boolean;
-  visibleToPlayers: boolean;
   notes?: string | null;
 }
 
@@ -200,14 +198,14 @@ async function insertActiveEffect(pool: Pool, params: InsertActiveEffectParams):
         `INSERT INTO active_effects
            (effect_definition_id, character_id, monster_instance_id, encounter_id, source_character_id, source_spell_id,
             source_type, duration_type, duration_value, stack_count, applied_at_round, save_dc, save_ability_id,
-            concentration, visible_to_players, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+            concentration, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          RETURNING *`,
         [
           params.effectDefinitionId, params.characterId, params.monsterInstanceId, params.encounterId,
           params.sourceCharacterId ?? null, params.sourceSpellId ?? null, params.sourceType,
           durationType, durationValue, params.stackCount ?? null, params.appliedAtRound ?? null,
-          params.saveDc ?? null, params.saveAbilityId ?? null, concentration, params.visibleToPlayers, params.notes ?? null,
+          params.saveDc ?? null, params.saveAbilityId ?? null, concentration, params.notes ?? null,
         ],
       );
       effect = result.rows[0];
@@ -247,13 +245,12 @@ async function assertTargetInCampaign(
 
 // ---- Encounter-scoped effects (POST/GET /encounters/:id/effects) ----
 
-export async function listEncounterEffects(pool: Pool, encounterId: number, role: CampaignRole) {
+export async function listEncounterEffects(pool: Pool, encounterId: number, _role: CampaignRole) {
   const result = await pool.query(
     `SELECT * FROM active_effects WHERE encounter_id = $1 AND removed_at IS NULL ORDER BY created_at ASC`,
     [encounterId],
   );
-  if (role === 'dm') return result.rows;
-  return result.rows.filter((r) => r.visible_to_players);
+  return result.rows;
 }
 
 // ---- Target-scoped effects (GET /characters/:id/effects,
@@ -261,14 +258,14 @@ export async function listEncounterEffects(pool: Pool, encounterId: number, role
 // "apply an effect outside combat" flow: the POST endpoints already existed,
 // but there was no way to read back what's currently active on a target
 // outside of an encounter's own GET (which only surfaces encounter_id-scoped
-// rows). Mirrors listEncounterEffects's read/visibility rule: any campaign
-// member may read, players only see visible_to_players rows.
+// rows). Mirrors listEncounterEffects: any campaign member may read, every
+// effect is visible to the whole party.
 
 export async function listCharacterEffects(pool: Pool, actorId: number, characterId: number) {
   const charRes = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM characters WHERE id = $1`, [characterId]);
   const character = charRes.rows[0];
   if (!character) throw notFound('Character');
-  const role = await requireMembership(pool, character.campaign_id, actorId);
+  await requireMembership(pool, character.campaign_id, actorId);
 
   const result = await pool.query(
     `SELECT ae.*, ed.name AS effect_definition_name FROM active_effects ae
@@ -276,15 +273,14 @@ export async function listCharacterEffects(pool: Pool, actorId: number, characte
      WHERE ae.character_id = $1 AND ae.removed_at IS NULL ORDER BY ae.created_at ASC`,
     [characterId],
   );
-  if (role === 'dm') return result.rows;
-  return result.rows.filter((r) => r.visible_to_players);
+  return result.rows;
 }
 
 export async function listMonsterInstanceEffects(pool: Pool, actorId: number, monsterInstanceId: number) {
   const instRes = await pool.query<{ campaign_id: number }>(`SELECT campaign_id FROM monster_instances WHERE id = $1`, [monsterInstanceId]);
   const instance = instRes.rows[0];
   if (!instance) throw notFound('Monster instance');
-  const role = await requireMembership(pool, instance.campaign_id, actorId);
+  await requireMembership(pool, instance.campaign_id, actorId);
 
   const result = await pool.query(
     `SELECT ae.*, ed.name AS effect_definition_name FROM active_effects ae
@@ -292,8 +288,7 @@ export async function listMonsterInstanceEffects(pool: Pool, actorId: number, mo
      WHERE ae.monster_instance_id = $1 AND ae.removed_at IS NULL ORDER BY ae.created_at ASC`,
     [monsterInstanceId],
   );
-  if (role === 'dm') return result.rows;
-  return result.rows.filter((r) => r.visible_to_players);
+  return result.rows;
 }
 
 export async function applyEncounterEffect(
@@ -321,7 +316,6 @@ export async function applyEncounterEffect(
     saveDc: input.saveDc,
     saveAbilityId: input.saveAbilityId,
     concentration: input.concentration,
-    visibleToPlayers: input.visibleToPlayers,
     notes: input.notes,
   });
 }
@@ -356,7 +350,6 @@ export async function applyCharacterEffect(
     saveDc: input.saveDc,
     saveAbilityId: input.saveAbilityId,
     concentration: input.concentration,
-    visibleToPlayers: input.visibleToPlayers,
     notes: input.notes,
   });
 }
@@ -388,7 +381,6 @@ export async function applyMonsterInstanceEffect(
     saveDc: input.saveDc,
     saveAbilityId: input.saveAbilityId,
     concentration: input.concentration,
-    visibleToPlayers: input.visibleToPlayers,
     notes: input.notes,
   });
 }

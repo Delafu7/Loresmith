@@ -20,7 +20,6 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { CampaignAsset, SnapshotParticipant } from '../lib/types';
-import { isExactHp } from '../lib/types';
 import type { MapConfig } from '../lib/socketTypes';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
@@ -637,7 +636,7 @@ function RosterPanel({
               </div>
               <div className="flex items-center justify-between gap-2 mt-0.5">
                 <span className="text-[10px] text-stone-500">
-                  {isExactHp(p.hp) ? `${p.hp.hpCurrent}/${p.hp.hpMax} HP` : p.hp.band}
+                  {p.hp.hpCurrent}/{p.hp.hpMax} HP
                 </span>
                 {isDm && onChangeFaction ? (
                   <select

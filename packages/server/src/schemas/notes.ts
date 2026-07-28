@@ -5,7 +5,6 @@ export const createNoteSchema = z.object({
   body: z.string().min(1).max(50000),
   sessionId: z.number().int().positive().optional().nullable(),
   characterId: z.number().int().positive().optional().nullable(),
-  visibleToPlayers: z.boolean().optional(), // players are always forced to true; see service
 });
 export type CreateNoteInput = z.infer<typeof createNoteSchema>;
 

@@ -2,7 +2,6 @@ import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm, type CampaignRole } from './authz.js';
 import { applyHpDeltaWithTempAbsorption } from './hp.js';
-import { redactHpFields, resolveHpVisibility } from './hpVisibility.js';
 import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { MONSTER_INSTANCE_STAT_BLOCK_SQL } from '../domain/revealFields.js';
 import { computeAppliedDamage } from './damage.js';
@@ -53,9 +52,9 @@ async function fetchInstanceOrThrow(pool: Pool, instanceId: number): Promise<Mon
   return row;
 }
 
-// Monster instances have no "PC" concept — every one is subject to
-// hp_visibility banding for players (unlike characters, where a PC is always
-// exact). See services/hpVisibility.ts.
+// HP is always visible now (hide/reveal was removed) — the only remaining
+// redaction is the three weakness fields (damage vulnerabilities/
+// resistances/immunities), still DM-only until revealed.
 export async function listMonsterInstances(pool: Pool, campaignId: number, role: CampaignRole) {
   const result = await pool.query(
     `SELECT mi.*, m.name AS monster_name, m.slug AS monster_slug, m.challenge_rating, m.hit_point_average,
@@ -66,14 +65,12 @@ export async function listMonsterInstances(pool: Pool, campaignId: number, role:
      ORDER BY mi.created_at ASC`,
     [campaignId],
   );
-  if (role === 'dm') return result.rows.map((row) => ({ ...row, hp_band: null }));
+  const rows = result.rows.map((row) => ({ ...row, hp_max: row.hp_max_override ?? row.hit_point_average }));
+  if (role === 'dm') return rows;
   return Promise.all(
-    result.rows.map(async (row) => {
-      const effectiveMax = row.hp_max_override ?? row.hit_point_average;
-      const visibility = await resolveHpVisibility(pool, { monsterInstanceId: row.id });
-      const hpRedacted = redactHpFields({ ...row, hp_max: effectiveMax }, visibility);
-      const revealState = await resolveReveals(pool, campaignId, 'monster_instance', { monsterInstanceId: row.id });
-      return redactEntityFields(hpRedacted, 'monster_instance', revealState);
+    rows.map(async (row) => {
+      const revealState = await resolveReveals(pool, campaignId, row.id);
+      return redactEntityFields(row, revealState);
     }),
   );
 }
@@ -90,11 +87,10 @@ export async function getMonsterInstance(pool: Pool, campaignId: number, instanc
     [instanceId],
   );
   const statBlock = statBlockRow.rows[0]!;
-  if (role === 'dm') return { ...instance, ...statBlock, hp_band: null };
-  const visibility = await resolveHpVisibility(pool, { monsterInstanceId: instanceId });
-  const hpRedacted = redactHpFields({ ...instance, ...statBlock }, visibility);
-  const revealState = await resolveReveals(pool, campaignId, 'monster_instance', { monsterInstanceId: instanceId });
-  return redactEntityFields(hpRedacted, 'monster_instance', revealState);
+  const merged = { ...instance, ...statBlock };
+  if (role === 'dm') return merged;
+  const revealState = await resolveReveals(pool, campaignId, instanceId);
+  return redactEntityFields(merged, revealState);
 }
 
 // Locks the catalog `monsters` row for the duration of the check+insert so
@@ -283,7 +279,6 @@ export interface EncounterHpSyncTarget {
   campaign_id: number;
   sync_seq: number;
   participant_id: number;
-  hp_visibility: 'exact' | 'banded' | 'hidden';
 }
 
 export interface ApplyMonsterInstanceHpDeltaResult {
@@ -331,7 +326,7 @@ export async function applyMonsterInstanceHpDelta(
        SET sync_seq = sync_seq + 1
        FROM combat_participants cp
        WHERE cp.monster_instance_id = $1 AND cp.encounter_id = e.id
-       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id, cp.hp_visibility`,
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
       [instanceId],
     );
 
@@ -425,7 +420,7 @@ export async function applyMonsterInstanceDamage(
        SET sync_seq = sync_seq + 1
        FROM combat_participants cp
        WHERE cp.monster_instance_id = $1 AND cp.encounter_id = e.id
-       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id, cp.hp_visibility`,
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
       [instanceId],
     );
 
@@ -433,8 +428,8 @@ export async function applyMonsterInstanceDamage(
       await client.query(
         `INSERT INTO dice_rolls
            (campaign_id, user_id, monster_instance_id, encounter_id, roll_type, roll_context,
-            d20_rolls, keep, dice_sides, dice_count, modifier, result_total, visible_to_players)
-         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10,true)`,
+            d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10)`,
         [
           instance.campaign_id, actorId, instanceId, input.encounterId,
           input.rollContext ?? null, rolls, input.diceSides, diceCount, input.modifier, diceTotal + input.modifier,

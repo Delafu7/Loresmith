@@ -131,9 +131,9 @@ encountersRouter.post('/:id/end', requireEncounterDm, async (req, res) => {
   res.json({ encounter });
 });
 
-// "Reset reveals for this encounter" (PLAN.md §11.5) — scoped to entities
-// currently seated in it. Same "push a full resync instead of a pile of
-// per-field events" reasoning as /campaigns/:id/reveals/hide-all.
+// Resets every monster instance currently seated in this encounter back to
+// "weaknesses hidden" — a single fresh FULL_STATE_SYNC instead of a pile of
+// per-field REVEAL_CHANGED events.
 encountersRouter.post('/:id/reveals/reset', requireEncounterDm, async (req, res) => {
   const encounterId = Number(req.params.id);
   const { campaignId } = await entityFieldRevealService.resetRevealsForEncounter(pool, req.user!.id, encounterId);

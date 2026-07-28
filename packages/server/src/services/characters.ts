@@ -2,8 +2,6 @@ import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm, requireOwnerOrDm, type CampaignRole } from './authz.js';
 import { applyHpDeltaWithTempAbsorption, type HpState } from './hp.js';
-import { redactHpFields, resolveHpVisibility } from './hpVisibility.js';
-import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
@@ -60,37 +58,19 @@ export async function authorizeCharacterMutation(
   return role;
 }
 
-// NPCs are subject to the same combat hp_visibility banding as monster
-// instances when read by a player (see services/hpVisibility.ts) — PCs are
-// always shown exact, matching PLAN.md §5.3's "exact for PCs" default and
-// the fact that there's no mechanism (or reason) to hide a player's own
-// party's HP from other players.
-// NPCs are also the only characters subject to entity_field_reveals
-// redaction (AC/speed/senses/languages/notes) — same "PCs are always fully
-// visible to the whole party" reasoning as the HP skip just below, so this
-// reuses the identical `row.is_pc` branch rather than a separate check.
-export async function listCharacters(pool: Pool, campaignId: number, role: CampaignRole) {
+// HP and every other character field are always visible to the whole
+// campaign now (hide/reveal was removed) — this is a plain read for every
+// role, `role` is kept only because callers already have it from the
+// membership check and other sibling functions share the signature shape.
+export async function listCharacters(pool: Pool, campaignId: number, _role: CampaignRole) {
   const result = await pool.query<CharacterRow>(`SELECT * FROM characters WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
-  if (role === 'dm') return result.rows.map((row) => ({ ...row, hp_band: null }));
-  return Promise.all(
-    result.rows.map(async (row) => {
-      if (row.is_pc) return { ...row, hp_band: null };
-      const visibility = await resolveHpVisibility(pool, { characterId: row.id as number });
-      const hpRedacted = redactHpFields(row as unknown as { hp_current: number; hp_max: number; hp_temp: number } & CharacterRow, visibility);
-      const revealState = await resolveReveals(pool, campaignId, 'character', { characterId: row.id as number });
-      return redactEntityFields(hpRedacted, 'character', revealState);
-    }),
-  );
+  return result.rows;
 }
 
 export async function getCharacter(pool: Pool, actorId: number, characterId: number) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  const role = await requireMembership(pool, character.campaign_id, actorId); // any role may read
-  if (role === 'dm' || character.is_pc) return { ...character, hp_band: null };
-  const visibility = await resolveHpVisibility(pool, { characterId });
-  const hpRedacted = redactHpFields(character as unknown as { hp_current: number; hp_max: number; hp_temp: number } & CharacterRow, visibility);
-  const revealState = await resolveReveals(pool, character.campaign_id, 'character', { characterId });
-  return redactEntityFields(hpRedacted, 'character', revealState);
+  await requireMembership(pool, character.campaign_id, actorId); // any role may read
+  return character;
 }
 
 export async function createCharacter(
@@ -311,7 +291,6 @@ export interface EncounterHpSyncTarget {
   campaign_id: number;
   sync_seq: number;
   participant_id: number;
-  hp_visibility: 'exact' | 'banded' | 'hidden';
 }
 
 export interface ApplyHpDeltaResult {
@@ -353,7 +332,7 @@ export async function applyHpDelta(
        SET sync_seq = sync_seq + 1
        FROM combat_participants cp
        WHERE cp.character_id = $1 AND cp.encounter_id = e.id
-       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id, cp.hp_visibility`,
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
       [characterId],
     );
 
@@ -436,7 +415,7 @@ export async function applyDamage(
        SET sync_seq = sync_seq + 1
        FROM combat_participants cp
        WHERE cp.character_id = $1 AND cp.encounter_id = e.id
-       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id, cp.hp_visibility`,
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
       [characterId],
     );
 
@@ -444,8 +423,8 @@ export async function applyDamage(
       await client.query(
         `INSERT INTO dice_rolls
            (campaign_id, user_id, character_id, encounter_id, roll_type, roll_context,
-            d20_rolls, keep, dice_sides, dice_count, modifier, result_total, visible_to_players)
-         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10,true)`,
+            d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10)`,
         [
           character.campaign_id, actorId, characterId, input.encounterId,
           input.rollContext ?? null, rolls, input.diceSides, diceCount, input.modifier, diceTotal + input.modifier,

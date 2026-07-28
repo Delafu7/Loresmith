@@ -68,10 +68,9 @@ export interface Character {
   armor_class: number;
   armor_class_mode: 'auto' | 'manual';
   speed: number;
-  hp_max: number | null;
-  hp_current: number | null;
-  hp_temp: number | null;
-  hp_band: HpBand | null;
+  hp_max: number;
+  hp_current: number;
+  hp_temp: number;
   hit_dice_remaining: Record<string, number> | null;
   exhaustion_level: number;
   senses: string | null;
@@ -244,9 +243,8 @@ export interface MonsterInstance {
   monster_id: number;
   custom_name: string | null;
   hp_max_override: number | null;
-  hp_current: number | null;
-  hp_temp: number | null;
-  hp_band: HpBand | null;
+  hp_current: number;
+  hp_temp: number;
   status: MonsterInstanceStatus;
   is_recurring: boolean;
   notes: string | null;
@@ -256,6 +254,14 @@ export interface MonsterInstance {
   monster_slug?: string;
   challenge_rating?: number;
   hit_point_average?: number;
+  // Effective hp_max (COALESCE of hp_max_override / hit_point_average),
+  // computed server-side (services/monsters.ts).
+  hp_max?: number;
+  // Weakness-reveal-gated (see entityFieldReveal.ts) — null for a player
+  // role until the DM reveals it; always the true value for the DM.
+  damage_vulnerabilities?: string[] | null;
+  damage_resistances?: string[] | null;
+  damage_immunities?: string[] | null;
 }
 
 export type EncounterStatus = 'preparing' | 'active' | 'paused' | 'completed';
@@ -273,8 +279,6 @@ export interface Encounter {
   created_at: string;
 }
 
-export type HpVisibility = 'exact' | 'banded' | 'hidden';
-
 export interface CombatParticipant {
   id: number;
   encounter_id: number;
@@ -285,7 +289,6 @@ export interface CombatParticipant {
   turn_order: number;
   joined_round: number;
   left_round: number | null;
-  hp_visibility: HpVisibility;
   created_at: string;
 }
 
@@ -293,22 +296,12 @@ export interface EncounterWithParticipants extends Encounter {
   participants: CombatParticipant[];
 }
 
-export type HpBand = 'Healthy' | 'Injured' | 'Bloodied' | 'Critical' | 'Down';
-
-export interface ExactHp {
+// HP is always visible to every campaign member now (hide/reveal was
+// removed) — every participant carries the real numbers.
+export interface ParticipantHp {
   hpCurrent: number;
   hpMax: number;
   hpTemp: number;
-}
-
-export interface BandedHp {
-  band: HpBand;
-}
-
-export type ParticipantHp = ExactHp | BandedHp;
-
-export function isExactHp(hp: ParticipantHp): hp is ExactHp {
-  return 'hpCurrent' in hp;
 }
 
 // FULL_STATE_SYNC / snapshot participant row shape, enriched with name.
@@ -320,7 +313,6 @@ export interface SnapshotParticipant {
   initiativeRoll: number;
   initiativeTiebreak: number | null;
   turnOrder: number;
-  hpVisibility: HpVisibility;
   hp: ParticipantHp;
   effects: ActiveEffectSummary[];
   // Battle map (Phase 3.3) — cell indices (x=3 is the 4th column), not pixel
@@ -329,11 +321,9 @@ export interface SnapshotParticipant {
   posY: number | null;
   // Phase 3.5: server-side COALESCE of character.armor_class /
   // monster_instance.armor_class_override / monster.armor_class (see
-  // FULL_STATE_SYNC's participants shape). Reveal-gated for non-PC
-  // participants as of the reveal engine (PLAN.md §11.6) — null means this
-  // socket's role currently can't see it (a still-hidden NPC/monster AC);
-  // PCs are exempt and always get the true value.
-  armorClass: number | null;
+  // FULL_STATE_SYNC's participants shape). Always visible now (hide/reveal
+  // was removed) — armor class is never redacted for any role.
+  armorClass: number;
   // Phase 3.6: per-turn 5e action economy — reset server-side whenever this
   // participant's turn starts (see services/encounters.ts's advanceTurn).
   actionUsed: boolean;
@@ -514,7 +504,6 @@ export interface ActiveEffect {
   save_dc: number | null;
   save_ability_id: number | null;
   concentration: boolean;
-  visible_to_players: boolean;
   removed_at: string | null;
   notes: string | null;
   created_at: string;
@@ -553,7 +542,6 @@ export interface CampaignAsset {
   mime_type: string;
   file_size_bytes: number;
   title: string | null;
-  visible_to_players: boolean;
   created_at: string;
 }
 
@@ -566,7 +554,6 @@ export interface Note {
   author_user_id: number;
   title: string;
   body: string;
-  visible_to_players: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -627,7 +614,6 @@ export interface DiceRoll {
   dice_count: number;
   modifier: number;
   result_total: number;
-  visible_to_players: boolean;
   created_at: string;
 }
 

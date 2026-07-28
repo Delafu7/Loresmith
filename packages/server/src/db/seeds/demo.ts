@@ -348,11 +348,11 @@ export async function seedDemo(client: Client): Promise<void> {
     const encounterId = encounterRes.rows[0].id;
 
     const participants = [
-      { characterId: brennaId, monsterInstanceId: null, dexMod: 2, hpVisibility: 'exact' },
-      { characterId: maribelId, monsterInstanceId: null, dexMod: 1, hpVisibility: 'exact' },
-      { characterId: null, monsterInstanceId: goblin1Id, dexMod: 2, hpVisibility: 'banded' },
-      { characterId: null, monsterInstanceId: goblin2Id, dexMod: 2, hpVisibility: 'banded' },
-      { characterId: null, monsterInstanceId: wolfId, dexMod: 2, hpVisibility: 'banded' },
+      { characterId: brennaId, monsterInstanceId: null, dexMod: 2 },
+      { characterId: maribelId, monsterInstanceId: null, dexMod: 1 },
+      { characterId: null, monsterInstanceId: goblin1Id, dexMod: 2 },
+      { characterId: null, monsterInstanceId: goblin2Id, dexMod: 2 },
+      { characterId: null, monsterInstanceId: wolfId, dexMod: 2 },
     ];
 
     const rolled = participants
@@ -363,9 +363,9 @@ export async function seedDemo(client: Client): Promise<void> {
       const p = rolled[i];
       await client.query(
         `INSERT INTO combat_participants
-           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, hp_visibility)
-         VALUES ($1, $2, $3, $4, $5, $6, 1, $7)`,
-        [encounterId, p.characterId, p.monsterInstanceId, p.roll, p.tiebreak, i, p.hpVisibility],
+           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round)
+         VALUES ($1, $2, $3, $4, $5, $6, 1)`,
+        [encounterId, p.characterId, p.monsterInstanceId, p.roll, p.tiebreak, i],
       );
     }
     console.log(`  encounter '${'Ambush on the Old Road'}' prepared with ${rolled.length} combat_participants (initiative rolled, status='preparing')`);
@@ -443,8 +443,8 @@ async function seedPlaceholderAsset(client: Client, campaignId: number, dmId: nu
 
   const fileUrl = `/uploads/campaigns/${campaignId}/${filename}`;
   const res = await client.query(
-    `INSERT INTO campaign_assets (campaign_id, uploaded_by_user_id, asset_type, file_url, mime_type, file_size_bytes, title, visible_to_players)
-     VALUES ($1, $2, 'image', $3, 'image/png', $4, $5, true)
+    `INSERT INTO campaign_assets (campaign_id, uploaded_by_user_id, asset_type, file_url, mime_type, file_size_bytes, title)
+     VALUES ($1, $2, 'image', $3, 'image/png', $4, $5)
      RETURNING id`,
     [campaignId, dmId, fileUrl, buffer.byteLength, PLACEHOLDER_TITLE],
   );
@@ -533,11 +533,11 @@ async function seedDiceRollHistory(
 
   const rolls: Array<{
     userId: number; characterId: number | null; encounterId: number | null;
-    rollType: string; rollContext: string; d20Rolls: number[]; keep: string; modifier: number; visibleToPlayers: boolean;
+    rollType: string; rollContext: string; d20Rolls: number[]; keep: string; modifier: number;
   }> = [
-    { userId: playerId, characterId: brennaId, encounterId, rollType: 'attack', rollContext: 'Longsword', d20Rolls: [14], keep: 'normal', modifier: 5, visibleToPlayers: true },
-    { userId: playerId, characterId: brennaId, encounterId: null, rollType: 'skill_check', rollContext: 'Perception', d20Rolls: [9, 17], keep: 'advantage', modifier: 1, visibleToPlayers: true },
-    { userId: dmId, characterId: null, encounterId: null, rollType: 'custom', rollContext: 'Wandering monster check', d20Rolls: [3], keep: 'normal', modifier: 0, visibleToPlayers: false },
+    { userId: playerId, characterId: brennaId, encounterId, rollType: 'attack', rollContext: 'Longsword', d20Rolls: [14], keep: 'normal', modifier: 5 },
+    { userId: playerId, characterId: brennaId, encounterId: null, rollType: 'skill_check', rollContext: 'Perception', d20Rolls: [9, 17], keep: 'advantage', modifier: 1 },
+    { userId: dmId, characterId: null, encounterId: null, rollType: 'custom', rollContext: 'Wandering monster check', d20Rolls: [3], keep: 'normal', modifier: 0 },
   ];
 
   for (const r of rolls) {
@@ -545,9 +545,9 @@ async function seedDiceRollHistory(
     await client.query(
       `INSERT INTO dice_rolls
          (campaign_id, user_id, character_id, monster_instance_id, encounter_id, roll_type, roll_context,
-          d20_rolls, keep, modifier, result_total, visible_to_players)
-       VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [campaignId, r.userId, r.characterId, r.encounterId, r.rollType, r.rollContext, r.d20Rolls, r.keep, r.modifier, keptDie + r.modifier, r.visibleToPlayers],
+          d20_rolls, keep, modifier, result_total)
+       VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10)`,
+      [campaignId, r.userId, r.characterId, r.encounterId, r.rollType, r.rollContext, r.d20Rolls, r.keep, r.modifier, keptDie + r.modifier],
     );
   }
   console.log(`  dice_rolls: ${rolls.length} sample rolls`);

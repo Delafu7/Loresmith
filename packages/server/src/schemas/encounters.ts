@@ -12,9 +12,7 @@ export const updateEncounterSchema = z.object({
 });
 export type UpdateEncounterInput = z.infer<typeof updateEncounterSchema>;
 
-export const hpVisibilityEnum = z.enum(['exact', 'banded', 'hidden']);
-
-// REFACTOR-PLAN.md §3: board-readability faction, distinct from hpVisibility.
+// REFACTOR-PLAN.md §3: board-readability faction.
 export const participantFactionEnum = z.enum(['player', 'ally', 'enemy', 'neutral']);
 
 export const addParticipantSchema = z
@@ -22,9 +20,7 @@ export const addParticipantSchema = z
     characterId: z.number().int().positive().optional(),
     monsterInstanceId: z.number().int().positive().optional(),
     initiativeRoll: z.number().int().optional(), // omit to roll later via /roll-initiative
-    hpVisibility: hpVisibilityEnum.optional(),
-    // Omit to default player/enemy by character-vs-monster-instance, same as
-    // hpVisibility's own default derivation just above.
+    // Omit to default player/enemy by character-vs-monster-instance.
     faction: participantFactionEnum.optional(),
   })
   .refine((v) => (v.characterId != null) !== (v.monsterInstanceId != null), {

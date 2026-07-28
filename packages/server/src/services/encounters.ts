@@ -55,7 +55,6 @@ interface ParticipantRow {
   initiative_roll: number;
   initiative_tiebreak: number | null;
   turn_order: number;
-  hp_visibility: 'exact' | 'banded' | 'hidden';
   faction: 'player' | 'ally' | 'enemy' | 'neutral';
   pos_x: number | null;
   pos_y: number | null;
@@ -808,11 +807,9 @@ export async function undoActionEconomy(
 // ---- Combat snapshot for the sockets layer (FULL_STATE_SYNC) ----
 //
 // Enriches the bare combat_participants rows with the display name and
-// current HP figures (real-valued — the sockets/visibility.ts layer is
-// responsible for banding/hiding those per hp_visibility before anything
-// goes out over the wire; this function stays visibility-agnostic on
-// purpose, same as any other plain read used by both DM and player call
-// sites elsewhere in this file).
+// current HP figures — HP/AC/effects are all always-visible now (hide/
+// reveal was removed), so this stays a plain read used identically by every
+// caller.
 
 export interface CombatSnapshotParticipant {
   participant_id: number;
@@ -822,15 +819,10 @@ export interface CombatSnapshotParticipant {
   initiative_roll: number;
   initiative_tiebreak: number | null;
   turn_order: number;
-  hp_visibility: 'exact' | 'banded' | 'hidden';
   hp_current: number;
   hp_max: number;
   hp_temp: number;
   armor_class: number;
-  // NULL for monster-instance participants (no `characters` row to join) —
-  // PLAN.md §11.6's armorClass redaction exempts PCs the same way
-  // services/characters.ts already exempts them from HP redaction (`row.
-  // is_pc`), so this needs to travel with the snapshot row too.
   is_pc: boolean | null;
   pos_x: number | null;
   pos_y: number | null;
@@ -878,7 +870,7 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
   const encounter = await fetchEncounterById(pool, encounterId);
   const result = await pool.query<CombatSnapshotParticipant>(
     `SELECT cp.id AS participant_id, cp.character_id, cp.monster_instance_id,
-            cp.initiative_roll, cp.initiative_tiebreak, cp.turn_order, cp.hp_visibility,
+            cp.initiative_roll, cp.initiative_tiebreak, cp.turn_order,
             cp.pos_x, cp.pos_y,
             cp.action_used, cp.bonus_action_used, cp.reaction_used, cp.dash_used, cp.movement_used_ft,
             cp.object_interaction_used,
@@ -989,15 +981,13 @@ export async function addParticipant(
     );
     const turnOrder = Number(existingCount.rows[0]!.count);
 
-    // Default visibility (PLAN.md §5.3): exact for PCs, banded for NPCs and
-    // monster instances — looked up rather than assumed from "is this a
-    // character row at all", since the characters table holds NPCs too.
-    let defaultVisibility: 'exact' | 'banded' = 'banded';
+    // Default faction: player for PCs, enemy otherwise — looked up rather
+    // than assumed from "is this a character row at all", since the
+    // characters table holds NPCs too.
     let defaultFaction: 'player' | 'enemy' = 'enemy';
     if (input.characterId != null) {
       const pcRes = await client.query<{ is_pc: boolean }>(`SELECT is_pc FROM characters WHERE id = $1`, [input.characterId]);
       if (pcRes.rows[0]?.is_pc) {
-        defaultVisibility = 'exact';
         defaultFaction = 'player';
       }
     }
@@ -1006,8 +996,8 @@ export async function addParticipant(
     try {
       const result = await client.query<ParticipantRow>(
         `INSERT INTO combat_participants
-           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, hp_visibility, faction)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, faction)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          RETURNING *`,
         [
           encounterId,
@@ -1017,7 +1007,6 @@ export async function addParticipant(
           null, // tiebreak is only meaningful once /roll-initiative computes a real dex-mod tiebreak
           turnOrder,
           joinedRound,
-          input.hpVisibility ?? defaultVisibility,
           input.faction ?? defaultFaction,
         ],
       );
@@ -1195,7 +1184,6 @@ export interface ExpiredEffectRow {
   duration_value: number | null;
   concentration: boolean;
   source_character_id: number | null;
-  visible_to_players: boolean;
   effect_definition_name: string;
 }
 
@@ -1278,7 +1266,7 @@ export async function advanceTurn(pool: Pool, encounterId: number): Promise<Adva
          WHERE ae.id = ANY($1::bigint[]) AND ed.id = ae.effect_definition_id
          RETURNING ae.id, ae.character_id, ae.monster_instance_id, ae.effect_definition_id,
                    ae.duration_type, ae.duration_value, ae.concentration, ae.source_character_id,
-                   ae.visible_to_players, ed.name AS effect_definition_name`,
+                   ed.name AS effect_definition_name`,
         [expiredIds],
       );
       expiredEffects = expiredRes.rows;

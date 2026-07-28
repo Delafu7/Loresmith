@@ -86,7 +86,6 @@ describe('concentration auto-replace (integration, live DB, throwaway fixtures)'
     const first = await applyCharacterEffect(pool, userId, characterId, {
       effectDefinitionId: concentrationDefA,
       sourceType: 'manual',
-      visibleToPlayers: true,
     });
     expect(first.replacedEffect).toBeNull();
     expect(first.effect.concentration).toBe(true);
@@ -98,7 +97,6 @@ describe('concentration auto-replace (integration, live DB, throwaway fixtures)'
     const second = await applyCharacterEffect(pool, userId, characterId, {
       effectDefinitionId: concentrationDefB,
       sourceType: 'manual',
-      visibleToPlayers: true,
     });
 
     expect(second.replacedEffect).not.toBeNull();
@@ -125,7 +123,6 @@ describe('concentration auto-replace (integration, live DB, throwaway fixtures)'
     const third = await applyCharacterEffect(pool, userId, characterId, {
       effectDefinitionId: nonConcentrationDef,
       sourceType: 'manual',
-      visibleToPlayers: true,
     });
     expect(third.replacedEffect).toBeNull();
     expect(third.effect.concentration).toBe(false);
