@@ -48,7 +48,7 @@ export function Modal({
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
-      className={`${SIZE_CLASSES[size]} max-h-[85dvh] overflow-y-auto rounded-lg bg-stone-900 p-4 text-stone-100 shadow-lg backdrop:bg-stone-950/60 sm:p-6`}
+      className={`${SIZE_CLASSES[size]} m-auto max-h-[85dvh] overflow-y-auto rounded-lg bg-stone-900 p-4 text-stone-100 shadow-lg backdrop:bg-stone-950/60 sm:p-6`}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
         <h2 className="font-display text-lg font-medium">{title}</h2>

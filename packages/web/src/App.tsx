@@ -26,6 +26,7 @@ import { MapsIndexPage } from './maps/MapsIndexPage';
 import { FullscreenMapPage } from './maps/FullscreenMapPage';
 import { NotesIndexPage } from './notes/NotesIndexPage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
+import { CatalogEditorPage } from './catalog/CatalogEditorPage';
 
 function App() {
   return (
@@ -133,6 +134,7 @@ function App() {
                 <Route path="maps" element={<MapsPage />} />
                 <Route path="notes" element={<NotesPage />} />
                 <Route path="dice-rolls" element={<DiceRollHistoryPage />} />
+                <Route path="catalog" element={<CatalogEditorPage />} />
               </Route>
 
               <Route path="*" element={<Navigate to="/" replace />} />
