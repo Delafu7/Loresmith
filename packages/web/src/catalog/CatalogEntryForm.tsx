@@ -3,6 +3,7 @@ import type { CatalogField } from './catalogEntities';
 import { Field, Input, Textarea, Select } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
+import { useFormDraft } from '../lib/useFormDraft';
 
 export type DraftValues = Record<string, string>;
 
@@ -64,17 +65,19 @@ function buildPayload(fields: CatalogField[], draft: DraftValues): Record<string
 export function CatalogEntryForm({
   fields,
   entry,
+  draftKey,
   onSubmit,
   onCancel,
   submitting,
 }: {
   fields: CatalogField[];
   entry: Record<string, unknown> | null; // null = create; otherwise the row being edited
+  draftKey: string; // unique per campaign+entity-type+(row id or 'new') — see lib/useFormDraft.ts
   onSubmit: (payload: Record<string, unknown>) => Promise<unknown>;
   onCancel: () => void;
   submitting: boolean;
 }) {
-  const [draft, setDraft] = useState<DraftValues>(() => draftFromEntry(fields, entry));
+  const [draft, setDraft, clearDraft] = useFormDraft<DraftValues>(draftKey, () => draftFromEntry(fields, entry));
   const [formError, setFormError] = useState<unknown>(null);
 
   function setField(key: string, value: string) {
@@ -87,6 +90,7 @@ export function CatalogEntryForm({
     try {
       const payload = buildPayload(fields, draft);
       await onSubmit(payload);
+      clearDraft();
     } catch (err) {
       setFormError(err);
     }

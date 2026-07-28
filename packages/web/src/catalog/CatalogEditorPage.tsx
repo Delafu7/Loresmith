@@ -9,8 +9,16 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { Select } from '../components/ui/Field';
+import { formatTimestamp } from '../lib/dates';
 
-type CatalogRow = Record<string, unknown> & { id: string; name: string; is_homebrew: boolean; owning_campaign_id: string | null };
+type CatalogRow = Record<string, unknown> & {
+  id: string;
+  name: string;
+  is_homebrew: boolean;
+  owning_campaign_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 // One generic editor for all 11 homebrew-capable catalog entities (see
 // catalogEntities.ts for why this isn't 11 bespoke pages). Any campaign
@@ -114,6 +122,13 @@ export function CatalogEditorPage() {
                 <span className="font-medium text-stone-100 truncate">{entry.name}</span>
                 <Badge variant={entry.is_homebrew ? 'accent' : 'neutral'}>{entry.is_homebrew ? 'Homebrew' : 'Official'}</Badge>
               </div>
+              {/* Only meaningful for homebrew rows — official rows' created_at
+                  is just whenever the homebrew-scope migration ran. */}
+              {entry.is_homebrew && (
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Created {formatTimestamp(entry.created_at)} · Updated {formatTimestamp(entry.updated_at)}
+                </p>
+              )}
             </div>
             {isDm && (
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -157,6 +172,7 @@ export function CatalogEditorPage() {
       )}
 
       <CatalogEntryModal
+        campaignId={campaignId}
         config={config}
         editingEntry={editingEntry}
         onClose={() => setEditingEntry(null)}
@@ -169,6 +185,7 @@ export function CatalogEditorPage() {
 }
 
 function CatalogEntryModal({
+  campaignId,
   config,
   editingEntry,
   onClose,
@@ -176,6 +193,7 @@ function CatalogEntryModal({
   onUpdate,
   submitting,
 }: {
+  campaignId: string;
   config: CatalogEntityConfig;
   editingEntry: CatalogRow | null | 'new';
   onClose: () => void;
@@ -185,12 +203,14 @@ function CatalogEntryModal({
 }) {
   if (editingEntry === null) return null;
   const entry = editingEntry === 'new' ? null : editingEntry;
+  const draftKey = `draft:catalog:${campaignId}:${config.segment}:${entry ? entry.id : 'new'}`;
 
   return (
     <Modal open onClose={onClose} title={entry ? `Edit ${config.label.toLowerCase()}` : `New ${config.label.toLowerCase()}`} size="lg">
       <CatalogEntryForm
         fields={config.fields}
         entry={entry}
+        draftKey={draftKey}
         submitting={submitting}
         onCancel={onClose}
         onSubmit={(payload) => (entry ? onUpdate(entry.id, payload) : onCreate(payload))}

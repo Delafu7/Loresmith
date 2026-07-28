@@ -8,6 +8,7 @@
 import type { ReactNode } from 'react';
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
 import type { MonsterCatalogEntry, StatBlockEntry } from '../lib/types';
+import { formatTimestamp } from '../lib/dates';
 
 const ABILITIES: Array<{ key: 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha'; label: string }> = [
   { key: 'str', label: 'STR' },
@@ -231,6 +232,13 @@ export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
         <CollapsibleSection title="Reactions">
           <EntryList title="" entries={reactions} />
         </CollapsibleSection>
+      )}
+      {/* Only meaningful for homebrew rows — every seeded/official monster's
+          created_at is just whenever that migration happened to run. */}
+      {monster.is_homebrew && (
+        <p className="text-xs text-stone-500 pt-1">
+          Created {formatTimestamp(monster.created_at)} · Updated {formatTimestamp(monster.updated_at)}
+        </p>
       )}
     </div>
   );

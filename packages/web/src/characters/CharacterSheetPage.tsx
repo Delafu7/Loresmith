@@ -38,6 +38,7 @@ import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { proficiencyBonusForLevel } from '../lib/dnd-math';
 import type { ProficiencyLevel } from '../components/ProficiencyToggle';
 import { isUuid } from '../lib/ids';
+import { formatTimestamp } from '../lib/dates';
 
 export function CharacterSheetPage() {
   const params = useParams<{ characterId: string }>();
@@ -173,6 +174,14 @@ export function CharacterSheetPage() {
     onSuccess: () => navigate(`/campaigns/${campaignId}/characters`),
   });
 
+  const duplicateMutation = useMutation({
+    mutationFn: () => api.post<{ character: Character }>(`/characters/${characterId}/duplicate`, {}),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ['characters', campaignId] });
+      navigate(`/campaigns/${campaignId}/characters/${data.character.id}`);
+    },
+  });
+
   // POST /campaigns/:id/assets's response is only the new asset row — the
   // portrait_asset_id FK write-back on `characters` happens server-side in
   // the same transaction (services/assets.ts's createAsset) but isn't echoed
@@ -257,20 +266,34 @@ export function CharacterSheetPage() {
                 {character.alignment ? ` · ${character.alignment}` : ''}
               </p>
               {!character.is_alive && <p className="text-red-400 text-sm font-semibold mt-1">Deceased</p>}
+              <p className="text-xs text-stone-500 mt-1">
+                Created {formatTimestamp(character.created_at)} · Updated {formatTimestamp(character.updated_at)}
+              </p>
             </div>
           </div>
           {editMode === 'edit-full' && (
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm(`Delete ${character.name}? This cannot be undone.`)) deleteMutation.mutate();
-              }}
-              className="text-xs text-red-400 hover:text-red-300 border border-red-900 rounded-md px-2 py-1"
-            >
-              Delete
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => duplicateMutation.mutate()}
+                disabled={duplicateMutation.isPending}
+                className="text-xs text-stone-300 hover:text-stone-100 border border-stone-700 rounded-md px-2 py-1 disabled:opacity-50"
+              >
+                {duplicateMutation.isPending ? 'Duplicating…' : 'Duplicate'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Delete ${character.name}? This cannot be undone.`)) deleteMutation.mutate();
+                }}
+                className="text-xs text-red-400 hover:text-red-300 border border-red-900 rounded-md px-2 py-1"
+              >
+                Delete
+              </button>
+            </div>
           )}
         </div>
+        {duplicateMutation.isError && <ErrorBanner message={errorMessage(duplicateMutation.error)} />}
       </header>
 
       {/* HP panel */}

@@ -19,6 +19,7 @@ import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { StatBlock } from '../components/StatBlock';
+import { useFormDraft } from '../lib/useFormDraft';
 
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 const CR_OPTIONS = [
@@ -278,6 +279,8 @@ function previewMonster(form: FormState): MonsterCatalogEntry {
     art_asset_id: payload.artAssetId,
     is_unique: payload.isUnique,
     image_url: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 }
 
@@ -303,8 +306,15 @@ export function CreatureEditorPage() {
     queryFn: () => api.get<{ assets: CampaignAsset[] }>(`/campaigns/${campaignId}/assets`),
   });
 
-  const [form, setForm] = useState<FormState>(emptyForm());
-  const [hydrated, setHydrated] = useState(!isEdit);
+  // Draft-persisted per campaign+mode+id (see lib/useFormDraft.ts) so
+  // navigating away from this long form mid-fill — or mid-edit of the SAME
+  // creature — never silently loses what was typed. `hadDraft` starts
+  // `hydrated` as already-true for a resumed edit-mode draft, so the
+  // hydrate-from-server effect below doesn't clobber it with the
+  // (potentially now-stale) server copy.
+  const draftKey = isEdit ? `draft:creature:edit:${monsterId}` : `draft:creature:new:${campaignId}`;
+  const [form, setForm, clearDraft, hadDraft] = useFormDraft<FormState>(draftKey, emptyForm);
+  const [hydrated, setHydrated] = useState(!isEdit || hadDraft);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
@@ -315,7 +325,7 @@ export function CreatureEditorPage() {
       setForm(monsterToForm(existingMonster));
       setHydrated(true);
     }
-  }, [isEdit, existingMonster, hydrated]);
+  }, [isEdit, existingMonster, hydrated, setForm]);
 
   const saveMutation = useMutation({
     mutationFn: (payload: ReturnType<typeof buildPayload>) =>
@@ -323,6 +333,7 @@ export function CreatureEditorPage() {
         ? api.patch<{ monster: MonsterCatalogEntry }>(`/campaigns/${campaignId}/monsters/${monsterId}`, payload)
         : api.post<{ monster: MonsterCatalogEntry }>(`/campaigns/${campaignId}/monsters`, payload),
     onSuccess: () => {
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: bestiaryQueryKey });
       navigate(`/campaigns/${campaignId}/monsters`);
     },
@@ -397,6 +408,22 @@ export function CreatureEditorPage() {
           ← Back to bestiary
         </button>
       </div>
+
+      {hadDraft && (
+        <p className="text-xs text-amber-500 bg-amber-500/10 border border-amber-800 rounded-md px-3 py-2">
+          Restored unsaved changes from your last visit.{' '}
+          <button
+            type="button"
+            onClick={() => {
+              clearDraft();
+              setForm(isEdit && existingMonster ? monsterToForm(existingMonster) : emptyForm());
+            }}
+            className="underline hover:text-amber-400"
+          >
+            Discard draft
+          </button>
+        </p>
+      )}
 
       {/* Identity */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">

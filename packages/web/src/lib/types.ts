@@ -198,6 +198,8 @@ export interface MonsterCatalogEntry {
   // REFACTOR-PLAN.md §1.1: plain-URL image, works for global AND homebrew
   // rows (unlike art_asset_id, which needs a campaign_assets upload).
   image_url: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // Shared shape for stat-block entries (traits/actions/legendaryActions/

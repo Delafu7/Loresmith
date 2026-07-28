@@ -8,6 +8,23 @@ import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
 import { AbilityScoreGenerator } from './AbilityScoreGenerator';
+import { useFormDraft } from '../lib/useFormDraft';
+
+function emptyCharacterForm() {
+  return {
+    name: '',
+    isPc: true,
+    ownerUserId: '',
+    str: 10,
+    dex: 10,
+    con: 10,
+    int: 10,
+    wis: 10,
+    cha: 10,
+    armorClass: 10,
+    hpMax: 10,
+  };
+}
 
 export function CharactersListPage() {
   const { campaignId, campaign, role } = useCampaignShell();
@@ -26,19 +43,10 @@ export function CharactersListPage() {
     enabled: role === 'dm',
   });
 
-  const [form, setForm] = useState({
-    name: '',
-    isPc: role === 'player' ? true : true,
-    ownerUserId: '',
-    str: 10,
-    dex: 10,
-    con: 10,
-    int: 10,
-    wis: 10,
-    cha: 10,
-    armorClass: 10,
-    hpMax: 10,
-  });
+  // Draft-persisted per campaign+role so a half-filled "create character"
+  // form (ability scores rolled, name typed) survives an accidental
+  // navigation away — see lib/useFormDraft.ts.
+  const [form, setForm, clearDraft] = useFormDraft(`draft:character:new:${campaignId}:${role}`, emptyCharacterForm);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -62,7 +70,8 @@ export function CharactersListPage() {
       }),
     onSuccess: () => {
       setShowCreate(false);
-      setForm((f) => ({ ...f, name: '' }));
+      setForm(emptyCharacterForm());
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: ['characters', campaignId] });
     },
   });

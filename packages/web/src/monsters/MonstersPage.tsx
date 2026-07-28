@@ -80,6 +80,17 @@ export function MonstersPage() {
     },
   });
 
+  // Available on every row, not just homebrew ones — forking an official
+  // creature into a homebrew copy IS how you get to edit it (fork-on-edit,
+  // same as the generic catalog entities in CatalogEditorPage.tsx).
+  const duplicateMonsterMutation = useMutation({
+    mutationFn: (id: string) => api.post<{ monster: MonsterCatalogEntry }>(`/campaigns/${campaignId}/monsters/${id}/duplicate`, {}),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: bestiaryQueryKey });
+      navigate(`/campaigns/${campaignId}/monsters/${data.monster.id}/edit`);
+    },
+  });
+
   if (role !== 'dm') {
     return (
       <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
@@ -124,6 +135,7 @@ export function MonstersPage() {
         {bestiaryQuery.isLoading && <Loading />}
         {bestiaryQuery.isError && <ErrorBanner message={errorMessage(bestiaryQuery.error)} />}
         {deleteMonsterMutation.isError && <ErrorBanner message={errorMessage(deleteMonsterMutation.error)} />}
+        {duplicateMonsterMutation.isError && <ErrorBanner message={errorMessage(duplicateMonsterMutation.error)} />}
         {spawnMutation.isError && <ErrorBanner message={errorMessage(spawnMutation.error)} />}
 
         <div className="overflow-x-auto rounded-lg border border-stone-800">
@@ -174,28 +186,36 @@ export function MonstersPage() {
                         {expandedMonsterId === m.id ? 'Hide' : 'View'}
                       </button>
                       {m.is_homebrew && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/campaigns/${campaignId}/monsters/${m.id}/edit`)}
-                            className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            disabled={deleteMonsterMutation.isPending}
-                            onClick={() => {
-                              if (confirm(`Delete ${m.name}? This cannot be undone.`)) {
-                                deleteMonsterMutation.mutate(m.id);
-                              }
-                            }}
-                            className="text-red-400 hover:text-red-300 text-xs px-1"
-                            aria-label={`Delete ${m.name}`}
-                          >
-                            Delete
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/campaigns/${campaignId}/monsters/${m.id}/edit`)}
+                          className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={duplicateMonsterMutation.isPending}
+                        onClick={() => duplicateMonsterMutation.mutate(m.id)}
+                        className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800 disabled:opacity-50"
+                      >
+                        Duplicate
+                      </button>
+                      {m.is_homebrew && (
+                        <button
+                          type="button"
+                          disabled={deleteMonsterMutation.isPending}
+                          onClick={() => {
+                            if (confirm(`Delete ${m.name}? This cannot be undone.`)) {
+                              deleteMonsterMutation.mutate(m.id);
+                            }
+                          }}
+                          className="text-red-400 hover:text-red-300 text-xs px-1"
+                          aria-label={`Delete ${m.name}`}
+                        >
+                          Delete
+                        </button>
                       )}
                       {(() => {
                         const alreadySpawned =
