@@ -545,6 +545,7 @@ export interface CampaignAsset {
   file_size_bytes: number;
   title: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Note {

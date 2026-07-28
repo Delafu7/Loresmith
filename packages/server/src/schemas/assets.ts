@@ -13,3 +13,11 @@ export const createAssetFieldsSchema = z.object({
   title: z.string().min(1).max(200).optional(),
 });
 export type CreateAssetFieldsInput = z.infer<typeof createAssetFieldsSchema>;
+
+// PATCH /assets/:id — plain JSON body (not multipart), so no z.coerce needed.
+// title is required (not .optional()): this is a single-field rename
+// endpoint, so there's no meaningful "partial" update to make.
+export const updateAssetSchema = z.object({
+  title: z.string().min(1).max(200),
+});
+export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;

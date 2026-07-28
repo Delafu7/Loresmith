@@ -21,6 +21,7 @@ interface AssetRow {
   file_size_bytes: number;
   title: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export async function listAssets(pool: Pool, campaignId: string, _role: CampaignRole): Promise<AssetRow[]> {
@@ -116,6 +117,22 @@ async function fetchAssetOrThrow(pool: Pool, assetId: string): Promise<AssetRow>
   const row = result.rows[0];
   if (!row) throw notFound('Asset');
   return row;
+}
+
+export async function updateAssetTitle(pool: Pool, actorId: string, assetId: string, title: string): Promise<AssetRow> {
+  const asset = await fetchAssetOrThrow(pool, assetId);
+  const role = await requireMembership(pool, asset.campaign_id, actorId);
+  // Same rule as deleteAsset: DM of the owning campaign, OR the original
+  // uploader, may rename.
+  if (role !== 'dm' && asset.uploaded_by_user_id !== actorId) {
+    throw new AppError('FORBIDDEN_NOT_OWNER', 'Only the DM or the original uploader can rename this asset');
+  }
+
+  const result = await pool.query<AssetRow>(
+    `UPDATE campaign_assets SET title = $1, updated_at = now() WHERE id = $2 RETURNING *`,
+    [title, assetId],
+  );
+  return result.rows[0]!;
 }
 
 export async function deleteAsset(pool: Pool, actorId: string, assetId: string): Promise<void> {

@@ -67,6 +67,7 @@ export function CampaignShell() {
             <NavItem to="maps">Maps</NavItem>
             <NavItem to="notes">Notes</NavItem>
             <NavItem to="dice-rolls">Dice Rolls</NavItem>
+            <NavItem to="assets">Assets</NavItem>
             {isDm && <NavItem to="catalog">Catalog</NavItem>}
           </NavItemList>
           <div className="mt-auto flex flex-col gap-3 max-md:flex-row max-md:flex-wrap max-md:items-center">

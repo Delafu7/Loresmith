@@ -5,7 +5,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember } from '../middleware/campaign.js';
 import { handleAssetUpload } from '../middleware/upload.js';
 import { AppError } from '../middleware/errors.js';
-import { createAssetFieldsSchema } from '../schemas/assets.js';
+import { createAssetFieldsSchema, updateAssetSchema } from '../schemas/assets.js';
 import * as assetsService from '../services/assets.js';
 
 function cleanupRejectedUpload(filePath: string): void {
@@ -57,6 +57,12 @@ campaignAssetsRouter.post('/', handleAssetUpload, async (req, res) => {
 // the asset's own row), same pattern as routes/effects.ts's flat DELETE /:id.
 export const assetsRouter = Router();
 assetsRouter.use(requireAuth);
+
+assetsRouter.patch('/:id', async (req, res) => {
+  const { title } = updateAssetSchema.parse(req.body);
+  const asset = await assetsService.updateAssetTitle(pool, req.user!.id, (req.params.id as string), title);
+  res.json({ asset });
+});
 
 assetsRouter.delete('/:id', async (req, res) => {
   await assetsService.deleteAsset(pool, req.user!.id, (req.params.id as string));
