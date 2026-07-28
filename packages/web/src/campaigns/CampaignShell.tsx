@@ -64,6 +64,10 @@ export function CampaignShell() {
             <NavItem to="characters">Characters</NavItem>
             {isDm && <NavItem to="monsters">Bestiary</NavItem>}
             <NavItem to="session">Session</NavItem>
+            {/* "Session Log" — the DM's per-session recap (SessionLogPage), NOT
+                the live combat view above. Not DM-gated: any member can read the
+                recap log; only the write actions inside the page are DM-only. */}
+            <NavItem to="session-log">Session Log</NavItem>
             <NavItem to="maps">Maps</NavItem>
             <NavItem to="notes">Notes</NavItem>
             <NavItem to="dice-rolls">Dice Rolls</NavItem>

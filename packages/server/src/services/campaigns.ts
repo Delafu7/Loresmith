@@ -189,6 +189,7 @@ export async function updateSessionLog(pool: Pool, campaignId: string, sessionId
 
   if (sets.length === 0) return getSessionLog(pool, campaignId, sessionId);
 
+  sets.push('updated_at = now()');
   values.push(sessionId, campaignId);
   try {
     const result = await pool.query(

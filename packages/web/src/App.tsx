@@ -17,6 +17,7 @@ import { CreatureEditorPage } from './monsters/CreatureEditorPage';
 import { EncountersPage } from './encounters/EncountersPage';
 import { MapsPage } from './encounters/MapsPage';
 import { NotesPage } from './notes/NotesPage';
+import { SessionLogPage } from './sessions/SessionLogPage';
 import { DiceRollHistoryPage } from './dice/DiceRollHistoryPage';
 import { BestiaryLayout } from './bestiary/BestiaryLayout';
 import { BestiaryBasicPage } from './bestiary/BestiaryBasicPage';
@@ -132,6 +133,10 @@ function App() {
                     is the live-session view; it becomes battle mode automatically
                     once an encounter goes active (see EncountersPage/BattleMode). */}
                 <Route path="session" element={<EncountersPage />} />
+                {/* "session-log" — the DM's per-session recap (number, title, date
+                    played, recap text). Distinct from "session" above (the live
+                    combat view); see CampaignShell.tsx's nav item comment. */}
+                <Route path="session-log" element={<SessionLogPage />} />
                 <Route path="maps" element={<MapsPage />} />
                 <Route path="notes" element={<NotesPage />} />
                 <Route path="dice-rolls" element={<DiceRollHistoryPage />} />

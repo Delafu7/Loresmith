@@ -561,6 +561,19 @@ export interface Note {
   updated_at: string;
 }
 
+// Session log (game-night recap, routes/campaigns.ts's /:id/sessions —
+// distinct from the LIVE combat "Session" nav item/EncountersPage).
+export interface SessionLog {
+  id: string;
+  campaign_id: string;
+  session_number: number;
+  title: string | null;
+  played_at: string | null;
+  recap: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // GET /me/dashboard (Phase 3.6) — the campaign_name join field only exists
 // on this aggregate endpoint's rows, not on the plain Character/Note shapes
 // above (which come from campaign-scoped endpoints that don't need it).
