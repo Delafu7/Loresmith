@@ -219,6 +219,22 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'description', label: 'Description', type: 'textarea' },
     ],
   },
+  {
+    segment: 'effect-definitions',
+    label: 'Effect definition',
+    pluralLabel: 'Effect definitions',
+    listResponseKey: 'effectDefinitions',
+    hasEdition: false,
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      { key: 'description', label: 'Description', type: 'textarea' },
+      { key: 'defaultDurationType', label: 'Default duration type', type: 'select', required: true, options: ['rounds', 'minutes', 'hours', 'until_save', 'until_removed', 'permanent', 'special'] },
+      { key: 'defaultDurationValue', label: 'Default duration value', type: 'number' },
+      { key: 'concentration', label: 'Concentration', type: 'boolean' },
+      { key: 'stackingRule', label: 'Stacking rule', type: 'select', required: true, options: ['none', 'stack', 'refresh'] },
+      { key: 'conditionId', label: 'Condition (id)', type: 'text', helpText: 'Raw condition catalog id — no selector UI for this yet.' },
+    ],
+  },
 ];
 
 export function catalogEntityBySegment(segment: string): CatalogEntityConfig | undefined {

@@ -1,6 +1,7 @@
 // Mounted at /campaigns/:id/catalog — write access (create/update/delete/
-// duplicate) for the 11 catalog tables covered by the catalog-homebrew-
-// scope migration. One sub-router per entity, generated from a small config
+// duplicate) for the 12 catalog tables plugged into the generic homebrew
+// system (the 11 covered by the catalog-homebrew-scope migration, plus
+// effect_definitions). One sub-router per entity, generated from a small config
 // list rather than hand-written 11 times, since the actual route shape is
 // identical across all of them (see services/catalogHomebrew.ts for why the
 // service layer is generic too). Read access is unchanged — the existing
@@ -32,6 +33,9 @@ const ENTITIES: Array<{ urlSegment: string; table: HomebrewCatalogTable; keyColu
   { urlSegment: 'alignments', table: 'alignments', keyColumn: 'index_key' },
   { urlSegment: 'languages', table: 'languages', keyColumn: 'index_key' },
   { urlSegment: 'damage-types', table: 'damage_types', keyColumn: 'index_key' },
+  // No slug/index_key column on effect_definitions, so no suffix to append —
+  // see services/catalogHomebrew.ts's keyColumn: null handling.
+  { urlSegment: 'effect-definitions', table: 'effect_definitions', keyColumn: null },
 ];
 
 // zod schemas are camelCase (schemas/catalogHomebrew.ts); every table column

@@ -17,7 +17,10 @@ export interface CatalogTableConfig {
   table: string;
   // The column holding the human-editable "slug" — `slug` for items/spells,
   // `index_key` for everything else (PLAN.md §3.2's SRD-derived naming).
-  keyColumn: 'slug' | 'index_key';
+  // `null` for tables with no such column and no matching UNIQUE constraint
+  // at all (e.g. effect_definitions) — the suffix-append below exists only
+  // to dodge that constraint, so it's simply skipped when there isn't one.
+  keyColumn: 'slug' | 'index_key' | null;
 }
 
 function randomSuffix(): string {
@@ -43,11 +46,14 @@ export async function createHomebrewCatalogRow(
   const role = await requireMembership(pool, campaignId, actorId);
   requireDm(role);
 
-  const keyValue = values[config.keyColumn];
-  if (typeof keyValue !== 'string' || keyValue.length === 0) {
-    throw new AppError('VALIDATION_ERROR', `${config.keyColumn} is required`);
+  let scopedValues = values;
+  if (config.keyColumn !== null) {
+    const keyValue = values[config.keyColumn];
+    if (typeof keyValue !== 'string' || keyValue.length === 0) {
+      throw new AppError('VALIDATION_ERROR', `${config.keyColumn} is required`);
+    }
+    scopedValues = { ...values, [config.keyColumn]: `${keyValue}-${randomSuffix()}` };
   }
-  const scopedValues = { ...values, [config.keyColumn]: `${keyValue}-${randomSuffix()}` };
 
   const columns = Object.keys(scopedValues);
   const placeholders = columns.map((_, i) => `$${i + 1}`);
@@ -147,7 +153,11 @@ export async function duplicateCatalogRow(
   for (const [col, val] of Object.entries(source)) {
     if (!omit.has(col) && !col.endsWith('_legacy')) values[col] = val;
   }
-  values[config.keyColumn] = `${String(source[config.keyColumn])}-copy`;
+  // No key column to re-suffix (e.g. effect_definitions) — copy every field
+  // verbatim; createHomebrewCatalogRow won't append anything either.
+  if (config.keyColumn !== null) {
+    values[config.keyColumn] = `${String(source[config.keyColumn])}-copy`;
+  }
 
   return createHomebrewCatalogRow(pool, actorId, campaignId, config, values);
 }

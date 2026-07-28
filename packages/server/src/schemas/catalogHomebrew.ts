@@ -1,7 +1,8 @@
-// Write shapes for the 11 catalog tables covered by the catalog-homebrew-
-// scope migration. Mirrors each table's actual columns (see that migration
-// + the original CREATE TABLE migrations) — every field here maps 1:1 to a
-// snake_case column via services/catalog.ts's route layer. No field here
+// Write shapes for the 12 catalog tables plugged into the generic homebrew
+// system (the 11 from the catalog-homebrew-scope migration, plus
+// effect_definitions). Mirrors each table's actual columns (see that
+// migration + the original CREATE TABLE migrations) — every field here maps
+// 1:1 to a snake_case column via services/catalog.ts's route layer. No field here
 // carries a Zod `.default()`, matching schemas/monsterCatalog.ts's own
 // precedent, so the `.partial()`-derived update schema can be built
 // directly from the same shape without a default silently reappearing on
@@ -127,6 +128,19 @@ export const damageTypeHomebrewShape = {
   description: z.string().max(2000).optional().nullable(),
 };
 
+// effect_definitions has no slug/index_key column and no matching UNIQUE
+// constraint (see the create-effect-definitions migration) — its
+// CatalogTableConfig uses keyColumn: null (routes/catalogHomebrew.ts).
+export const effectDefinitionHomebrewShape = {
+  conditionId: z.string().uuid().optional().nullable(),
+  name: z.string().min(1).max(200),
+  description: z.string().max(5000).optional().nullable(),
+  defaultDurationType: z.enum(['rounds', 'minutes', 'hours', 'until_save', 'until_removed', 'permanent', 'special']),
+  defaultDurationValue: z.number().int().optional().nullable(),
+  concentration: z.boolean(),
+  stackingRule: z.enum(['none', 'stack', 'refresh']),
+};
+
 const shapes = {
   items: itemHomebrewShape,
   spells: spellHomebrewShape,
@@ -139,6 +153,7 @@ const shapes = {
   alignments: alignmentHomebrewShape,
   languages: languageHomebrewShape,
   damage_types: damageTypeHomebrewShape,
+  effect_definitions: effectDefinitionHomebrewShape,
 } as const;
 
 export type HomebrewCatalogTable = keyof typeof shapes;
