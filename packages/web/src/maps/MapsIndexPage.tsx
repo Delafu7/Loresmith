@@ -11,8 +11,10 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Campaign, Encounter } from '../lib/types';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 
 export function MapsIndexPage() {
+  const { t } = useLocale();
   const campaignsQuery = useQuery({
     queryKey: ['campaigns'],
     queryFn: () => api.get<{ campaigns: Campaign[] }>('/campaigns'),
@@ -31,14 +33,14 @@ export function MapsIndexPage() {
     <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] flex items-center gap-4 sm:px-6">
         <Link to="/home" className="text-xs text-stone-500 hover:text-stone-300">
-          ← Home
+          {t('nav.home')}
         </Link>
-        <h1 className="font-display text-xl font-medium">Maps</h1>
+        <h1 className="font-display text-xl font-medium">{t('nav.maps')}</h1>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6 sm:py-8">
         {campaignsQuery.isLoading && <Loading />}
         {campaignsQuery.isError && <ErrorBanner message={errorMessage(campaignsQuery.error)} />}
-        {campaigns.length === 0 && !campaignsQuery.isLoading && <EmptyState message="You're not in any campaigns yet." />}
+        {campaigns.length === 0 && !campaignsQuery.isLoading && <EmptyState message={t('dashboard.noCampaigns')} />}
 
         {campaigns.map((c, i) => {
           const eq = encounterQueries[i];
@@ -56,7 +58,9 @@ export function MapsIndexPage() {
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-stone-100">{enc.name}</span>
-                        <span className="text-xs uppercase tracking-wide text-stone-500">{enc.status}</span>
+                        <span className="text-xs uppercase tracking-wide text-stone-500">
+                          {t(`encounters.status.${enc.status}`)}
+                        </span>
                       </div>
                     </Link>
                   </li>

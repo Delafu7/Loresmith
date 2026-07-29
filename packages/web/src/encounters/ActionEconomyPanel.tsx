@@ -6,6 +6,8 @@ import { DiceRoller } from '../components/DiceRoller';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
 import { ACTION_REGISTRY, highJumpDistanceFt, jumpDistanceFt, standUpCostFt, type ActionSlot } from './actionEconomy';
 import type { ShoveResult, SnapshotParticipant } from '../lib/types';
+import { useLocale } from '../i18n/LocaleContext';
+import { actionDescription, actionLabel } from './actionLabels';
 
 type AbilityScores = Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>;
 
@@ -42,6 +44,7 @@ export function ActionEconomyPanel({
    * NPC targets (monsterInstanceId set) are the only valid choices. */
   otherParticipants: SnapshotParticipant[];
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const [running, setRunning] = useState(true);
   const [moveFeet, setMoveFeet] = useState('');
@@ -114,33 +117,33 @@ export function ActionEconomyPanel({
   return (
     <div className="mt-2 pt-2 border-t border-stone-800 space-y-2">
       <div className="flex flex-wrap items-center gap-1.5">
-        <EconomyPip label="Action" used={participant.actionUsed} />
-        <EconomyPip label="Bonus Action" used={participant.bonusActionUsed} />
-        <EconomyPip label="Reaction" used={participant.reactionUsed} />
-        <EconomyPip label="Object" used={participant.objectInteractionUsed} />
+        <EconomyPip label={t('encounters.actionEconomy.action')} used={participant.actionUsed} />
+        <EconomyPip label={t('encounters.actionEconomy.bonusAction')} used={participant.bonusActionUsed} />
+        <EconomyPip label={t('encounters.actionEconomy.reaction')} used={participant.reactionUsed} />
+        <EconomyPip label={t('encounters.actionEconomy.object')} used={participant.objectInteractionUsed} />
         <span className="text-[10px] uppercase text-stone-500 border border-stone-800 rounded px-1.5 py-0.5">
-          Movement {movementRemaining}/{movementBudget} ft
+          {t('encounters.actionEconomy.movement', { remaining: movementRemaining, budget: movementBudget })}
         </span>
         <button
           type="button"
-          title="Undo the last action-economy spend for this participant"
+          title={t('encounters.actionEconomy.undoTitle')}
           disabled={undoMutation.isPending}
           onClick={() => undoMutation.mutate()}
           className="text-[10px] uppercase text-stone-500 hover:text-amber-400 border border-stone-800 hover:border-amber-700 rounded px-1.5 py-0.5 disabled:opacity-40"
         >
-          ↺ Undo last
+          {t('encounters.actionEconomy.undoLast')}
         </button>
       </div>
 
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          title="Interact with one object for free (drawing a weapon, opening a door, ...) — a second interaction this turn costs an action (Use an Object)"
+          title={t('encounters.actionEconomy.freeObjectInteractionTitle')}
           disabled={participant.objectInteractionUsed || spendMutation.isPending}
           onClick={() => spendMutation.mutate({ spend: 'object_interaction' })}
           className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs px-2 py-1"
         >
-          Free object interaction
+          {t('encounters.actionEconomy.freeObjectInteraction')}
         </button>
       </div>
 
@@ -158,12 +161,12 @@ export function ActionEconomyPanel({
             <div key={action.key} className="flex items-center gap-1.5">
               <button
                 type="button"
-                title={action.description}
+                title={actionDescription(t, action.key)}
                 disabled={used || spendMutation.isPending}
                 onClick={() => spendMutation.mutate({ spend: action.slot, dash: action.isDash })}
                 className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs px-2 py-1"
               >
-                {action.label}
+                {actionLabel(t, action.key)}
               </button>
               {action.rollTrigger && abilityScores && (
                 <DiceRoller
@@ -182,20 +185,20 @@ export function ActionEconomyPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
-        <span className="text-stone-500">Move:</span>
+        <span className="text-stone-500">{t('encounters.actionEconomy.moveLabel')}</span>
         <input
           type="number"
           min={1}
           value={moveFeet}
           onChange={(e) => setMoveFeet(e.target.value)}
-          placeholder="ft"
+          placeholder={t('encounters.actionEconomy.feetPlaceholder')}
           className="w-16 rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
         />
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={difficultTerrain} onChange={(e) => setDifficultTerrain(e.target.checked)} />
-          Difficult terrain (x2)
+          {t('encounters.actionEconomy.difficultTerrain')}
         </label>
-        {moveCost !== null && <span>= {moveCost} ft</span>}
+        {moveCost !== null && <span>{t('encounters.actionEconomy.moveCostEquals', { cost: moveCost })}</span>}
         <button
           type="button"
           disabled={moveDisabled}
@@ -207,14 +210,14 @@ export function ActionEconomyPanel({
           }}
           className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 px-2 py-1"
         >
-          Spend movement
+          {t('encounters.actionEconomy.spendMovement')}
         </button>
       </div>
 
       {proneEffect && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
-          <span className="text-stone-500">Prone:</span>
-          <span>Standing up costs {standUpCost} ft</span>
+          <span className="text-stone-500">{t('encounters.actionEconomy.proneLabel')}</span>
+          <span>{t('encounters.actionEconomy.standUpCost', { cost: standUpCost })}</span>
           <button
             type="button"
             disabled={standUpCost > movementRemaining || spendMutation.isPending || removeEffectMutation.isPending}
@@ -224,7 +227,7 @@ export function ActionEconomyPanel({
             }}
             className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 px-2 py-1"
           >
-            Stand up
+            {t('encounters.actionEconomy.standUp')}
           </button>
         </div>
       )}
@@ -232,16 +235,16 @@ export function ActionEconomyPanel({
       {participant.characterId !== null && shoveTargets.length > 0 && (
         <div className="flex flex-col gap-1.5 text-xs text-stone-400 border-t border-stone-800 pt-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-stone-500">Shove NPC:</span>
+            <span className="text-stone-500">{t('encounters.actionEconomy.shoveNpc')}</span>
             <select
               value={shoveTargetId}
               onChange={(e) => setShoveTargetId(e.target.value)}
               className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
             >
-              <option value="">Select target…</option>
-              {shoveTargets.map((t) => (
-                <option key={t.participantId} value={t.participantId}>
-                  {t.name}
+              <option value="">{t('encounters.actionEconomy.selectTarget')}</option>
+              {shoveTargets.map((target) => (
+                <option key={target.participantId} value={target.participantId}>
+                  {target.name}
                 </option>
               ))}
             </select>
@@ -250,26 +253,26 @@ export function ActionEconomyPanel({
               onChange={(e) => setDefenderSkill(e.target.value as 'athletics' | 'acrobatics')}
               className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
             >
-              <option value="athletics">Defends: Athletics</option>
-              <option value="acrobatics">Defends: Acrobatics</option>
+              <option value="athletics">{t('encounters.actionEconomy.defendsAthletics')}</option>
+              <option value="acrobatics">{t('encounters.actionEconomy.defendsAcrobatics')}</option>
             </select>
             <select
               value={desiredEffect}
               onChange={(e) => setDesiredEffect(e.target.value as 'push_5ft' | 'knock_prone')}
               className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
             >
-              <option value="push_5ft">Push 5 ft</option>
-              <option value="knock_prone">Knock prone</option>
+              <option value="push_5ft">{t('encounters.actionEconomy.push5ft')}</option>
+              <option value="knock_prone">{t('encounters.actionEconomy.knockProne')}</option>
             </select>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1">
-              DM override (NPC total):
+              {t('encounters.actionEconomy.dmOverride')}
               <input
                 type="number"
                 value={defenderOverride}
                 onChange={(e) => setDefenderOverride(e.target.value)}
-                placeholder="auto-roll"
+                placeholder={t('encounters.actionEconomy.autoRoll')}
                 className="w-20 rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
               />
             </label>
@@ -288,18 +291,18 @@ export function ActionEconomyPanel({
               }}
               className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 px-2 py-1"
             >
-              Shove
+              {t('encounters.actionEconomy.shove')}
             </button>
           </div>
           {shoveMutation.data && (
             <div className={`rounded-md border px-2 py-1 ${shoveMutation.data.success ? 'border-green-800 text-green-400' : 'border-red-800 text-red-400'}`}>
               <div>{shoveMutation.data.message}</div>
               <div className="text-stone-500">
-                Attacker rolled {shoveMutation.data.attackerRoll.result_total}
-                {' vs '}
+                {t('encounters.actionEconomy.attackerRolled', { roll: shoveMutation.data.attackerRoll.result_total })}
+                {t('encounters.actionEconomy.vsSeparator')}
                 {shoveMutation.data.defenderOverridden
-                  ? `DM-set ${shoveMutation.data.defenderTotal}`
-                  : `defender rolled ${shoveMutation.data.defenderTotal}`}
+                  ? t('encounters.actionEconomy.dmSetTotal', { total: shoveMutation.data.defenderTotal })
+                  : t('encounters.actionEconomy.defenderRolled', { total: shoveMutation.data.defenderTotal })}
               </div>
             </div>
           )}
@@ -307,18 +310,18 @@ export function ActionEconomyPanel({
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
-        <span className="text-stone-500">Jump:</span>
+        <span className="text-stone-500">{t('encounters.actionEconomy.jumpLabel')}</span>
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={running} onChange={(e) => setRunning(e.target.checked)} />
-          Running start
+          {t('encounters.actionEconomy.runningStart')}
         </label>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400 pl-2">
-        <span className="text-stone-500">Long jump:</span>
-        {longJumpDistance !== null && <span>{longJumpDistance} ft</span>}
+        <span className="text-stone-500">{t('encounters.actionEconomy.longJump')}</span>
+        {longJumpDistance !== null && <span>{t('encounters.actionEconomy.feet', { distance: longJumpDistance })}</span>}
         {longJumpDistance !== null && !longJumpFeasible && (
-          <span className="text-red-500">not enough movement</span>
+          <span className="text-red-500">{t('encounters.actionEconomy.notEnoughMovement')}</span>
         )}
         <button
           type="button"
@@ -326,15 +329,15 @@ export function ActionEconomyPanel({
           onClick={() => longJumpDistance !== null && spendMutation.mutate({ addMovementFt: longJumpDistance })}
           className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 px-2 py-1"
         >
-          Use movement to jump
+          {t('encounters.actionEconomy.useMovementToJump')}
         </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400 pl-2">
-        <span className="text-stone-500">High jump:</span>
-        {highJumpDistance !== null && <span>{highJumpDistance} ft</span>}
+        <span className="text-stone-500">{t('encounters.actionEconomy.highJump')}</span>
+        {highJumpDistance !== null && <span>{t('encounters.actionEconomy.feet', { distance: highJumpDistance })}</span>}
         {highJumpDistance !== null && !highJumpFeasible && (
-          <span className="text-red-500">not enough movement</span>
+          <span className="text-red-500">{t('encounters.actionEconomy.notEnoughMovement')}</span>
         )}
         <button
           type="button"
@@ -342,7 +345,7 @@ export function ActionEconomyPanel({
           onClick={() => highJumpDistance !== null && spendMutation.mutate({ addMovementFt: highJumpDistance })}
           className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 px-2 py-1"
         >
-          Use movement to jump
+          {t('encounters.actionEconomy.useMovementToJump')}
         </button>
       </div>
 

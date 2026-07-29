@@ -10,11 +10,13 @@ import { api } from '../lib/api';
 import type { Encounter } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 
 const STATUS_ORDER: Record<Encounter['status'], number> = { active: 0, paused: 1, preparing: 2, completed: 3 };
 
 export function MapsPage() {
   const { campaignId } = useCampaignShell();
+  const { t } = useLocale();
 
   const encountersQuery = useQuery({
     queryKey: ['encounters', campaignId],
@@ -28,11 +30,11 @@ export function MapsPage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
-      <h2 className="text-lg font-semibold mb-3">Maps</h2>
+      <h2 className="text-lg font-semibold mb-3">{t('nav.maps')}</h2>
 
       {encountersQuery.isLoading && <Loading />}
       {encountersQuery.isError && <ErrorBanner message={errorMessage(encountersQuery.error)} />}
-      {sorted.length === 0 && !encountersQuery.isLoading && <EmptyState message="No encounters yet." />}
+      {sorted.length === 0 && !encountersQuery.isLoading && <EmptyState message={t('encounters.page.noEncountersYet')} />}
 
       <ul className="space-y-2">
         {sorted.map((enc) => (
@@ -52,9 +54,10 @@ export function MapsPage() {
 }
 
 function StatusBadge({ status }: { status: Encounter['status'] }) {
+  const { t } = useLocale();
   return (
     <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-stone-800 text-stone-400 flex-shrink-0">
-      {status}
+      {t(`encounters.status.${status}`)}
     </span>
   );
 }

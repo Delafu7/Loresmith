@@ -20,7 +20,9 @@ import { EmptyState, ErrorBanner, errorMessage } from '../components/Feedback';
 import { DiceRoller } from '../components/DiceRoller';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { TurnTorch } from '../components/TurnTorch';
+import { useLocale } from '../i18n/LocaleContext';
 import { EconomyPip } from './ActionEconomyPanel';
+import { actionDescription, actionLabel } from './actionLabels';
 import { ACTION_REGISTRY, type ActionSlot } from './actionEconomy';
 import { ActionButton } from './CombatTracker';
 
@@ -41,10 +43,11 @@ export function BattleModePlayerPanel({
   showDiceRoller,
   setShowDiceRoller,
 }: BattleModePlayerPanelProps) {
+  const { t } = useLocale();
   const participant = live.participants.find((p) => p.characterId != null && myCharacterIds.has(p.characterId));
 
   if (!participant) {
-    return <EmptyState message="You don't have a character in this encounter yet — nothing to show until the DM adds you." />;
+    return <EmptyState message={t('encounters.tracker.noCharacterYet')} />;
   }
 
   return (
@@ -77,6 +80,7 @@ function PlayerPanelBody({
   showDiceRoller: boolean;
   setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
 }) {
+  const { t } = useLocale();
   const { campaign } = useCampaignShell();
   const queryClient = useQueryClient();
 
@@ -112,18 +116,18 @@ function PlayerPanelBody({
         <div className="mt-2">
           <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} />
         </div>
-        <p className="text-xs text-stone-500 mt-1" title="Armor Class">
+        <p className="text-xs text-stone-500 mt-1" title={t('encounters.tracker.armorClass')}>
           AC {participant.armorClass}
         </p>
       </div>
 
       <div className="rounded-md bg-stone-900 shadow-sm p-3 space-y-2">
-        <h3 className="text-xs uppercase text-stone-500">Actions</h3>
-        {!isMyTurn && <p className="text-xs text-stone-500 italic">Not your turn — actions are disabled until it is.</p>}
+        <h3 className="text-xs uppercase text-stone-500">{t('encounters.playerPanel.actionsTitle')}</h3>
+        {!isMyTurn && <p className="text-xs text-stone-500 italic">{t('encounters.playerPanel.notYourTurnHint')}</p>}
         <div className="flex flex-wrap items-center gap-1.5">
-          <EconomyPip label="Action" used={participant.actionUsed} />
-          <EconomyPip label="Bonus Action" used={participant.bonusActionUsed} />
-          <EconomyPip label="Reaction" used={participant.reactionUsed} />
+          <EconomyPip label={t('encounters.actionEconomy.action')} used={participant.actionUsed} />
+          <EconomyPip label={t('encounters.actionEconomy.bonusAction')} used={participant.bonusActionUsed} />
+          <EconomyPip label={t('encounters.actionEconomy.reaction')} used={participant.reactionUsed} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {ACTION_REGISTRY.map((action) => {
@@ -138,12 +142,12 @@ function PlayerPanelBody({
               <div key={action.key} className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  title={!isMyTurn ? 'Not your turn' : action.description}
+                  title={!isMyTurn ? t('encounters.actionEconomy.notYourTurn') : actionDescription(t, action.key)}
                   disabled={used || !isMyTurn || spendMutation.isPending}
                   onClick={() => spendMutation.mutate({ spend: action.slot, dash: action.isDash })}
                   className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs px-2 py-1"
                 >
-                  {action.label}
+                  {actionLabel(t, action.key)}
                 </button>
                 {action.rollTrigger && abilityScores && (
                   <DiceRoller
@@ -163,20 +167,20 @@ function PlayerPanelBody({
       </div>
 
       <div className="rounded-md bg-stone-900 shadow-sm p-3 space-y-2">
-        <h3 className="text-xs uppercase text-stone-500">Inventory</h3>
-        {itemsQuery.isLoading && <p className="text-xs text-stone-500 italic">Loading…</p>}
+        <h3 className="text-xs uppercase text-stone-500">{t('encounters.playerPanel.inventoryTitle')}</h3>
+        {itemsQuery.isLoading && <p className="text-xs text-stone-500 italic">{t('common.loading')}</p>}
         {itemsQuery.isError && <ErrorBanner message={errorMessage(itemsQuery.error)} />}
-        {itemsQuery.data && itemsQuery.data.items.length === 0 && <EmptyState message="No items." />}
+        {itemsQuery.data && itemsQuery.data.items.length === 0 && <EmptyState message={t('encounters.playerPanel.noItems')} />}
         <ul className="space-y-1">
           {itemsQuery.data?.items.map((item) => (
             <li key={item.id} className="flex items-center justify-between gap-2 text-xs text-stone-300">
               <span className="truncate">
-                {item.custom_name || catalogNameById.get(item.item_id) || `Item #${item.item_id}`}
+                {item.custom_name || catalogNameById.get(item.item_id) || t('encounters.tracker.itemFallback', { id: item.item_id })}
                 {item.quantity > 1 && <span className="text-stone-500"> ×{item.quantity}</span>}
               </span>
               {item.is_equipped && (
                 <span className="text-[10px] uppercase font-semibold text-amber-500 border border-amber-700 rounded px-1 flex-shrink-0">
-                  Equipped
+                  {t('encounters.playerPanel.equipped')}
                 </span>
               )}
             </li>
@@ -186,7 +190,7 @@ function PlayerPanelBody({
 
       <div className="flex gap-2">
         <ActionButton onClick={() => setShowDiceRoller((s) => !s)} variant={showDiceRoller ? 'primary' : 'secondary'}>
-          {showDiceRoller ? 'Hide dice' : 'Roll dice'}
+          {showDiceRoller ? t('encounters.tracker.hideDice') : t('encounters.tracker.rollDice')}
         </ActionButton>
       </div>
       {showDiceRoller && <QuickDiceRoller encounterId={encounterId} characterId={participant.characterId ?? undefined} />}

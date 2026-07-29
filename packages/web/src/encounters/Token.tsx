@@ -16,6 +16,7 @@ import { useRef, useState } from 'react';
 import { Portrait, type PortraitSize } from '../components/Portrait';
 import type { ParticipantHp, SnapshotParticipant } from '../lib/types';
 import { footprintCellsFor } from './creatureSize';
+import { useLocale } from '../i18n/LocaleContext';
 
 function portraitSizeFor(spanPx: number): PortraitSize {
   if (spanPx <= 36) return 'sm';
@@ -57,13 +58,14 @@ function bandForExact(current: number, max: number): keyof typeof HP_BAR_COLOR {
 }
 
 function TokenHpIndicator({ hp }: { hp: ParticipantHp }) {
+  const { t } = useLocale();
   const pct = hp.hpMax > 0 ? Math.max(0, Math.min(100, (hp.hpCurrent / hp.hpMax) * 100)) : 0;
   const band = bandForExact(hp.hpCurrent, hp.hpMax);
   return (
     <div
       className="absolute -bottom-1 left-1/2 -translate-x-1/2 h-1.5 w-[85%] rounded-full bg-stone-900 overflow-hidden"
       role="progressbar"
-      aria-label="HP"
+      aria-label={t('encounters.battleMap.hp')}
       aria-valuenow={hp.hpCurrent}
       aria-valuemin={0}
       aria-valuemax={hp.hpMax}

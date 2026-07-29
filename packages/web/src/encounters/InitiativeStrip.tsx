@@ -10,6 +10,7 @@
 import { useEffect, useRef } from 'react';
 import type { SnapshotParticipant } from '../lib/types';
 import { TurnTorch } from '../components/TurnTorch';
+import { useLocale } from '../i18n/LocaleContext';
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -24,6 +25,7 @@ export function InitiativeStrip({
   participants: SnapshotParticipant[];
   activeParticipantId: string | null;
 }) {
+  const { t } = useLocale();
   const activeRef = useRef<HTMLLIElement>(null);
 
   // "Always visible without scrolling" — auto-scroll the active chip into
@@ -36,7 +38,7 @@ export function InitiativeStrip({
   if (participants.length === 0) return null;
 
   return (
-    <ol className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" aria-label="Turn order">
+    <ol className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" aria-label={t('encounters.initiativeStrip.turnOrder')}>
       {participants.map((p) => {
         const isActive = p.participantId === activeParticipantId;
         return (

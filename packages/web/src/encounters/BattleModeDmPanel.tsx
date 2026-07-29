@@ -13,6 +13,7 @@ import { HPBar } from '../components/HPBar';
 import { EmptyState } from '../components/Feedback';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { TurnTorch } from '../components/TurnTorch';
+import { useLocale } from '../i18n/LocaleContext';
 import {
   ActionButton,
   AddParticipantForm,
@@ -66,16 +67,17 @@ export function BattleModeDmPanel({
   availableCharacters,
   availableMonsterInstances,
 }: BattleModeDmPanelProps) {
+  const { t } = useLocale();
   const activeParticipant = live.participants.find((p) => p.participantId === live.activeParticipantId);
 
   return (
     <div className="space-y-4">
       <div className="rounded-md bg-stone-900 shadow-sm p-3">
-        <p className="text-xs uppercase text-stone-500">Round {live.encounter.currentRound}</p>
+        <p className="text-xs uppercase text-stone-500">{t('encounters.tracker.round', { round: live.encounter.currentRound })}</p>
         <div className="flex items-center gap-1.5 mt-1">
           <TurnTorch size={18} className="text-amber-500 flex-shrink-0" />
           <span className="font-semibold text-stone-100 truncate">
-            {activeParticipant ? activeParticipant.name : 'Waiting for initiative…'}
+            {activeParticipant ? activeParticipant.name : t('encounters.tracker.waitingForInitiative')}
           </span>
         </div>
       </div>
@@ -96,7 +98,7 @@ export function BattleModeDmPanel({
                   <span className="font-medium text-stone-100 truncate">{p.name}</span>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <span className="text-stone-500 border border-stone-700 rounded px-1" title="Armor Class">
+                  <span className="text-stone-500 border border-stone-700 rounded px-1" title={t('encounters.tracker.armorClass')}>
                     AC {p.armorClass}
                   </span>
                   {p.monsterInstanceId != null && <ParticipantWeaknessReveal monsterInstanceId={p.monsterInstanceId} />}
@@ -104,8 +106,12 @@ export function BattleModeDmPanel({
                     type="button"
                     onClick={() => setExpandedParticipantId((id) => (id === p.participantId ? null : p.participantId))}
                     aria-expanded={expandedParticipantId === p.participantId}
-                    aria-label={expandedParticipantId === p.participantId ? `Hide ${p.name}'s stats` : `View ${p.name}'s stats`}
-                    title="View full stats"
+                    aria-label={
+                      expandedParticipantId === p.participantId
+                        ? t('encounters.tracker.hideStats', { name: p.name })
+                        : t('encounters.tracker.viewStats', { name: p.name })
+                    }
+                    title={t('encounters.tracker.viewFullStats')}
                     className="inline-flex h-6 w-6 items-center justify-center text-stone-400 hover:text-stone-200"
                   >
                     {expandedParticipantId === p.participantId ? '▾' : '▸'}
@@ -128,24 +134,24 @@ export function BattleModeDmPanel({
             </li>
           );
         })}
-        {live.participants.length === 0 && <EmptyState message="No participants in this encounter yet." />}
+        {live.participants.length === 0 && <EmptyState message={t('encounters.tracker.noParticipantsYet')} />}
       </ol>
 
       <div className="flex flex-wrap gap-2">
         <ActionButton onClick={() => rollInitiativeMutation.mutate(false)} pending={rollInitiativeMutation.isPending} variant="secondary">
-          Roll initiative
+          {t('encounters.tracker.rollInitiative')}
         </ActionButton>
         <ActionButton onClick={() => advanceTurnMutation.mutate()} pending={advanceTurnMutation.isPending}>
-          Advance turn
+          {t('encounters.tracker.advanceTurn')}
         </ActionButton>
         <ActionButton onClick={() => endMutation.mutate()} pending={endMutation.isPending} variant="danger">
-          End encounter
+          {t('encounters.tracker.endEncounter')}
         </ActionButton>
       </div>
 
       <div className="flex gap-2 items-center justify-between">
         <ActionButton onClick={() => setShowDiceRoller((s) => !s)} variant={showDiceRoller ? 'primary' : 'secondary'}>
-          {showDiceRoller ? 'Hide dice' : 'Roll dice'}
+          {showDiceRoller ? t('encounters.tracker.hideDice') : t('encounters.tracker.rollDice')}
         </ActionButton>
         <ResetRevealsButton encounterId={encounterId} />
       </div>

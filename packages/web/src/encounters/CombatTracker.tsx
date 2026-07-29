@@ -27,13 +27,14 @@ import { useReveals } from '../lib/useReveal';
 import { StatBlock } from '../components/StatBlock';
 import { AbilityScoreGrid } from '../components/AbilityScoreGrid';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
+import { useLocale } from '../i18n/LocaleContext';
 import { BattleMode } from './BattleMode';
 import { AttackRoller, type AttackTarget, type NormalizedAttack } from './AttackRoller';
 
-const WEAKNESS_FIELDS: Array<{ key: string; label: string }> = [
-  { key: 'damage_vulnerabilities', label: 'Vuln' },
-  { key: 'damage_resistances', label: 'Resist' },
-  { key: 'damage_immunities', label: 'Immune' },
+const WEAKNESS_FIELDS: Array<{ key: string; labelKey: 'vuln' | 'resist' | 'immune' }> = [
+  { key: 'damage_vulnerabilities', labelKey: 'vuln' },
+  { key: 'damage_resistances', labelKey: 'resist' },
+  { key: 'damage_immunities', labelKey: 'immune' },
 ];
 
 // One per monster-instance participant row — the one thing the hide/reveal
@@ -44,17 +45,18 @@ const WEAKNESS_FIELDS: Array<{ key: string; label: string }> = [
 // useReveals is a hook and each row needs its own independent query/mutation
 // state.
 export function ParticipantWeaknessReveal({ monsterInstanceId }: { monsterInstanceId: string }) {
+  const { t } = useLocale();
   const { fieldState, setRevealed, isSaving } = useReveals(monsterInstanceId);
   return (
     <div className="flex items-center gap-1">
-      {WEAKNESS_FIELDS.map(({ key, label }) => {
+      {WEAKNESS_FIELDS.map(({ key, labelKey }) => {
         const revealed = fieldState(key)?.revealed ?? false;
         return (
           <RevealToggle
             key={key}
             revealed={revealed}
             disabled={isSaving}
-            label={label}
+            label={t(`encounters.weakness.${labelKey}`)}
             onToggle={() => void setRevealed(key, !revealed)}
           />
         );
@@ -99,9 +101,10 @@ export function ParticipantStatLookup({
   encounterId?: string;
   allParticipants?: SnapshotParticipant[];
 }) {
+  const { t } = useLocale();
   if (participant.characterId != null) {
     const c = characters?.find((ch) => ch.id === participant.characterId);
-    if (!c) return <p className="text-xs text-stone-500 italic mt-2">Loading…</p>;
+    if (!c) return <p className="text-xs text-stone-500 italic mt-2">{t('common.loading')}</p>;
     return (
       <div className="mt-3 rounded-md border border-stone-800 bg-stone-950 p-3 space-y-3">
         <AbilityScoreGrid scores={c} />
@@ -111,11 +114,11 @@ export function ParticipantStatLookup({
             <dd className="text-stone-200 font-semibold">{c.armor_class}</dd>
           </div>
           <div>
-            <dt className="text-stone-600">Speed</dt>
-            <dd className="text-stone-200 font-semibold">{c.speed} ft</dd>
+            <dt className="text-stone-600">{t('encounters.tracker.speed')}</dt>
+            <dd className="text-stone-200 font-semibold">{t('encounters.tracker.feetValue', { value: c.speed })}</dd>
           </div>
           <div>
-            <dt className="text-stone-600">Senses</dt>
+            <dt className="text-stone-600">{t('encounters.tracker.senses')}</dt>
             <dd className="text-stone-200">{c.senses || '—'}</dd>
           </div>
         </dl>
@@ -129,7 +132,7 @@ export function ParticipantStatLookup({
 
   const mi = monsterInstances?.find((m) => m.id === participant.monsterInstanceId);
   const monster = mi ? monsters?.find((m) => m.id === mi.monster_id) : undefined;
-  if (!monster) return <p className="text-xs text-stone-500 italic mt-2">Loading…</p>;
+  if (!monster) return <p className="text-xs text-stone-500 italic mt-2">{t('common.loading')}</p>;
   const monsterAttacks: NormalizedAttack[] = Array.isArray(monster.actions)
     ? (monster.actions as StatBlockEntry[]).map((a, i) => ({
         key: `${monster.id}-${i}`,
@@ -180,6 +183,7 @@ function CharacterAttackRoller({ characterId, encounterId, targets }: { characte
 export function CombatTracker({ encounter }: { encounter: Encounter }) {
   const { campaignId, campaign, role } = useCampaignShell();
   const { user } = useAuth();
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const isDm = role === 'dm';
   const live = useEncounterLive(encounter.id);
@@ -327,11 +331,11 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
             // Battle mode (REVISION-PLAN.md §10.2): the DM turn-control
             // buttons below relocate into BattleModeDmPanel, so this header
             // shrinks to just name + round rather than duplicating them.
-            <p className="text-sm text-stone-400">Round {currentRound}</p>
+            <p className="text-sm text-stone-400">{t('encounters.tracker.round', { round: currentRound })}</p>
           ) : (
             <p className="text-sm text-stone-400">
-              <span className="uppercase font-medium">{status}</span>
-              {status !== 'preparing' && ` · Round ${currentRound}`}
+              <span className="uppercase font-medium">{t(`encounters.status.${status}`)}</span>
+              {status !== 'preparing' && t('encounters.tracker.roundInline', { round: currentRound })}
             </p>
           )}
         </div>
@@ -340,12 +344,12 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
           <div className="flex flex-wrap gap-2">
             {status === 'preparing' && (
               <ActionButton onClick={() => startMutation.mutate()} pending={startMutation.isPending}>
-                Start encounter
+                {t('encounters.tracker.startEncounter')}
               </ActionButton>
             )}
             {status === 'paused' && (
               <ActionButton onClick={() => endMutation.mutate()} pending={endMutation.isPending} variant="danger">
-                End encounter
+                {t('encounters.tracker.endEncounter')}
               </ActionButton>
             )}
             <ActionButton
@@ -353,7 +357,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
               pending={rollInitiativeMutation.isPending}
               variant="secondary"
             >
-              Roll initiative
+              {t('encounters.tracker.rollInitiative')}
             </ActionButton>
           </div>
         )}
@@ -377,9 +381,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
 
       {!live && (
         <p className="text-sm text-stone-500 italic">
-          {isDm
-            ? 'Connecting to live combat state…'
-            : "You don't have a character in this encounter yet — nothing to show until the DM adds you."}
+          {isDm ? t('encounters.tracker.connectingLive') : t('encounters.tracker.noCharacterYet')}
         </p>
       )}
 
@@ -412,7 +414,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
             onClick={() => setShowDiceRoller((s) => !s)}
             variant={showDiceRoller ? 'primary' : 'secondary'}
           >
-            {showDiceRoller ? 'Hide dice' : 'Roll dice'}
+            {showDiceRoller ? t('encounters.tracker.hideDice') : t('encounters.tracker.rollDice')}
           </ActionButton>
         </div>
         {isDm && <ResetRevealsButton encounterId={encounter.id} />}
@@ -440,12 +442,12 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
                 <span className="font-medium text-stone-100 truncate">{p.name}</span>
                 {isMine && (
                   <span className="text-[10px] uppercase font-semibold text-amber-500 border border-amber-700 rounded px-1 flex-shrink-0">
-                    You
+                    {t('encounters.tracker.you')}
                   </span>
                 )}
                 <span
                   className="text-xs text-stone-500 border border-stone-700 rounded px-1 flex-shrink-0"
-                  title="Armor Class"
+                  title={t('encounters.tracker.armorClass')}
                 >
                   AC {p.armorClass}
                 </span>
@@ -456,12 +458,12 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
                       ? 'text-stone-500 border-stone-700'
                       : 'text-stone-600 border-stone-800 italic'
                   }`}
-                  title="Position on the battle map"
+                  title={t('encounters.tracker.position')}
                 >
-                  {p.posX != null && p.posY != null ? `(${p.posX}, ${p.posY})` : 'unplaced'}
+                  {p.posX != null && p.posY != null ? `(${p.posX}, ${p.posY})` : t('encounters.tracker.unplaced')}
                 </span>
                 {p.participantId === activeParticipantId && (
-                  <span className="text-xs uppercase font-semibold text-amber-500">Current turn</span>
+                  <span className="text-xs uppercase font-semibold text-amber-500">{t('encounters.tracker.currentTurn')}</span>
                 )}
               </div>
 
@@ -474,8 +476,12 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
                     type="button"
                     onClick={() => setExpandedParticipantId((id) => (id === p.participantId ? null : p.participantId))}
                     aria-expanded={expandedParticipantId === p.participantId}
-                    aria-label={expandedParticipantId === p.participantId ? `Hide ${p.name}'s stats` : `View ${p.name}'s stats`}
-                    title="View full stats"
+                    aria-label={
+                      expandedParticipantId === p.participantId
+                        ? t('encounters.tracker.hideStats', { name: p.name })
+                        : t('encounters.tracker.viewStats', { name: p.name })
+                    }
+                    title={t('encounters.tracker.viewFullStats')}
                     className="inline-flex h-10 w-10 items-center justify-center text-stone-400 hover:text-stone-200"
                   >
                     {expandedParticipantId === p.participantId ? '▾' : '▸'}
@@ -486,7 +492,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
                     type="button"
                     onClick={() => removeParticipantMutation.mutate(p.participantId)}
                     className="text-red-400 hover:text-red-300 text-sm px-1"
-                    aria-label={`Remove ${p.name} from encounter`}
+                    aria-label={t('encounters.tracker.removeParticipant', { name: p.name })}
                   >
                     ✕
                   </button>
@@ -551,7 +557,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
           </li>
           );
         })}
-        {participants.length === 0 && live && <EmptyState message="No participants in this encounter yet." />}
+        {participants.length === 0 && live && <EmptyState message={t('encounters.tracker.noParticipantsYet')} />}
       </ol>
 
       {isDm && (
@@ -623,6 +629,7 @@ export function ActionButton({
 // Resets every monster instance currently seated in THIS encounter back to
 // "weaknesses hidden" — the one thing the hide/reveal removal kept.
 export function ResetRevealsButton({ encounterId }: { encounterId: string }) {
+  const { t } = useLocale();
   const mutation = useMutation({
     mutationFn: () => api.post<void>(`/encounters/${encounterId}/reveals/reset`),
   });
@@ -631,12 +638,12 @@ export function ResetRevealsButton({ encounterId }: { encounterId: string }) {
       variant="danger"
       pending={mutation.isPending}
       onClick={() => {
-        if (confirm('Reset weakness reveals for this encounter? Every monster here goes back to hidden.')) {
+        if (confirm(t('encounters.tracker.resetRevealsConfirm'))) {
           mutation.mutate();
         }
       }}
     >
-      Reset reveals
+      {t('encounters.tracker.resetReveals')}
     </ActionButton>
   );
 }
@@ -652,6 +659,7 @@ export function AddParticipantForm({
   onAdd: (body: { characterId?: string; monsterInstanceId?: string }) => void;
   pending: boolean;
 }) {
+  const { t } = useLocale();
   const [kind, setKind] = useState<'character' | 'monster'>('character');
   const [selected, setSelected] = useState('');
 
@@ -666,7 +674,7 @@ export function AddParticipantForm({
   return (
     <div className="rounded-md bg-stone-900 shadow-sm p-4 flex flex-wrap items-end gap-2">
       <div>
-        <label className="block text-xs text-stone-500 mb-1">Add participant</label>
+        <label className="block text-xs text-stone-500 mb-1">{t('encounters.tracker.addParticipant')}</label>
         <select
           value={kind}
           onChange={(e) => {
@@ -675,14 +683,14 @@ export function AddParticipantForm({
           }}
           className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
         >
-          <option value="character">Character</option>
-          <option value="monster">Monster instance</option>
+          <option value="character">{t('encounters.tracker.character')}</option>
+          <option value="monster">{t('encounters.tracker.monsterInstance')}</option>
         </select>
       </div>
       <Combobox
         value={selected}
         onChange={setSelected}
-        placeholder="Search…"
+        placeholder={t('common.search')}
         className="min-w-[10rem]"
         options={options.map((o) => ({
           value: String(o.id),
@@ -695,7 +703,7 @@ export function AddParticipantForm({
         onClick={handleAdd}
         className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
       >
-        Add
+        {t('encounters.tracker.add')}
       </button>
     </div>
   );

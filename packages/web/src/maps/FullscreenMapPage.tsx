@@ -12,6 +12,7 @@ import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { useEncounterLive } from '../encounters/useEncounterLive';
 import { BattleMap } from '../encounters/BattleMap';
 import { isUuid } from '../lib/ids';
+import { useLocale } from '../i18n/LocaleContext';
 
 interface FlatEncounter {
   id: string;
@@ -22,6 +23,7 @@ interface FlatEncounter {
 }
 
 export function FullscreenMapPage() {
+  const { t } = useLocale();
   const params = useParams<{ mapId: string }>();
   const encounterId = params.mapId ?? '';
 
@@ -46,7 +48,7 @@ export function FullscreenMapPage() {
           </Link>
         ) : (
           <Link to="/maps" className="text-xs text-stone-500 hover:text-stone-300">
-            ← Maps
+            {t('maps.backToMaps')}
           </Link>
         )}
       </header>

@@ -4,6 +4,8 @@
 // character sheet, bestiary entry) without every caller needing to know
 // about useReveals' query keys.
 
+import { useLocale } from '../i18n/LocaleContext';
+
 export function RevealToggle({
   revealed,
   onToggle,
@@ -15,6 +17,7 @@ export function RevealToggle({
   disabled?: boolean;
   label: string;
 }) {
+  const { t } = useLocale();
   return (
     // 40x40 hit target (REVISION-PLAN.md §9.2 — was 20x20, under this app's
     // own 40px minimum-target convention) wrapping a visually small glyph:
@@ -33,8 +36,8 @@ export function RevealToggle({
       type="button"
       onClick={onToggle}
       disabled={disabled}
-      title={revealed ? `Hide ${label} from players` : `Reveal ${label} to players`}
-      aria-label={revealed ? `Hide ${label} from players` : `Reveal ${label} to players`}
+      title={revealed ? t('encounters.weakness.hideFromPlayers', { label }) : t('encounters.weakness.revealToPlayers', { label })}
+      aria-label={revealed ? t('encounters.weakness.hideFromPlayers', { label }) : t('encounters.weakness.revealToPlayers', { label })}
       aria-pressed={revealed}
       className="group inline-flex h-10 w-10 items-center justify-center disabled:opacity-40"
     >

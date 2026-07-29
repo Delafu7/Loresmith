@@ -26,6 +26,7 @@ import { ImageUploadField } from '../components/ImageUploadField';
 import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Field, Input } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
+import { useLocale } from '../i18n/LocaleContext';
 import { Token } from './Token';
 
 const GRID_MIN = 5;
@@ -77,11 +78,11 @@ function cellLabel(x: number, y: number): string {
   return `${columnLabel(x)}${y + 1}`;
 }
 
-const FACTION_OPTIONS: Array<{ value: SnapshotParticipant['faction']; label: string }> = [
-  { value: 'player', label: 'Player' },
-  { value: 'ally', label: 'Ally' },
-  { value: 'enemy', label: 'Enemy' },
-  { value: 'neutral', label: 'Neutral' },
+const FACTION_OPTIONS: Array<{ value: SnapshotParticipant['faction']; labelKey: 'player' | 'ally' | 'enemy' | 'neutral' }> = [
+  { value: 'player', labelKey: 'player' },
+  { value: 'ally', labelKey: 'ally' },
+  { value: 'enemy', labelKey: 'enemy' },
+  { value: 'neutral', labelKey: 'neutral' },
 ];
 
 export function BattleMap({
@@ -108,6 +109,7 @@ export function BattleMap({
    * panel does. */
   showRoster?: boolean;
 }) {
+  const { t } = useLocale();
   const [showSetup, setShowSetup] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -250,11 +252,11 @@ export function BattleMap({
       <div className="space-y-4">
         {isDm ? (
           <>
-            <EmptyState message="No map configured for this encounter yet." />
+            <EmptyState message={t('encounters.battleMap.noMapConfigured')} />
             <MapSetupPanel campaignId={campaignId} encounterId={encounterId} map={null} onDone={() => {}} />
           </>
         ) : (
-          <EmptyState message="The DM hasn't set up a map yet." />
+          <EmptyState message={t('encounters.battleMap.noMapFromDm')} />
         )}
       </div>
     );
@@ -274,7 +276,7 @@ export function BattleMap({
             type="button"
             onClick={() => setZoom((z) => clamp10(z - ZOOM_STEP))}
             disabled={zoom <= ZOOM_MIN}
-            aria-label="Zoom out"
+            aria-label={t('encounters.battleMap.zoomOut')}
             className="min-h-11 min-w-11 rounded-md bg-stone-900 shadow-sm text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
           >
             −
@@ -284,7 +286,7 @@ export function BattleMap({
             type="button"
             onClick={() => setZoom((z) => clamp10(z + ZOOM_STEP))}
             disabled={zoom >= ZOOM_MAX}
-            aria-label="Zoom in"
+            aria-label={t('encounters.battleMap.zoomIn')}
             className="min-h-11 min-w-11 rounded-md bg-stone-900 shadow-sm text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
           >
             +
@@ -294,7 +296,7 @@ export function BattleMap({
             onClick={() => setZoom(1)}
             className="min-h-11 rounded-md bg-stone-900 shadow-sm px-3 text-xs text-stone-400 hover:bg-stone-800"
           >
-            Reset
+            {t('encounters.battleMap.reset')}
           </button>
           <button
             type="button"
@@ -302,11 +304,12 @@ export function BattleMap({
             disabled={activeParticipantId == null}
             className="min-h-11 rounded-md bg-stone-900 shadow-sm px-3 text-xs text-stone-400 hover:bg-stone-800 disabled:opacity-40"
           >
-            Center on active
+            {t('encounters.battleMap.centerOnActive')}
           </button>
           {isDm && selectedId != null && reachableQuery.data && (
             <span className="text-xs text-stone-400 ml-2">
-              Remaining movement: <span className="text-amber-400 font-medium">{reachableQuery.data.remainingFt} ft</span>
+              {t('encounters.battleMap.remainingMovementLabel')}{' '}
+              <span className="text-amber-400 font-medium">{t('encounters.tracker.feetValue', { value: reachableQuery.data.remainingFt })}</span>
             </span>
           )}
         </div>
@@ -318,12 +321,12 @@ export function BattleMap({
                 setPaintMode((p) => !p);
                 setPendingMove(null);
               }}
-              title="Click a cell to cycle normal / difficult terrain / impassable"
+              title={t('encounters.battleMap.paintTitle')}
               className={`min-h-11 rounded-md px-3 text-xs ${
                 paintMode ? 'bg-amber-950/30 text-amber-400 outline outline-1 outline-amber-600' : 'bg-stone-900 shadow-sm text-stone-400 hover:bg-stone-800'
               }`}
             >
-              {paintMode ? 'Painting terrain (tap cells)' : 'Paint terrain'}
+              {paintMode ? t('encounters.battleMap.painting') : t('encounters.battleMap.paintTerrain')}
             </button>
           )}
           {isDm && (
@@ -332,7 +335,7 @@ export function BattleMap({
               onClick={() => setShowSetup((s) => !s)}
               className="min-h-11 px-2 text-xs text-stone-400 hover:text-stone-200 underline"
             >
-              {showSetup ? 'Hide map settings' : 'Reconfigure map'}
+              {showSetup ? t('encounters.battleMap.hideMapSettings') : t('encounters.battleMap.reconfigureMap')}
             </button>
           )}
         </div>
@@ -349,7 +352,7 @@ export function BattleMap({
       {showRoster && (
         <details className="lg:hidden rounded-md bg-stone-900 shadow-sm">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 text-xs uppercase text-stone-500">
-            Roster ({placed.length} on the board)
+            {t('encounters.battleMap.rosterCount', { count: placed.length })}
             <span aria-hidden="true">▾</span>
           </summary>
           <div className="px-3 pb-3">
@@ -465,9 +468,9 @@ export function BattleMap({
                             }
                             title={
                               paintMode
-                                ? `${cellLabel(x, y)}: click to cycle terrain`
+                                ? t('encounters.battleMap.cellPaintTitle', { cell: cellLabel(x, y) })
                                 : moveTargetMode
-                                  ? `Move here (${cellLabel(x, y)})`
+                                  ? t('encounters.battleMap.moveHere', { cell: cellLabel(x, y) })
                                   : (override?.note ?? undefined)
                             }
                             className={`${paintMode || moveTargetMode ? 'cursor-pointer hover:outline hover:outline-1 hover:outline-amber-500' : ''} ${
@@ -528,7 +531,7 @@ export function BattleMap({
             <span className="text-stone-100 font-medium">{selectedParticipant.name}</span>
             <span className="text-stone-400"> → {cellLabel(pendingMove.x, pendingMove.y)}</span>
             {!pendingMoveIsReachable && (
-              <span className="ml-2 text-xs text-amber-400">Outside remaining movement — may be rejected</span>
+              <span className="ml-2 text-xs text-amber-400">{t('encounters.battleMap.outsideMovement')}</span>
             )}
           </div>
           <div className="flex gap-2">
@@ -537,7 +540,7 @@ export function BattleMap({
               onClick={() => setPendingMove(null)}
               className="min-h-11 rounded-md border border-stone-600 px-4 text-sm text-stone-200 hover:bg-stone-100/5"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -547,7 +550,7 @@ export function BattleMap({
               }
               className="min-h-11 rounded-md border border-amber-500 px-4 text-sm font-semibold text-amber-500 hover:bg-amber-500/10 disabled:opacity-45"
             >
-              {positionMutation.isPending ? 'Moving…' : 'Confirm move'}
+              {positionMutation.isPending ? t('encounters.battleMap.moving') : t('encounters.battleMap.confirmMove')}
             </button>
           </div>
         </div>
@@ -555,9 +558,7 @@ export function BattleMap({
 
       {isDm && unplaced.length > 0 && (
         <div className="rounded-md bg-stone-900 shadow-sm p-3">
-          <p className="text-xs text-stone-500 mb-2">
-            Unplaced — tap a name to drop it at the top-left corner, then move it into position:
-          </p>
+          <p className="text-xs text-stone-500 mb-2">{t('encounters.battleMap.unplacedHint')}</p>
           <div className="flex flex-wrap gap-2">
             {unplaced.map((p) => (
               <button
@@ -606,11 +607,12 @@ function RosterPanel({
    * the mobile collapsible drawer, whose <summary> already labels it. */
   bare?: boolean;
 }) {
+  const { t } = useLocale();
   const Wrapper = bare ? 'div' : 'aside';
   return (
     <Wrapper className={bare ? '' : 'lg:w-64 flex-shrink-0 rounded-md bg-stone-900 shadow-sm p-3'}>
-      {!bare && <h3 className="text-xs uppercase text-stone-500 mb-2">On the board</h3>}
-      {participants.length === 0 && <EmptyState message="No one is placed on the map yet." />}
+      {!bare && <h3 className="text-xs uppercase text-stone-500 mb-2">{t('encounters.battleMap.onTheBoard')}</h3>}
+      {participants.length === 0 && <EmptyState message={t('encounters.battleMap.noOnePlaced')} />}
       <ul className="space-y-1">
         {participants.map((p) => {
           const isActive = p.participantId === activeParticipantId;
@@ -636,7 +638,7 @@ function RosterPanel({
               </div>
               <div className="flex items-center justify-between gap-2 mt-0.5">
                 <span className="text-[10px] text-stone-500">
-                  {p.hp.hpCurrent}/{p.hp.hpMax} HP
+                  {t('encounters.battleMap.hpFraction', { current: p.hp.hpCurrent, max: p.hp.hpMax })}
                 </span>
                 {isDm && onChangeFaction ? (
                   <select
@@ -647,12 +649,12 @@ function RosterPanel({
                   >
                     {FACTION_OPTIONS.map((f) => (
                       <option key={f.value} value={f.value}>
-                        {f.label}
+                        {t(`encounters.battleMap.faction.${f.labelKey}`)}
                       </option>
                     ))}
                   </select>
                 ) : (
-                  <span className="text-[10px] text-stone-500 capitalize">{p.faction}</span>
+                  <span className="text-[10px] text-stone-500 capitalize">{t(`encounters.battleMap.faction.${p.faction}`)}</span>
                 )}
               </div>
             </li>
@@ -679,6 +681,7 @@ function MapSetupPanel({
   map: MapConfig | null;
   onDone: () => void;
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const [gridColumns, setGridColumns] = useState(map?.gridColumns ?? 20);
   const [gridRows, setGridRows] = useState(map?.gridRows ?? 20);
@@ -709,12 +712,12 @@ function MapSetupPanel({
 
   return (
     <div className="rounded-md bg-stone-900 shadow-sm p-4 space-y-4">
-      <h3 className="text-xs uppercase text-stone-500">Map settings</h3>
+      <h3 className="text-xs uppercase text-stone-500">{t('encounters.battleMap.mapSettings')}</h3>
 
       {saveMutation.isError && <ErrorBanner message={errorMessage(saveMutation.error)} />}
 
       <div className="flex flex-wrap gap-4">
-        <Field label="Columns" htmlFor="mapCols" className="w-24">
+        <Field label={t('encounters.battleMap.columns')} htmlFor="mapCols" className="w-24">
           <Input
             id="mapCols"
             type="number"
@@ -724,7 +727,7 @@ function MapSetupPanel({
             onChange={(e) => setGridColumns(clamp(Number(e.target.value), GRID_MIN, GRID_MAX))}
           />
         </Field>
-        <Field label="Rows" htmlFor="mapRows" className="w-24">
+        <Field label={t('encounters.battleMap.rows')} htmlFor="mapRows" className="w-24">
           <Input
             id="mapRows"
             type="number"
@@ -734,7 +737,7 @@ function MapSetupPanel({
             onChange={(e) => setGridRows(clamp(Number(e.target.value), GRID_MIN, GRID_MAX))}
           />
         </Field>
-        <Field label="Cell size (display px)" htmlFor="mapCellSize" className="w-28">
+        <Field label={t('encounters.battleMap.cellSize')} htmlFor="mapCellSize" className="w-28">
           <Input
             id="mapCellSize"
             type="number"
@@ -744,7 +747,7 @@ function MapSetupPanel({
             onChange={(e) => setCellSizePx(clamp(Number(e.target.value), CELL_SIZE_MIN, CELL_SIZE_MAX))}
           />
         </Field>
-        <Field label="Feet per cell (movement math — separate from display size)" htmlFor="mapFeetPerCell" className="w-28">
+        <Field label={t('encounters.battleMap.feetPerCell')} htmlFor="mapFeetPerCell" className="w-28">
           <Input
             id="mapFeetPerCell"
             type="number"
@@ -757,25 +760,25 @@ function MapSetupPanel({
       </div>
 
       <div>
-        <p className="text-xs text-stone-500 mb-2">Background image</p>
+        <p className="text-xs text-stone-500 mb-2">{t('encounters.battleMap.backgroundImage')}</p>
         <div className="flex items-center gap-3">
-          <Portrait fileUrl={selectedAsset?.file_url} alt="Map background" size="lg" placeholderLabel="Map" />
+          <Portrait fileUrl={selectedAsset?.file_url} alt="Map background" size="lg" placeholderLabel={t('encounters.battleMap.backgroundPlaceholder')} />
           <div className="flex flex-col gap-2">
-            <ImageUploadField campaignId={campaignId} onUploaded={handleAssetUploaded} label="Upload new image" />
+            <ImageUploadField campaignId={campaignId} onUploaded={handleAssetUploaded} label={t('encounters.battleMap.uploadNewImage')} />
             {backgroundAssetId !== null && (
               <button
                 type="button"
                 onClick={() => setBackgroundAssetId(null)}
                 className="text-xs text-stone-400 hover:text-stone-200 text-left"
               >
-                Clear background
+                {t('encounters.battleMap.clearBackground')}
               </button>
             )}
           </div>
         </div>
         {assetsQuery.data && assetsQuery.data.assets.length > 0 && (
           <div className="mt-3">
-            <p className="text-[10px] text-stone-500 mb-1.5">Or pick an existing campaign asset:</p>
+            <p className="text-[10px] text-stone-500 mb-1.5">{t('encounters.battleMap.pickExistingAsset')}</p>
             <div className="flex flex-wrap gap-2">
               {assetsQuery.data.assets
                 .filter((a) => a.asset_type === 'image')
@@ -785,7 +788,7 @@ function MapSetupPanel({
                     type="button"
                     onClick={() => setBackgroundAssetId(a.id)}
                     className={`rounded-md ${backgroundAssetId === a.id ? 'ring-2 ring-amber-500' : ''}`}
-                    aria-label={`Select ${a.title ?? 'asset'} as map background`}
+                    aria-label={t('encounters.battleMap.selectAsBackground', { title: a.title ?? 'asset' })}
                   >
                     <Portrait fileUrl={a.file_url} alt={a.title ?? 'Campaign asset'} size="sm" />
                   </button>
@@ -797,11 +800,11 @@ function MapSetupPanel({
 
       <div className="flex gap-2">
         <Button variant="primary" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? 'Saving…' : 'Save map settings'}
+          {saveMutation.isPending ? t('encounters.battleMap.saving') : t('encounters.battleMap.saveMapSettings')}
         </Button>
         {map && (
           <button type="button" onClick={onDone} className="min-h-11 text-sm text-stone-400 hover:text-stone-200 px-3">
-            Cancel
+            {t('common.cancel')}
           </button>
         )}
       </div>

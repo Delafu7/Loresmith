@@ -19,6 +19,7 @@ import { api } from '../lib/api';
 import { DiceRoller, keptDieIndex } from '../components/DiceRoller';
 import { parseDiceExpression } from '../components/QuickDiceRoller';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 import type { DiceRoll } from '../lib/types';
 
 export interface NormalizedAttack {
@@ -97,6 +98,7 @@ function AttackRow({
   rollerCharacterId?: string | null;
   rollerMonsterInstanceId?: string | null;
 }) {
+  const { t } = useLocale();
   const [lastAttackRoll, setLastAttackRoll] = useState<DiceRoll | null>(null);
   const [targetId, setTargetId] = useState<number | ''>('');
   const parsedDamage = attack.damageDice ? parseDiceExpression(attack.damageDice) : null;
@@ -134,11 +136,15 @@ function AttackRow({
         <span className="text-xs font-medium text-stone-200">{attack.name}</span>
         <span className="text-[10px] text-stone-500">
           {isSaveBased
-            ? `DC ${attack.saveDc} ${attack.saveAbilityIndex?.toUpperCase() ?? ''} save`
+            ? t('encounters.attackRoller.saveFormat', { dc: attack.saveDc ?? '', ability: attack.saveAbilityIndex?.toUpperCase() ?? '' })
             : attack.attackBonus != null
-              ? `+${attack.attackBonus} to hit`
+              ? t('encounters.attackRoller.toHit', { bonus: attack.attackBonus })
               : null}
-          {attack.damageDice && ` · ${attack.damageDice}${attack.damageType ? ` ${attack.damageType}` : ''}`}
+          {attack.damageDice &&
+            t('encounters.attackRoller.damageFormat', {
+              dice: attack.damageDice,
+              type: attack.damageType ? ` ${attack.damageType}` : '',
+            })}
         </span>
       </div>
 
@@ -148,7 +154,7 @@ function AttackRow({
             rollType="attack"
             rollContext={`${attack.name} — attack roll`}
             modifier={attack.attackBonus}
-            triggerLabel="⚔ Attack"
+            triggerLabel={t('encounters.attackRoller.attackTrigger')}
             onRoll={setLastAttackRoll}
             characterId={rollerCharacterId ?? undefined}
             monsterInstanceId={rollerMonsterInstanceId ?? undefined}
@@ -162,17 +168,17 @@ function AttackRow({
               onChange={(e) => setTargetId(e.target.value ? Number(e.target.value) : '')}
               className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-[10px] text-stone-200"
             >
-              <option value="">Target…</option>
-              {targets.map((t) => (
-                <option key={t.participantId} value={t.participantId}>
-                  {t.name}
+              <option value="">{t('encounters.attackRoller.targetPlaceholder')}</option>
+              {targets.map((targetOption) => (
+                <option key={targetOption.participantId} value={targetOption.participantId}>
+                  {targetOption.name}
                 </option>
               ))}
             </select>
             <button
               type="button"
               disabled={!target || applyDamageMutation.isPending}
-              title={isCritical ? 'Critical hit — damage dice will be doubled' : undefined}
+              title={isCritical ? t('encounters.attackRoller.critTitle') : undefined}
               onClick={() => applyDamageMutation.mutate()}
               className={`rounded-md border px-2 py-1 text-[10px] font-semibold disabled:opacity-40 ${
                 isCritical
@@ -180,7 +186,7 @@ function AttackRow({
                   : 'border-stone-700 bg-stone-800 text-stone-200 hover:bg-stone-700'
               }`}
             >
-              {isCritical ? '🩸 Apply damage (crit)' : '🩸 Apply damage'}
+              {isCritical ? t('encounters.attackRoller.applyDamageCrit') : t('encounters.attackRoller.applyDamage')}
             </button>
           </>
         )}
@@ -189,19 +195,24 @@ function AttackRow({
       {applyDamageMutation.isError && <ErrorBanner message={errorMessage(applyDamageMutation.error)} />}
       {applyDamageMutation.data && (
         <p className="text-[10px] text-stone-400">
-          Rolled {applyDamageMutation.data.breakdown.diceTotal}
-          {applyDamageMutation.data.breakdown.modifier !== 0 && ` ${applyDamageMutation.data.breakdown.modifier >= 0 ? '+' : ''}${applyDamageMutation.data.breakdown.modifier}`}
-          {' = '}
-          {applyDamageMutation.data.rawTotal} raw
-          {applyDamageMutation.data.breakdown.immune && <span className="text-stone-500"> → immune, 0 applied</span>}
+          {t('encounters.attackRoller.rolled', { diceTotal: applyDamageMutation.data.breakdown.diceTotal })}
+          {applyDamageMutation.data.breakdown.modifier !== 0 &&
+            ` ${applyDamageMutation.data.breakdown.modifier >= 0 ? '+' : ''}${applyDamageMutation.data.breakdown.modifier}`}
+          {' '}
+          {t('encounters.attackRoller.equalsRawTotal', { total: applyDamageMutation.data.rawTotal })}
+          {applyDamageMutation.data.breakdown.immune && (
+            <span className="text-stone-500">{t('encounters.attackRoller.immuneApplied')}</span>
+          )}
           {!applyDamageMutation.data.breakdown.immune && applyDamageMutation.data.breakdown.resistanceApplied && (
-            <span className="text-sky-400"> → resisted</span>
+            <span className="text-sky-400">{t('encounters.attackRoller.resisted')}</span>
           )}
           {!applyDamageMutation.data.breakdown.immune && applyDamageMutation.data.breakdown.vulnerabilityApplied && (
-            <span className="text-red-400"> → vulnerable</span>
+            <span className="text-red-400">{t('encounters.attackRoller.vulnerable')}</span>
           )}
           {!applyDamageMutation.data.breakdown.immune && (
-            <span className="text-amber-400 font-semibold"> → {applyDamageMutation.data.appliedDamage} applied</span>
+            <span className="text-amber-400 font-semibold">
+              {t('encounters.attackRoller.applied', { amount: applyDamageMutation.data.appliedDamage })}
+            </span>
           )}
         </p>
       )}
