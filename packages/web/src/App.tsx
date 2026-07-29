@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { AuthProvider } from './auth/AuthContext';
+import { LocaleProvider } from './i18n/LocaleContext';
 import { SocketProvider } from './lib/SocketContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { LoginPage } from './auth/LoginPage';
@@ -34,6 +35,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <LocaleProvider>
         <SocketProvider>
           <BrowserRouter>
             <Routes>
@@ -148,6 +150,7 @@ function App() {
             </Routes>
           </BrowserRouter>
         </SocketProvider>
+        </LocaleProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

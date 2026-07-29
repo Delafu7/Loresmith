@@ -1,13 +1,18 @@
 import type { ReactNode } from 'react';
+import { useLocale } from '../i18n/LocaleContext';
 
-export function Loading({ label = 'Loading…' }: { label?: string }) {
+// `label` stays an explicit English override for the many call sites that
+// pass a specific one ("Loading campaign…", etc.) — only the DEFAULT is
+// translated (i18n first pass scope; see i18n/en.ts).
+export function Loading({ label }: { label?: string }) {
+  const { t } = useLocale();
   return (
     <div className="flex items-center justify-center gap-2 py-12 text-stone-400 text-sm" role="status">
       <span
         aria-hidden="true"
         className="size-3.5 animate-spin rounded-full border-2 border-stone-600 border-t-amber-500 motion-reduce:animate-none"
       />
-      {label}
+      {label ?? t('common.loading')}
     </div>
   );
 }

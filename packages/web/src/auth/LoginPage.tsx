@@ -1,12 +1,15 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import { useLocale } from '../i18n/LocaleContext';
 import { PasswordInput } from '../components/PasswordInput';
+import { LocalePicker } from '../components/LocalePicker';
 import { Field, Input } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 
 export function LoginPage() {
   const { login, loginError } = useAuth();
+  const { t } = useLocale();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
@@ -31,11 +34,14 @@ export function LoginPage() {
   return (
     <div className="min-h-dvh flex items-center justify-center bg-stone-950 px-4 py-[max(1rem,env(safe-area-inset-top))]">
       <div className="w-full max-w-sm bg-stone-900 rounded-lg p-6 sm:p-8 shadow-md">
-        <h1 className="font-display text-2xl font-medium text-stone-100 mb-1">Sign in</h1>
-        <p className="text-stone-400 text-sm mb-6">Continue your campaign.</p>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <h1 className="font-display text-2xl font-medium text-stone-100">{t('login.title')}</h1>
+          <LocalePicker />
+        </div>
+        <p className="text-stone-400 text-sm mb-6">{t('login.subtitle')}</p>
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-          <Field label="Email" htmlFor="email">
+          <Field label={t('login.email')} htmlFor="email">
             <Input
               id="email"
               type="email"
@@ -45,13 +51,15 @@ export function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </Field>
-          <Field label="Password" htmlFor="password">
+          <Field label={t('login.password')} htmlFor="password">
             <PasswordInput
               id="password"
               required
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              showPasswordLabel={t('login.showPassword')}
+              hidePasswordLabel={t('login.hidePassword')}
             />
           </Field>
 
@@ -62,14 +70,14 @@ export function LoginPage() {
           )}
 
           <Button type="submit" variant="primary" block disabled={submitting}>
-            {submitting ? 'Signing in…' : 'Sign in'}
+            {submitting ? t('login.submitting') : t('login.submit')}
           </Button>
         </form>
 
         <p className="text-stone-400 text-sm mt-6 text-center">
-          No account?{' '}
+          {t('login.noAccount')}{' '}
           <Link to="/register" className="text-amber-500 hover:text-amber-400">
-            Register
+            {t('login.register')}
           </Link>
         </p>
       </div>

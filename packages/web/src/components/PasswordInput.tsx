@@ -6,8 +6,10 @@ import { useId, useState, type InputHTMLAttributes } from 'react';
 export function PasswordInput({
   id,
   className = '',
+  showPasswordLabel = 'Show password',
+  hidePasswordLabel = 'Hide password',
   ...rest
-}: InputHTMLAttributes<HTMLInputElement> & { id?: string }) {
+}: InputHTMLAttributes<HTMLInputElement> & { id?: string; showPasswordLabel?: string; hidePasswordLabel?: string }) {
   const [visible, setVisible] = useState(false);
   const generatedId = useId();
   const inputId = id ?? generatedId;
@@ -23,7 +25,7 @@ export function PasswordInput({
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? 'Hide password' : 'Show password'}
+        aria-label={visible ? hidePasswordLabel : showPasswordLabel}
         tabIndex={-1}
         className="absolute inset-y-0 right-0 flex items-center px-3 text-stone-500 hover:text-stone-300"
       >

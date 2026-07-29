@@ -4,8 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { DashboardCharacter, DashboardResponse } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
+import { useLocale } from '../i18n/LocaleContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { ThemePicker } from '../components/ThemePicker';
+import { LocalePicker } from '../components/LocalePicker';
 import { Card, CardKicker } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button, ButtonLink } from '../components/ui/Button';
@@ -57,6 +59,7 @@ export function initials(name: string): string {
  */
 export function DashboardPage() {
   const { user, logout } = useAuth();
+  const { t } = useLocale();
 
   const dashboardQuery = useQuery({
     queryKey: ['dashboard'],
@@ -67,10 +70,11 @@ export function DashboardPage() {
     <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
         <div className="flex flex-wrap items-center justify-end gap-3">
+          <LocalePicker />
           <ThemePicker />
           <span className="hidden text-sm text-stone-400 sm:inline">{user?.displayName}</span>
           <Button variant="secondary" size="sm" onClick={() => void logout()}>
-            Log out
+            {t('common.logOut')}
           </Button>
         </div>
       </header>
@@ -84,25 +88,29 @@ export function DashboardPage() {
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <CardKicker className="mb-1.5">
-                  {dashboardQuery.data.characters.length} character{dashboardQuery.data.characters.length === 1 ? '' : 's'} ·{' '}
-                  {dashboardQuery.data.campaigns.length} campaign{dashboardQuery.data.campaigns.length === 1 ? '' : 's'}
+                  {t('dashboard.statsKicker', {
+                    characters: dashboardQuery.data.characters.length,
+                    charactersPlural: dashboardQuery.data.characters.length === 1 ? '' : 's',
+                    campaigns: dashboardQuery.data.campaigns.length,
+                    campaignsPlural: dashboardQuery.data.campaigns.length === 1 ? '' : 's',
+                  })}
                 </CardKicker>
                 <h1 className="font-display text-[28px] font-medium leading-tight sm:text-[30px]">
-                  Welcome back, {user?.displayName}
+                  {t('dashboard.welcome', { name: user?.displayName ?? '' })}
                 </h1>
               </div>
               <nav className="flex flex-wrap gap-1 text-sm" aria-label="Sections">
-                <HubNavLink to="/campaigns">All campaigns</HubNavLink>
-                <HubNavLink to="/bestiary">Bestiary</HubNavLink>
-                <HubNavLink to="/maps">Maps</HubNavLink>
-                <HubNavLink to="/notes">Notes</HubNavLink>
+                <HubNavLink to="/campaigns">{t('dashboard.navCampaigns')}</HubNavLink>
+                <HubNavLink to="/bestiary">{t('dashboard.navBestiary')}</HubNavLink>
+                <HubNavLink to="/maps">{t('dashboard.navMaps')}</HubNavLink>
+                <HubNavLink to="/notes">{t('dashboard.navNotes')}</HubNavLink>
               </nav>
             </div>
 
             <section>
-              <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-stone-500">Your characters</h2>
+              <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-stone-500">{t('dashboard.yourCharacters')}</h2>
               {dashboardQuery.data.characters.length === 0 ? (
-                <EmptyState message="You don't own any characters yet." />
+                <EmptyState message={t('dashboard.noCharacters')} />
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {dashboardQuery.data.characters.map((c) => (
@@ -113,13 +121,25 @@ export function DashboardPage() {
             </section>
 
             <div className="grid gap-4 lg:grid-cols-3">
-              <ListCard kicker="Your campaigns" to="/campaigns" linkLabel="All campaigns →" empty="You're not in any campaigns yet." count={dashboardQuery.data.campaigns.length}>
+              <ListCard
+                kicker={t('dashboard.yourCampaigns')}
+                to="/campaigns"
+                linkLabel={t('dashboard.allCampaignsLink')}
+                empty={t('dashboard.noCampaigns')}
+                count={dashboardQuery.data.campaigns.length}
+              >
                 {dashboardQuery.data.campaigns.map((c) => (
                   <ListRow key={c.id} to={`/campaigns/${c.id}/characters`} title={c.name} trailing={<Badge variant="outline">{c.my_role}</Badge>} />
                 ))}
               </ListCard>
 
-              <ListCard kicker="Your notes" to="/notes" linkLabel="All notes →" empty="You haven't written any notes yet." count={dashboardQuery.data.myNotes.length}>
+              <ListCard
+                kicker={t('dashboard.yourNotes')}
+                to="/notes"
+                linkLabel={t('dashboard.allNotesLink')}
+                empty={t('dashboard.noNotesWritten')}
+                count={dashboardQuery.data.myNotes.length}
+              >
                 {dashboardQuery.data.myNotes.slice(0, 6).map((n) => (
                   <ListRow
                     key={n.id}
@@ -131,7 +151,13 @@ export function DashboardPage() {
                 ))}
               </ListCard>
 
-              <ListCard kicker="Campaign activity" to="/notes" linkLabel="All notes →" empty="No notes in your campaigns yet." count={dashboardQuery.data.campaignNotes.length}>
+              <ListCard
+                kicker={t('dashboard.campaignActivity')}
+                to="/notes"
+                linkLabel={t('dashboard.allNotesLink')}
+                empty={t('dashboard.noCampaignNotes')}
+                count={dashboardQuery.data.campaignNotes.length}
+              >
                 {dashboardQuery.data.campaignNotes.slice(0, 6).map((n) => (
                   <ListRow
                     key={n.id}
@@ -162,6 +188,7 @@ function HubNavLink({ to, children }: { to: string; children: string }) {
 }
 
 function CharacterCard({ character }: { character: DashboardCharacter }) {
+  const { t } = useLocale();
   return (
     <Card elevation="sm">
       {/* Negative margin + own padding, rather than fighting Card's own p-4
@@ -181,7 +208,7 @@ function CharacterCard({ character }: { character: DashboardCharacter }) {
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="truncate text-sm font-medium text-stone-100">{character.name}</span>
-              {!character.is_pc && <Badge variant="neutral">NPC</Badge>}
+              {!character.is_pc && <Badge variant="neutral">{t('dashboard.npcBadge')}</Badge>}
             </div>
             <span className="block truncate text-[11px] text-stone-500">{character.campaign_name}</span>
           </div>

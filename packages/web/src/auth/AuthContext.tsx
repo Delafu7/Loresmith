@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Membership, UiTheme, User } from '../lib/types';
+import type { Locale, Membership, UiTheme, User } from '../lib/types';
 import { getSocket } from '../lib/socket';
 
 interface MeResponse {
@@ -22,6 +22,8 @@ interface AuthContextValue {
   registerError: string | null;
   setTheme: (theme: UiTheme) => void;
   themePending: boolean;
+  setLocale: (locale: Locale) => void;
+  localePending: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -70,6 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const localeMutation = useMutation({
+    mutationFn: (locale: Locale) => api.patch<{ user: User }>('/auth/me/locale', { locale }),
+    onSuccess: (data) => {
+      queryClient.setQueryData<MeResponse>(['me'], (prev) => (prev ? { ...prev, user: data.user } : prev));
+    },
+  });
+
   // Applied as soon as the logged-in user's theme is known (including right
   // after login/register/refresh) — every `amber-*`/`stone-*` Tailwind class
   // anywhere in the app re-colors via index.css's [data-theme] overrides, no
@@ -102,8 +111,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       registerError: registerMutation.error ? describeError(registerMutation.error) : null,
       setTheme: (theme: UiTheme) => themeMutation.mutate(theme),
       themePending: themeMutation.isPending,
+      setLocale: (locale: Locale) => localeMutation.mutate(locale),
+      localePending: localeMutation.isPending,
     }),
-    [meQuery.data, meQuery.isLoading, loginMutation, registerMutation, logoutMutation, themeMutation],
+    [meQuery.data, meQuery.isLoading, loginMutation, registerMutation, logoutMutation, themeMutation, localeMutation],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

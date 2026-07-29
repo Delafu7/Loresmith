@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Campaign, CampaignRole } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
+import { useLocale } from '../i18n/LocaleContext';
 import { useJoinCampaign } from '../lib/useJoinCampaign';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { ThemePicker } from '../components/ThemePicker';
+import { LocalePicker } from '../components/LocalePicker';
 import { Sidebar, NavItemList, NavItem } from '../components/ui/Nav';
 import { isUuid } from '../lib/ids';
 
@@ -31,6 +33,7 @@ export function useCampaignShell(): CampaignShellContextValue {
 // as a brand-new campaign — no dedicated settings page exists yet, so this
 // lives with the other campaign-level chrome in the sidebar.
 function ExportCampaignButton({ campaignId, campaignName }: { campaignId: string; campaignName: string }) {
+  const { t } = useLocale();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -62,7 +65,7 @@ function ExportCampaignButton({ campaignId, campaignName }: { campaignId: string
         disabled={pending}
         className="min-h-11 text-stone-400 hover:text-stone-200 disabled:opacity-50"
       >
-        {pending ? 'Exporting…' : 'Export campaign (JSON)'}
+        {pending ? t('nav.exporting') : t('nav.exportCampaign')}
       </button>
       {error !== null && <p className="text-red-400 mt-1">{errorMessage(error)}</p>}
     </div>
@@ -73,6 +76,7 @@ export function CampaignShell() {
   const params = useParams<{ campaignId: string }>();
   const campaignId = params.campaignId ?? '';
   const { roleForCampaign } = useAuth();
+  const { t } = useLocale();
 
   useJoinCampaign(campaignId);
 
@@ -96,31 +100,32 @@ export function CampaignShell() {
           <div>
             <div className="flex flex-wrap gap-x-2 text-xs text-stone-500">
               <NavLink to="/home" className="hover:text-stone-300">
-                ← Home
+                {t('nav.home')}
               </NavLink>
               <NavLink to="/campaigns" className="hover:text-stone-300">
-                All campaigns
+                {t('nav.allCampaigns')}
               </NavLink>
             </div>
             <h1 className="font-display text-lg font-medium mt-1 truncate">{campaignQuery.data.campaign.name}</h1>
             <span className="text-xs uppercase tracking-wide text-amber-500">{role}</span>
           </div>
           <NavItemList>
-            <NavItem to="characters">Characters</NavItem>
-            {isDm && <NavItem to="monsters">Bestiary</NavItem>}
-            <NavItem to="session">Session</NavItem>
+            <NavItem to="characters">{t('nav.characters')}</NavItem>
+            {isDm && <NavItem to="monsters">{t('nav.bestiary')}</NavItem>}
+            <NavItem to="session">{t('nav.session')}</NavItem>
             {/* "Session Log" — the DM's per-session recap (SessionLogPage), NOT
                 the live combat view above. Not DM-gated: any member can read the
                 recap log; only the write actions inside the page are DM-only. */}
-            <NavItem to="session-log">Session Log</NavItem>
-            <NavItem to="maps">Maps</NavItem>
-            <NavItem to="notes">Notes</NavItem>
-            <NavItem to="dice-rolls">Dice Rolls</NavItem>
-            <NavItem to="assets">Assets</NavItem>
-            {isDm && <NavItem to="catalog">Catalog</NavItem>}
+            <NavItem to="session-log">{t('nav.sessionLog')}</NavItem>
+            <NavItem to="maps">{t('nav.maps')}</NavItem>
+            <NavItem to="notes">{t('nav.notes')}</NavItem>
+            <NavItem to="dice-rolls">{t('nav.diceRolls')}</NavItem>
+            <NavItem to="assets">{t('nav.assets')}</NavItem>
+            {isDm && <NavItem to="catalog">{t('nav.catalog')}</NavItem>}
           </NavItemList>
           <div className="mt-auto flex flex-col gap-3 max-md:flex-row max-md:flex-wrap max-md:items-center">
             {isDm && <ExportCampaignButton campaignId={campaignId} campaignName={campaignQuery.data.campaign.name} />}
+            <LocalePicker />
             <ThemePicker />
           </div>
         </Sidebar>

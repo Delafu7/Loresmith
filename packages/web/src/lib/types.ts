@@ -8,6 +8,8 @@ export type CampaignRole = 'dm' | 'player';
 
 export type UiTheme = 'crimson' | 'amber' | 'ember';
 
+export type Locale = 'en' | 'es' | 'fr';
+
 export interface User {
   id: string;
   email: string;
@@ -16,6 +18,9 @@ export interface User {
   // tied to any campaign or role; see auth/AuthContext.tsx for how this
   // gets applied to <html data-theme> and index.css for the actual palette.
   uiTheme: UiTheme;
+  // Interface language (i18n first pass) — same personal-preference shape
+  // as uiTheme; see i18n/LocaleContext.tsx for how this is applied.
+  locale: Locale;
 }
 
 export interface Membership {
