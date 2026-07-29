@@ -22,3 +22,12 @@ export const updateThemeSchema = z.object({
   uiTheme: uiThemeEnum,
 });
 export type UpdateThemeInput = z.infer<typeof updateThemeSchema>;
+
+// Interface language (i18n first pass: nav/dashboard/auth screens) — same
+// small-dedicated-endpoint precedent as uiTheme above, not folded into a
+// generic profile PATCH.
+export const localeEnum = z.enum(['en', 'es', 'fr']);
+export const updateLocaleSchema = z.object({
+  locale: localeEnum,
+});
+export type UpdateLocaleInput = z.infer<typeof updateLocaleSchema>;

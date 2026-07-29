@@ -12,6 +12,7 @@ export interface AuthedUser {
   email: string;
   displayName: string;
   uiTheme: 'crimson' | 'amber' | 'ember';
+  locale: 'en' | 'es' | 'fr';
 }
 
 declare global {
@@ -29,8 +30,14 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     throw new AppError('UNAUTHENTICATED', 'You must be logged in to do that');
   }
 
-  const result = await pool.query<{ id: string; email: string; display_name: string; ui_theme: 'crimson' | 'amber' | 'ember' }>(
-    `SELECT id, email, display_name, ui_theme FROM users WHERE id = $1`,
+  const result = await pool.query<{
+    id: string;
+    email: string;
+    display_name: string;
+    ui_theme: 'crimson' | 'amber' | 'ember';
+    locale: 'en' | 'es' | 'fr';
+  }>(
+    `SELECT id, email, display_name, ui_theme, locale FROM users WHERE id = $1`,
     [userId],
   );
   const row = result.rows[0];
@@ -40,6 +47,6 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     throw new AppError('UNAUTHENTICATED', 'Session is no longer valid');
   }
 
-  req.user = { id: row.id, email: row.email, displayName: row.display_name, uiTheme: row.ui_theme };
+  req.user = { id: row.id, email: row.email, displayName: row.display_name, uiTheme: row.ui_theme, locale: row.locale };
   next();
 }

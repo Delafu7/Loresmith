@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
-import { loginSchema, registerSchema, updateThemeSchema } from '../schemas/auth.js';
+import { loginSchema, registerSchema, updateThemeSchema, updateLocaleSchema } from '../schemas/auth.js';
 import * as authService from '../services/auth.js';
 
 export const authRouter = Router();
@@ -42,5 +42,13 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 authRouter.patch('/me/theme', requireAuth, async (req, res) => {
   const input = updateThemeSchema.parse(req.body);
   const user = await authService.updateTheme(pool, req.user!.id, input);
+  res.json({ user });
+});
+
+// Interface language — same "personal preference, requireAuth-only" shape
+// as /me/theme above.
+authRouter.patch('/me/locale', requireAuth, async (req, res) => {
+  const input = updateLocaleSchema.parse(req.body);
+  const user = await authService.updateLocale(pool, req.user!.id, input);
   res.json({ user });
 });
