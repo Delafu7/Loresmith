@@ -9,6 +9,7 @@ import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { CampaignAsset } from '../lib/types';
 import { ErrorBanner, errorMessage } from './Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 
 // Mirrors the server's allowlist (packages/server/src/middleware/upload.ts's
 // MIME_EXTENSIONS) and its default MAX_UPLOAD_BYTES (packages/server/src/
@@ -26,7 +27,7 @@ export function ImageUploadField({
   characterId,
   title,
   onUploaded,
-  label = 'Upload image',
+  label,
 }: {
   campaignId: string;
   /** Set to target this upload at a specific character's portrait (POST body's `characterId` field). */
@@ -35,6 +36,7 @@ export function ImageUploadField({
   onUploaded: (asset: CampaignAsset) => void;
   label?: string;
 }) {
+  const { t } = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
   const [clientError, setClientError] = useState<string | null>(null);
 
@@ -67,12 +69,12 @@ export function ImageUploadField({
     setClientError(null);
 
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      setClientError(`Unsupported file type: ${file.type || 'unknown'}. Use PNG, JPEG, WEBP, or GIF.`);
+      setClientError(t('upload.unsupportedFileType', { type: file.type || 'unknown' }));
       if (inputRef.current) inputRef.current.value = '';
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      setClientError(`File is too large — max ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB.`);
+      setClientError(t('upload.fileTooLarge', { maxMb: Math.round(MAX_UPLOAD_BYTES / (1024 * 1024)) }));
       if (inputRef.current) inputRef.current.value = '';
       return;
     }
@@ -99,7 +101,7 @@ export function ImageUploadField({
           disabled={uploadMutation.isPending}
           onChange={handleChange}
         />
-        {uploadMutation.isPending ? 'Uploading…' : label}
+        {uploadMutation.isPending ? t('upload.uploading') : (label ?? t('upload.uploadImage'))}
       </label>
       {error && <ErrorBanner message={error} />}
     </div>

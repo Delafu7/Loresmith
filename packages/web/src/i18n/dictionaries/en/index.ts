@@ -19,5 +19,6 @@ import { hp } from './hp.js';
 import { proficiency } from './proficiency.js';
 import { effects } from './effects.js';
 import { hpAdjust } from './hpAdjust.js';
+import { upload } from './upload.js';
 
-export const en = { common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust };
+export const en = { common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust, upload };

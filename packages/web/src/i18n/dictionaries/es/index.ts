@@ -8,5 +8,8 @@ import { hp } from './hp.js';
 import { proficiency } from './proficiency.js';
 import { effects } from './effects.js';
 import { hpAdjust } from './hpAdjust.js';
+import { upload } from './upload.js';
 
-export const es = { common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust } satisfies typeof en;
+export const es = {
+  common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust, upload,
+} satisfies typeof en;
