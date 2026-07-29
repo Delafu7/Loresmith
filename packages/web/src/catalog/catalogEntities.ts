@@ -9,13 +9,39 @@
 // per field — honest and functional, not a fake-polished editor for data
 // shapes this pass didn't have time to build a real widget for.
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'json';
+export type FieldType = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'json' | 'reference' | 'reference-array';
+
+// Describes another catalog list to fetch and render as a dropdown/checklist
+// rather than making the user type a raw uuid. `endpoint` is the segment
+// under GET /catalog/{endpoint}; `campaignScoped`/`editioned` control which
+// query params get sent (mirrors each list function's actual signature in
+// server/src/services/catalog.ts — ability-scores/skills/magic-schools take
+// neither, conditions takes edition only, damage-types takes campaignId
+// only, races/classes/feats take both).
+export interface ReferenceConfig {
+  endpoint: string;
+  listResponseKey: string;
+  campaignScoped: boolean;
+  editioned: boolean;
+}
+
+export const REFERENCE_CATALOGS = {
+  abilityScores: { endpoint: 'ability-scores', listResponseKey: 'abilityScores', campaignScoped: false, editioned: false },
+  skills: { endpoint: 'skills', listResponseKey: 'skills', campaignScoped: false, editioned: false },
+  magicSchools: { endpoint: 'magic-schools', listResponseKey: 'magicSchools', campaignScoped: false, editioned: false },
+  conditions: { endpoint: 'conditions', listResponseKey: 'conditions', campaignScoped: false, editioned: true },
+  damageTypes: { endpoint: 'damage-types', listResponseKey: 'damageTypes', campaignScoped: true, editioned: false },
+  races: { endpoint: 'races', listResponseKey: 'races', campaignScoped: true, editioned: true },
+  classes: { endpoint: 'classes', listResponseKey: 'classes', campaignScoped: true, editioned: true },
+  feats: { endpoint: 'feats', listResponseKey: 'feats', campaignScoped: true, editioned: true },
+} as const satisfies Record<string, ReferenceConfig>;
 
 export interface CatalogField {
   key: string; // camelCase, matches the server's Zod schema field name
   label: string;
   type: FieldType;
   options?: string[]; // for type: 'select'
+  reference?: ReferenceConfig; // for type: 'reference' | 'reference-array'
   required?: boolean;
   helpText?: string;
 }
@@ -58,6 +84,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'dexModifierRule', label: 'Dex modifier rule', type: 'select', options: ['full', 'max_2', 'none'] },
       { key: 'strRequirement', label: 'Strength requirement', type: 'number' },
       { key: 'damageDice', label: 'Damage dice', type: 'text', helpText: 'e.g. "1d8"' },
+      { key: 'damageTypeId', label: 'Damage type', type: 'reference', reference: REFERENCE_CATALOGS.damageTypes },
       { key: 'requiresAttunement', label: 'Requires attunement', type: 'boolean' },
       { key: 'stealthDisadvantage', label: 'Stealth disadvantage', type: 'boolean' },
       { key: 'properties', label: 'Properties (JSON)', type: 'json' },
@@ -76,7 +103,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'name', label: 'Name', type: 'text', required: true },
       editionField,
       { key: 'level', label: 'Level (0 = cantrip)', type: 'number', required: true },
-      { key: 'schoolId', label: 'School (id)', type: 'text', required: true, helpText: 'Magic school id — see /catalog/magic-schools.' },
+      { key: 'schoolId', label: 'School', type: 'reference', required: true, reference: REFERENCE_CATALOGS.magicSchools },
       { key: 'castingTime', label: 'Casting time', type: 'text', required: true },
       { key: 'range', label: 'Range', type: 'text', required: true },
       { key: 'componentV', label: 'Verbal component', type: 'boolean' },
@@ -86,7 +113,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'duration', label: 'Duration', type: 'text', required: true },
       { key: 'concentration', label: 'Concentration', type: 'boolean' },
       { key: 'ritual', label: 'Ritual', type: 'boolean' },
-      { key: 'savingThrowAbilityId', label: 'Saving throw ability (id)', type: 'text' },
+      { key: 'savingThrowAbilityId', label: 'Saving throw ability', type: 'reference', reference: REFERENCE_CATALOGS.abilityScores },
       { key: 'attackType', label: 'Attack type', type: 'select', options: ['melee', 'ranged'] },
       { key: 'damageAtLevel', label: 'Damage at level (JSON)', type: 'json' },
       { key: 'description', label: 'Description', type: 'textarea', required: true },
@@ -118,7 +145,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
     listResponseKey: 'subraces',
     hasEdition: false,
     fields: [
-      { key: 'raceId', label: 'Race (id)', type: 'text', required: true },
+      { key: 'raceId', label: 'Race', type: 'reference', required: true, reference: REFERENCE_CATALOGS.races },
       { key: 'indexKey', label: 'Key', type: 'text', required: true },
       { key: 'name', label: 'Name', type: 'text', required: true },
       { key: 'abilityBonuses', label: 'Ability bonuses (JSON)', type: 'json', required: true },
@@ -136,9 +163,9 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'name', label: 'Name', type: 'text', required: true },
       editionField,
       { key: 'hitDie', label: 'Hit die', type: 'number', required: true, helpText: 'e.g. 8 for a d8' },
-      { key: 'primaryAbilityId', label: 'Primary ability (id)', type: 'text' },
+      { key: 'primaryAbilityId', label: 'Primary ability', type: 'reference', reference: REFERENCE_CATALOGS.abilityScores },
       { key: 'spellcastingType', label: 'Spellcasting type', type: 'select', required: true, options: ['full', 'half', 'third', 'pact', 'none'] },
-      { key: 'savingThrowProficiencyIds', label: 'Saving throw proficiencies (JSON array of ability ids)', type: 'json' },
+      { key: 'savingThrowProficiencyIds', label: 'Saving throw proficiencies', type: 'reference-array', reference: REFERENCE_CATALOGS.abilityScores },
       { key: 'source', label: 'Source', type: 'text' },
     ],
   },
@@ -149,7 +176,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
     listResponseKey: 'subclasses',
     hasEdition: false,
     fields: [
-      { key: 'classId', label: 'Class (id)', type: 'text', required: true },
+      { key: 'classId', label: 'Class', type: 'reference', required: true, reference: REFERENCE_CATALOGS.classes },
       { key: 'indexKey', label: 'Key', type: 'text', required: true },
       { key: 'name', label: 'Name', type: 'text', required: true },
     ],
@@ -164,9 +191,9 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'indexKey', label: 'Key', type: 'text', required: true },
       { key: 'name', label: 'Name', type: 'text', required: true },
       editionField,
-      { key: 'skillProficiencyIds', label: 'Skill proficiencies (JSON array of skill ids)', type: 'json' },
+      { key: 'skillProficiencyIds', label: 'Skill proficiencies', type: 'reference-array', reference: REFERENCE_CATALOGS.skills },
       { key: 'abilityBonusChoices', label: 'Ability bonus choices (JSON)', type: 'json' },
-      { key: 'grantedFeatId', label: 'Granted feat (id)', type: 'text' },
+      { key: 'grantedFeatId', label: 'Granted feat', type: 'reference', reference: REFERENCE_CATALOGS.feats },
       { key: 'description', label: 'Description', type: 'textarea' },
     ],
   },
@@ -232,7 +259,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'defaultDurationValue', label: 'Default duration value', type: 'number' },
       { key: 'concentration', label: 'Concentration', type: 'boolean' },
       { key: 'stackingRule', label: 'Stacking rule', type: 'select', required: true, options: ['none', 'stack', 'refresh'] },
-      { key: 'conditionId', label: 'Condition (id)', type: 'text', helpText: 'Raw condition catalog id — no selector UI for this yet.' },
+      { key: 'conditionId', label: 'Condition', type: 'reference', reference: REFERENCE_CATALOGS.conditions },
     ],
   },
 ];

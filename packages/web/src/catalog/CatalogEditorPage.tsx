@@ -173,6 +173,7 @@ export function CatalogEditorPage() {
 
       <CatalogEntryModal
         campaignId={campaignId}
+        edition={campaign.srd_edition}
         config={config}
         editingEntry={editingEntry}
         onClose={() => setEditingEntry(null)}
@@ -186,6 +187,7 @@ export function CatalogEditorPage() {
 
 function CatalogEntryModal({
   campaignId,
+  edition,
   config,
   editingEntry,
   onClose,
@@ -194,6 +196,7 @@ function CatalogEntryModal({
   submitting,
 }: {
   campaignId: string;
+  edition: string;
   config: CatalogEntityConfig;
   editingEntry: CatalogRow | null | 'new';
   onClose: () => void;
@@ -211,6 +214,8 @@ function CatalogEntryModal({
         fields={config.fields}
         entry={entry}
         draftKey={draftKey}
+        campaignId={campaignId}
+        edition={edition}
         submitting={submitting}
         onCancel={onClose}
         onSubmit={(payload) => (entry ? onUpdate(entry.id, payload) : onCreate(payload))}

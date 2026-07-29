@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { CatalogField } from './catalogEntities';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
+import type { CatalogField, ReferenceConfig } from './catalogEntities';
 import { Field, Input, Textarea, Select } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
@@ -7,7 +9,7 @@ import { useFormDraft } from '../lib/useFormDraft';
 
 export type DraftValues = Record<string, string>;
 
-function draftFromEntry(fields: CatalogField[], entry: Record<string, unknown> | null): DraftValues {
+export function draftFromEntry(fields: CatalogField[], entry: Record<string, unknown> | null): DraftValues {
   const draft: DraftValues = {};
   for (const f of fields) {
     if (!entry) {
@@ -17,7 +19,7 @@ function draftFromEntry(fields: CatalogField[], entry: Record<string, unknown> |
     const column = f.key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
     const value = entry[column];
     if (value === null || value === undefined) draft[f.key] = '';
-    else if (f.type === 'json') draft[f.key] = JSON.stringify(value, null, 2);
+    else if (f.type === 'json' || f.type === 'reference-array') draft[f.key] = JSON.stringify(value, null, 2);
     else if (f.type === 'boolean') draft[f.key] = String(value);
     else draft[f.key] = String(value);
   }
@@ -29,7 +31,7 @@ function draftFromEntry(fields: CatalogField[], entry: Record<string, unknown> |
  * Throws a plain Error with a field-identifying message on a bad JSON
  * field, caught by the caller and shown inline rather than crashing.
  */
-function buildPayload(fields: CatalogField[], draft: DraftValues): Record<string, unknown> {
+export function buildPayload(fields: CatalogField[], draft: DraftValues): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   for (const f of fields) {
     const raw = draft[f.key] ?? '';
@@ -45,6 +47,7 @@ function buildPayload(fields: CatalogField[], draft: DraftValues): Record<string
         payload[f.key] = raw === 'true';
         break;
       case 'json':
+      case 'reference-array':
         if (raw.trim() === '') {
           payload[f.key] = null;
           break;
@@ -62,10 +65,99 @@ function buildPayload(fields: CatalogField[], draft: DraftValues): Record<string
   return payload;
 }
 
+// Fetches another catalog table's rows for a reference/reference-array
+// field's dropdown, scoped by campaignId/edition only when that reference
+// actually varies by them (see REFERENCE_CATALOGS in catalogEntities.ts).
+function useReferenceOptions(ref: ReferenceConfig, campaignId: string, edition: string): Array<{ id: string; name: string }> {
+  const params = new URLSearchParams();
+  if (ref.campaignScoped) params.set('campaignId', campaignId);
+  if (ref.editioned) params.set('edition', edition);
+  const qs = params.toString();
+  const query = useQuery({
+    queryKey: ['catalog-reference', ref.endpoint, ref.campaignScoped ? campaignId : null, ref.editioned ? edition : null],
+    queryFn: () => api.get<Record<string, Array<{ id: string; name: string }>>>(`/catalog/${ref.endpoint}${qs ? `?${qs}` : ''}`),
+  });
+  return query.data?.[ref.listResponseKey] ?? [];
+}
+
+function ReferenceSelectField({
+  field,
+  value,
+  onChange,
+  campaignId,
+  edition,
+}: {
+  field: CatalogField;
+  value: string;
+  onChange: (value: string) => void;
+  campaignId: string;
+  edition: string;
+}) {
+  const options = useReferenceOptions(field.reference!, campaignId, edition);
+  const id = `catalog-field-${field.key}`;
+  return (
+    <Field label={field.label} htmlFor={id} hint={field.helpText}>
+      <Select id={id} value={value} onChange={(e) => onChange(e.target.value)} required={field.required}>
+        <option value="">{field.required ? 'Select…' : '(none)'}</option>
+        {options.map((opt) => (
+          <option key={opt.id} value={opt.id}>
+            {opt.name}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
+function ReferenceMultiSelectField({
+  field,
+  value,
+  onChange,
+  campaignId,
+  edition,
+}: {
+  field: CatalogField;
+  value: string;
+  onChange: (value: string) => void;
+  campaignId: string;
+  edition: string;
+}) {
+  const options = useReferenceOptions(field.reference!, campaignId, edition);
+  const selected: string[] = (() => {
+    try {
+      const parsed: unknown = JSON.parse(value || '[]');
+      return Array.isArray(parsed) ? (parsed as string[]) : [];
+    } catch {
+      return [];
+    }
+  })();
+  function toggle(optId: string) {
+    onChange(JSON.stringify(selected.includes(optId) ? selected.filter((id) => id !== optId) : [...selected, optId]));
+  }
+  const id = `catalog-field-${field.key}`;
+  return (
+    <Field label={field.label} htmlFor={id} hint={field.helpText}>
+      <div id={id} className="flex flex-wrap gap-2">
+        {options.map((opt) => (
+          <label
+            key={opt.id}
+            className="flex min-h-11 items-center gap-1.5 rounded-md bg-stone-800/60 px-2 text-sm text-stone-300"
+          >
+            <input type="checkbox" checked={selected.includes(opt.id)} onChange={() => toggle(opt.id)} className="size-4" />
+            {opt.name}
+          </label>
+        ))}
+      </div>
+    </Field>
+  );
+}
+
 export function CatalogEntryForm({
   fields,
   entry,
   draftKey,
+  campaignId,
+  edition,
   onSubmit,
   onCancel,
   submitting,
@@ -73,6 +165,8 @@ export function CatalogEntryForm({
   fields: CatalogField[];
   entry: Record<string, unknown> | null; // null = create; otherwise the row being edited
   draftKey: string; // unique per campaign+entity-type+(row id or 'new') — see lib/useFormDraft.ts
+  campaignId: string; // for reference fields scoped to this campaign's own homebrew + global rows
+  edition: string; // campaign's srd_edition, for edition-varying reference fields
   onSubmit: (payload: Record<string, unknown>) => Promise<unknown>;
   onCancel: () => void;
   submitting: boolean;
@@ -112,6 +206,30 @@ export function CatalogEntryForm({
               />
               {f.label}
             </label>
+          );
+        }
+        if (f.type === 'reference') {
+          return (
+            <ReferenceSelectField
+              key={f.key}
+              field={f}
+              value={draft[f.key] ?? ''}
+              onChange={(v) => setField(f.key, v)}
+              campaignId={campaignId}
+              edition={edition}
+            />
+          );
+        }
+        if (f.type === 'reference-array') {
+          return (
+            <ReferenceMultiSelectField
+              key={f.key}
+              field={f}
+              value={draft[f.key] ?? ''}
+              onChange={(v) => setField(f.key, v)}
+              campaignId={campaignId}
+              edition={edition}
+            />
           );
         }
         if (f.type === 'select') {
