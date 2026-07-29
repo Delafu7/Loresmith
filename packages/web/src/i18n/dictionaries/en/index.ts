@@ -20,5 +20,14 @@ import { proficiency } from './proficiency.js';
 import { effects } from './effects.js';
 import { hpAdjust } from './hpAdjust.js';
 import { upload } from './upload.js';
+import { campaigns } from './campaigns.js';
+import { notes } from './notes.js';
+import { sessionLog } from './sessionLog.js';
+import { assets } from './assets.js';
+import { dice } from './dice.js';
+import { landing } from './landing.js';
 
-export const en = { common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust, upload };
+export const en = {
+  common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust, upload,
+  campaigns, notes, sessionLog, assets, dice, landing,
+};

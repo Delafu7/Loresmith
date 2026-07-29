@@ -6,12 +6,7 @@ import { formatModifier } from '../lib/dnd-math';
 import { DICE_SIDES, type DiceRoll, type DiceRollKeep } from '../lib/types';
 import { DieFace, keptDieIndex } from './DiceRoller';
 import { ErrorBanner, errorMessage } from './Feedback';
-
-const KEEP_OPTIONS: Array<{ value: DiceRollKeep; label: string }> = [
-  { value: 'disadvantage', label: 'Disadv' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'advantage', label: 'Adv' },
-];
+import { useLocale } from '../i18n/LocaleContext';
 
 interface ParsedExpression {
   count: number;
@@ -52,6 +47,7 @@ export interface QuickDiceRollerProps {
  * which nothing in the app offered before.
  */
 export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, className = '' }: QuickDiceRollerProps) {
+  const { t } = useLocale();
   const { campaignId } = useCampaignShell();
   const [expression, setExpression] = useState('1d20');
   const [keep, setKeep] = useState<DiceRollKeep>('normal');
@@ -59,10 +55,15 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
 
   const parsed = parseDiceExpression(expression);
   const isD20 = parsed?.sides === 20;
+  const keepOptions: Array<{ value: DiceRollKeep; label: string }> = [
+    { value: 'disadvantage', label: t('dice.rollerDisadvantage') },
+    { value: 'normal', label: t('dice.rollerNormal') },
+    { value: 'advantage', label: t('dice.rollerAdvantage') },
+  ];
 
   const rollMutation = useMutation({
     mutationFn: () => {
-      if (!parsed) throw new Error('Invalid dice expression');
+      if (!parsed) throw new Error(t('dice.quickInvalidExpression'));
       return api.post<{ roll: DiceRoll }>(`/campaigns/${campaignId}/dice-rolls`, {
         rollType: 'custom',
         rollContext: expression.trim(),
@@ -80,7 +81,7 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
 
   return (
     <div className={`rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3 ${className}`}>
-      <h3 className="text-xs uppercase text-stone-500">Roll dice</h3>
+      <h3 className="text-xs uppercase text-stone-500">{t('dice.quickHeading')}</h3>
 
       <div className="flex flex-wrap gap-1.5">
         {DICE_SIDES.map((sides) => (
@@ -106,16 +107,16 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
             setExpression(e.target.value);
             setResult(null);
           }}
-          placeholder="e.g. 2d6+3"
+          placeholder={t('dice.quickPlaceholder')}
           className="w-28 rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100 font-mono"
         />
         {isD20 && (
           <div
             role="radiogroup"
-            aria-label="Roll mode"
+            aria-label={t('dice.rollerRollModeLabel')}
             className="inline-flex rounded-md border border-stone-700 overflow-hidden text-[10px] leading-none"
           >
-            {KEEP_OPTIONS.map((opt) => (
+            {keepOptions.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
@@ -139,12 +140,12 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
           onClick={() => rollMutation.mutate()}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
         >
-          {rollMutation.isPending ? 'Rolling…' : 'Roll'}
+          {rollMutation.isPending ? t('dice.quickRolling') : t('dice.rollerRollButton')}
         </button>
       </div>
 
       {!parsed && expression.trim() !== '' && (
-        <p className="text-xs text-red-400">Expected a die expression like "d20", "2d6", or "2d6+3".</p>
+        <p className="text-xs text-red-400">{t('dice.quickInvalidExpression')}</p>
       )}
       {rollMutation.isError && <ErrorBanner message={errorMessage(rollMutation.error)} />}
       {result && (

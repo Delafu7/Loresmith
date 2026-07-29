@@ -16,6 +16,7 @@ import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
 import { formatTimestamp } from '../lib/dates';
 import { useFormDraft } from '../lib/useFormDraft';
+import { useLocale } from '../i18n/LocaleContext';
 
 interface SessionLogFormValues {
   sessionNumber: string; // kept as a string for a controlled number input; parsed on submit
@@ -36,6 +37,7 @@ function emptyToNull(value: string): string | null {
 }
 
 export function SessionLogPage() {
+  const { t } = useLocale();
   const { campaignId, role } = useCampaignShell();
   const isDm = role === 'dm';
   const queryClient = useQueryClient();
@@ -82,17 +84,17 @@ export function SessionLogPage() {
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-display text-lg font-medium">Session Log</h2>
+        <h2 className="font-display text-lg font-medium">{t('sessionLog.title')}</h2>
         {isDm && (
           <Button variant="primary" size="sm" onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? 'Cancel' : 'New session log entry'}
+            {showCreate ? t('sessionLog.cancel') : t('sessionLog.newEntry')}
           </Button>
         )}
       </div>
 
       {isDm && showCreate && (
         <Card as="form" onSubmit={handleCreate} className="mb-6 gap-4">
-          <Field label="Session number" htmlFor="sessionLogNumber">
+          <Field label={t('sessionLog.sessionNumberLabel')} htmlFor="sessionLogNumber">
             <Input
               id="sessionLogNumber"
               type="number"
@@ -103,10 +105,10 @@ export function SessionLogPage() {
               onChange={(e) => setForm((f) => ({ ...f, sessionNumber: e.target.value }))}
             />
           </Field>
-          <Field label="Title" htmlFor="sessionLogTitle">
+          <Field label={t('sessionLog.titleLabel')} htmlFor="sessionLogTitle">
             <Input id="sessionLogTitle" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
           </Field>
-          <Field label="Date played" htmlFor="sessionLogPlayedAt">
+          <Field label={t('sessionLog.datePlayedLabel')} htmlFor="sessionLogPlayedAt">
             <Input
               id="sessionLogPlayedAt"
               type="date"
@@ -114,19 +116,19 @@ export function SessionLogPage() {
               onChange={(e) => setForm((f) => ({ ...f, playedAt: e.target.value }))}
             />
           </Field>
-          <Field label="Recap" htmlFor="sessionLogRecap">
+          <Field label={t('sessionLog.recapLabel')} htmlFor="sessionLogRecap">
             <Textarea id="sessionLogRecap" rows={5} value={form.recap} onChange={(e) => setForm((f) => ({ ...f, recap: e.target.value }))} />
           </Field>
           {createMutation.isError && <ErrorBanner message={errorMessage(createMutation.error)} />}
           <Button type="submit" variant="primary" disabled={createMutation.isPending}>
-            {createMutation.isPending ? 'Saving…' : 'Save session log entry'}
+            {createMutation.isPending ? t('sessionLog.saving') : t('sessionLog.saveEntry')}
           </Button>
         </Card>
       )}
 
       {sessionsQuery.isLoading && <Loading />}
       {sessionsQuery.isError && <ErrorBanner message={errorMessage(sessionsQuery.error)} />}
-      {sessionsQuery.data && sessionsQuery.data.sessions.length === 0 && <EmptyState message="No session log entries yet." />}
+      {sessionsQuery.data && sessionsQuery.data.sessions.length === 0 && <EmptyState message={t('sessionLog.noEntries')} />}
 
       {deleteMutation.isError && <ErrorBanner message={errorMessage(deleteMutation.error)} />}
 
@@ -137,7 +139,7 @@ export function SessionLogPage() {
             <Card>
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-medium text-stone-100">
-                  Session {session.session_number}
+                  {t('sessionLog.session', { number: session.session_number })}
                   {session.title ? ` — ${session.title}` : ''}
                 </h3>
                 {isDm && (
@@ -147,22 +149,22 @@ export function SessionLogPage() {
                       onClick={() => setEditingSession(session)}
                       className="min-h-11 px-1 text-amber-500 hover:text-amber-400 text-xs"
                     >
-                      Edit
+                      {t('sessionLog.edit')}
                     </button>
                     <button
                       type="button"
                       onClick={() => deleteMutation.mutate(session.id)}
                       className="min-h-11 px-1 text-red-400 hover:text-red-300 text-xs"
                     >
-                      Delete
+                      {t('sessionLog.delete')}
                     </button>
                   </div>
                 )}
               </div>
-              {session.played_at && <p className="text-xs text-stone-500">Played {session.played_at}</p>}
+              {session.played_at && <p className="text-xs text-stone-500">{t('sessionLog.played', { date: session.played_at })}</p>}
               {session.recap && <p className="text-sm text-stone-300 whitespace-pre-wrap">{session.recap}</p>}
               <p className="text-xs text-stone-500">
-                Created {formatTimestamp(session.created_at)} · Updated {formatTimestamp(session.updated_at)}
+                {t('sessionLog.createdUpdated', { created: formatTimestamp(session.created_at), updated: formatTimestamp(session.updated_at) })}
               </p>
             </Card>
           </li>
@@ -193,6 +195,7 @@ function SessionLogEditModal({
 }
 
 function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: string; session: SessionLog; onClose: () => void }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
 
   // Draft-persisted per session id (see lib/useFormDraft.ts). `session` is
@@ -231,9 +234,9 @@ function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: stri
   }
 
   return (
-    <Modal open onClose={onClose} title="Edit session log entry">
+    <Modal open onClose={onClose} title={t('sessionLog.editModalTitle')}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Field label="Session number" htmlFor="sessionLogEditNumber">
+        <Field label={t('sessionLog.sessionNumberLabel')} htmlFor="sessionLogEditNumber">
           <Input
             id="sessionLogEditNumber"
             type="number"
@@ -244,10 +247,10 @@ function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: stri
             onChange={(e) => setForm((f) => ({ ...f, sessionNumber: e.target.value }))}
           />
         </Field>
-        <Field label="Title" htmlFor="sessionLogEditTitle">
+        <Field label={t('sessionLog.titleLabel')} htmlFor="sessionLogEditTitle">
           <Input id="sessionLogEditTitle" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
         </Field>
-        <Field label="Date played" htmlFor="sessionLogEditPlayedAt">
+        <Field label={t('sessionLog.datePlayedLabel')} htmlFor="sessionLogEditPlayedAt">
           <Input
             id="sessionLogEditPlayedAt"
             type="date"
@@ -255,7 +258,7 @@ function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: stri
             onChange={(e) => setForm((f) => ({ ...f, playedAt: e.target.value }))}
           />
         </Field>
-        <Field label="Recap" htmlFor="sessionLogEditRecap">
+        <Field label={t('sessionLog.recapLabel')} htmlFor="sessionLogEditRecap">
           <Textarea
             id="sessionLogEditRecap"
             rows={5}
@@ -266,10 +269,10 @@ function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: stri
         {updateMutation.isError && <ErrorBanner message={errorMessage(updateMutation.error)} />}
         <div className="flex gap-2">
           <Button type="submit" variant="primary" disabled={updateMutation.isPending}>
-            {updateMutation.isPending ? 'Saving…' : 'Save changes'}
+            {updateMutation.isPending ? t('sessionLog.saving') : t('sessionLog.saveChanges')}
           </Button>
           <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
+            {t('sessionLog.cancel')}
           </Button>
         </div>
       </form>

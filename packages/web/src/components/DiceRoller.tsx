@@ -5,12 +5,7 @@ import { useCampaignShell } from '../campaigns/CampaignShell';
 import { formatModifier } from '../lib/dnd-math';
 import type { DiceRoll, DiceRollKeep, DiceRollType } from '../lib/types';
 import { ErrorBanner, errorMessage } from './Feedback';
-
-const KEEP_OPTIONS: Array<{ value: DiceRollKeep; label: string }> = [
-  { value: 'disadvantage', label: 'Disadv' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'advantage', label: 'Adv' },
-];
+import { useLocale } from '../i18n/LocaleContext';
 
 export interface DiceRollerProps {
   rollType: DiceRollType;
@@ -29,9 +24,9 @@ export interface DiceRollerProps {
   characterId?: string;
   monsterInstanceId?: string;
   encounterId?: string;
-  /** Label for the roll-trigger button. Defaults to "Roll"; callers embedding
-   * this inline in a dense row (skill/save lists) can pass a compact glyph
-   * instead. */
+  /** Label for the roll-trigger button. Defaults to the translated "Roll";
+   * callers embedding this inline in a dense row (skill/save lists) can pass
+   * a compact glyph instead. */
   triggerLabel?: string;
   className?: string;
   /** REFACTOR-PLAN.md §6 — AttackRoller.tsx uses this to learn the kept d20
@@ -58,13 +53,20 @@ export function DiceRoller({
   characterId,
   monsterInstanceId,
   encounterId,
-  triggerLabel = 'Roll',
+  triggerLabel,
   className = '',
   onRoll,
 }: DiceRollerProps) {
+  const { t } = useLocale();
   const { campaignId } = useCampaignShell();
   const [keep, setKeep] = useState<DiceRollKeep>('normal');
   const [result, setResult] = useState<DiceRoll | null>(null);
+  const effectiveTriggerLabel = triggerLabel ?? t('dice.rollerRollButton');
+  const keepOptions: Array<{ value: DiceRollKeep; label: string }> = [
+    { value: 'disadvantage', label: t('dice.rollerDisadvantage') },
+    { value: 'normal', label: t('dice.rollerNormal') },
+    { value: 'advantage', label: t('dice.rollerAdvantage') },
+  ];
 
   const rollMutation = useMutation({
     mutationFn: () =>
@@ -91,10 +93,10 @@ export function DiceRoller({
         {diceSides === 20 && (
         <div
           role="radiogroup"
-          aria-label="Roll mode"
+          aria-label={t('dice.rollerRollModeLabel')}
           className="inline-flex rounded-md border border-stone-700 overflow-hidden text-[10px] leading-none"
         >
-          {KEEP_OPTIONS.map((opt) => (
+          {keepOptions.map((opt) => (
             <button
               key={opt.value}
               type="button"
@@ -118,7 +120,7 @@ export function DiceRoller({
           onClick={() => rollMutation.mutate()}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-2 py-1 text-xs"
         >
-          {rollMutation.isPending ? '…' : triggerLabel}
+          {rollMutation.isPending ? '…' : effectiveTriggerLabel}
         </button>
       </div>
       {rollMutation.isError && <ErrorBanner message={errorMessage(rollMutation.error)} />}
@@ -168,11 +170,12 @@ export function keptDieIndex(rolls: number[], keep: DiceRollKeep): number {
  * the nat20/nat1 styling regardless of value.
  */
 export function DieFace({ value, kept, sides = 20 }: { value: number; kept: boolean; sides?: number }) {
+  const { t } = useLocale();
   const isNat20 = sides === 20 && value === 20;
   const isNat1 = sides === 20 && value === 1;
   return (
     <span
-      title={kept ? 'Kept' : 'Not kept'}
+      title={kept ? t('dice.rollerKept') : t('dice.rollerNotKept')}
       className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border text-sm font-semibold ${
         kept ? 'ring-2 ring-amber-500' : 'opacity-50'
       } ${

@@ -9,10 +9,12 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { useLocale } from '../i18n/LocaleContext';
 
 const INTRO_DURATION_MS = 1100;
 
 export function LandingPage() {
+  const { t } = useLocale();
   const { isAuthenticated, isLoading } = useAuth();
   const [skipped, setSkipped] = useState(() =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -45,9 +47,9 @@ export function LandingPage() {
     >
       <div className="text-center animate-[fadeIn_0.9s_ease-out] motion-reduce:animate-none">
         <h1 className="font-display text-4xl sm:text-5xl font-medium tracking-wide text-amber-500">Loresmith</h1>
-        <p className="mt-3 text-xs sm:text-sm uppercase tracking-[0.3em] text-stone-500">Forge the campaign</p>
+        <p className="mt-3 text-xs sm:text-sm uppercase tracking-[0.3em] text-stone-500">{t('landing.tagline')}</p>
       </div>
-      <span className="sr-only">Press any key to skip</span>
+      <span className="sr-only">{t('landing.skipHint')}</span>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(8px); }

@@ -5,12 +5,14 @@ import { api } from '../lib/api';
 import type { Campaign } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 
 // Phase 4: JSON campaign import — always creates a brand-new campaign owned
 // by the current user (services/campaignImport.ts never overwrites/merges
 // into an existing one), so it lives right next to "New campaign" as an
 // alternative way to populate one, not as a per-campaign settings action.
 function ImportCampaignButton({ onImported }: { onImported: (campaignId: string) => void }) {
+  const { t } = useLocale();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -21,7 +23,7 @@ function ImportCampaignButton({ onImported }: { onImported: (campaignId: string)
       try {
         data = JSON.parse(text);
       } catch {
-        throw new Error('That file isn’t valid JSON.');
+        throw new Error(t('campaigns.invalidJsonFile'));
       }
       return api.post<{ campaignId: string }>('/campaigns/import', data);
     },
@@ -46,7 +48,7 @@ function ImportCampaignButton({ onImported }: { onImported: (campaignId: string)
         disabled={importMutation.isPending}
         className="rounded-md border border-stone-700 text-stone-300 hover:bg-stone-800 active:bg-stone-800/70 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
       >
-        {importMutation.isPending ? 'Importing…' : 'Import campaign (JSON)'}
+        {importMutation.isPending ? t('campaigns.importing') : t('campaigns.importButton')}
       </button>
       {error !== null && <ErrorBanner message={errorMessage(error)} />}
     </div>
@@ -54,6 +56,7 @@ function ImportCampaignButton({ onImported }: { onImported: (campaignId: string)
 }
 
 export function CampaignListPage() {
+  const { t } = useLocale();
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -92,7 +95,7 @@ export function CampaignListPage() {
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Campaigns</h1>
+        <h1 className="text-xl font-semibold">{t('campaigns.title')}</h1>
         <div className="flex items-center gap-4 text-sm text-stone-400">
           <span>{user?.displayName}</span>
           <button
@@ -100,14 +103,14 @@ export function CampaignListPage() {
             onClick={() => void logout()}
             className="rounded-md border border-stone-700 px-3 py-1.5 hover:bg-stone-800"
           >
-            Log out
+            {t('campaigns.logOut')}
           </button>
         </div>
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-          <h2 className="text-lg font-medium">Your campaigns</h2>
+          <h2 className="text-lg font-medium">{t('campaigns.yourCampaigns')}</h2>
           <div className="flex items-center gap-2">
             <ImportCampaignButton
               onImported={(campaignId) => {
@@ -120,7 +123,7 @@ export function CampaignListPage() {
               onClick={() => setShowCreate((v) => !v)}
               className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
             >
-              {showCreate ? 'Cancel' : 'New campaign'}
+              {showCreate ? t('campaigns.cancel') : t('campaigns.newCampaign')}
             </button>
           </div>
         </div>
@@ -132,7 +135,7 @@ export function CampaignListPage() {
           >
             <div>
               <label htmlFor="campaignName" className="block text-sm font-medium text-stone-300 mb-1">
-                Name
+                {t('campaigns.nameLabel')}
               </label>
               <input
                 id="campaignName"
@@ -144,7 +147,7 @@ export function CampaignListPage() {
             </div>
             <div>
               <label htmlFor="edition" className="block text-sm font-medium text-stone-300 mb-1">
-                SRD edition
+                {t('campaigns.editionLabel')}
               </label>
               <select
                 id="edition"
@@ -158,7 +161,7 @@ export function CampaignListPage() {
             </div>
             <div>
               <label htmlFor="description" className="block text-sm font-medium text-stone-300 mb-1">
-                Description (optional)
+                {t('campaigns.descriptionLabel')}
               </label>
               <textarea
                 id="description"
@@ -174,7 +177,7 @@ export function CampaignListPage() {
               disabled={createMutation.isPending}
               className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
             >
-              {createMutation.isPending ? 'Creating…' : 'Create campaign'}
+              {createMutation.isPending ? t('campaigns.creating') : t('campaigns.createButton')}
             </button>
           </form>
         )}
@@ -182,7 +185,7 @@ export function CampaignListPage() {
         {campaignsQuery.isLoading && <Loading />}
         {campaignsQuery.isError && <ErrorBanner message={errorMessage(campaignsQuery.error)} />}
         {campaignsQuery.data && campaignsQuery.data.campaigns.length === 0 && (
-          <EmptyState message="No campaigns yet. Create one to get started." />
+          <EmptyState message={t('campaigns.noCampaigns')} />
         )}
 
         <ul className="space-y-2">
@@ -195,7 +198,7 @@ export function CampaignListPage() {
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-stone-100">{c.name}</span>
                   <span className="text-xs uppercase tracking-wide text-stone-500">
-                    {c.my_role} · SRD {c.srd_edition}
+                    {t('campaigns.srdLine', { role: c.my_role ?? '', edition: c.srd_edition })}
                   </span>
                 </div>
                 {c.description && <p className="text-stone-400 text-sm mt-1">{c.description}</p>}

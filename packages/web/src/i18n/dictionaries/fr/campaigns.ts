@@ -1,0 +1,17 @@
+export const campaigns = {
+  title: 'Campagnes',
+  logOut: 'Déconnexion',
+  importButton: 'Importer une campagne (JSON)',
+  importing: 'Importation…',
+  invalidJsonFile: "Ce fichier n'est pas un JSON valide.",
+  yourCampaigns: 'Vos campagnes',
+  newCampaign: 'Nouvelle campagne',
+  cancel: 'Annuler',
+  nameLabel: 'Nom',
+  editionLabel: 'Édition SRD',
+  descriptionLabel: 'Description (facultative)',
+  creating: 'Création…',
+  createButton: 'Créer la campagne',
+  noCampaigns: 'Pas encore de campagnes. Créez-en une pour commencer.',
+  srdLine: '{role} · SRD {edition}',
+};

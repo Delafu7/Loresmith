@@ -11,6 +11,7 @@ import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
 import { formatTimestamp } from '../lib/dates';
 import { useFormDraft } from '../lib/useFormDraft';
+import { useLocale } from '../i18n/LocaleContext';
 
 interface NoteFormValues {
   title: string;
@@ -22,6 +23,7 @@ function emptyNoteForm(): NoteFormValues {
 }
 
 export function NotesPage() {
+  const { t } = useLocale();
   const { campaignId, role } = useCampaignShell();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -66,30 +68,30 @@ export function NotesPage() {
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-display text-lg font-medium">Notes</h2>
+        <h2 className="font-display text-lg font-medium">{t('notes.title')}</h2>
         <Button variant="primary" size="sm" onClick={() => setShowCreate((v) => !v)}>
-          {showCreate ? 'Cancel' : 'New note'}
+          {showCreate ? t('notes.cancel') : t('notes.newNote')}
         </Button>
       </div>
 
       {showCreate && (
         <Card as="form" onSubmit={handleCreate} className="mb-6 gap-4">
-          <Field label="Title" htmlFor="noteTitle">
+          <Field label={t('notes.titleLabel')} htmlFor="noteTitle">
             <Input id="noteTitle" required value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
           </Field>
-          <Field label="Body" htmlFor="noteBody">
+          <Field label={t('notes.bodyLabel')} htmlFor="noteBody">
             <Textarea id="noteBody" required rows={5} value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} />
           </Field>
           {createMutation.isError && <ErrorBanner message={errorMessage(createMutation.error)} />}
           <Button type="submit" variant="primary" disabled={createMutation.isPending}>
-            {createMutation.isPending ? 'Saving…' : 'Save note'}
+            {createMutation.isPending ? t('notes.saving') : t('notes.saveNote')}
           </Button>
         </Card>
       )}
 
       {notesQuery.isLoading && <Loading />}
       {notesQuery.isError && <ErrorBanner message={errorMessage(notesQuery.error)} />}
-      {notesQuery.data && notesQuery.data.notes.length === 0 && <EmptyState message="No notes yet." />}
+      {notesQuery.data && notesQuery.data.notes.length === 0 && <EmptyState message={t('notes.noNotes')} />}
 
       {(deleteMutation.isError || duplicateMutation.isError) && (
         <ErrorBanner message={errorMessage((deleteMutation.error ?? duplicateMutation.error) as unknown)} />
@@ -110,7 +112,7 @@ export function NotesPage() {
                         onClick={() => setEditingNote(note)}
                         className="min-h-11 px-1 text-amber-500 hover:text-amber-400 text-xs"
                       >
-                        Edit
+                        {t('notes.edit')}
                       </button>
                     )}
                     {canModify && (
@@ -120,7 +122,7 @@ export function NotesPage() {
                         disabled={duplicateMutation.isPending}
                         className="min-h-11 px-1 text-stone-300 hover:text-stone-100 text-xs disabled:opacity-50"
                       >
-                        Duplicate
+                        {t('notes.duplicate')}
                       </button>
                     )}
                     {canModify && (
@@ -129,14 +131,14 @@ export function NotesPage() {
                         onClick={() => deleteMutation.mutate(note.id)}
                         className="min-h-11 px-1 text-red-400 hover:text-red-300 text-xs"
                       >
-                        Delete
+                        {t('notes.delete')}
                       </button>
                     )}
                   </div>
                 </div>
                 <p className="text-sm text-stone-300 whitespace-pre-wrap">{note.body}</p>
                 <p className="text-xs text-stone-500">
-                  Created {formatTimestamp(note.created_at)} · Updated {formatTimestamp(note.updated_at)}
+                  {t('notes.createdUpdated', { created: formatTimestamp(note.created_at), updated: formatTimestamp(note.updated_at) })}
                 </p>
               </Card>
             </li>
@@ -163,6 +165,7 @@ function NoteEditModal({ campaignId, note, onClose }: { campaignId: string; note
 }
 
 function NoteEditForm({ campaignId, note, onClose }: { campaignId: string; note: Note; onClose: () => void }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
 
   // Draft-persisted per note id (see lib/useFormDraft.ts) so an in-progress
@@ -192,12 +195,12 @@ function NoteEditForm({ campaignId, note, onClose }: { campaignId: string; note:
   }
 
   return (
-    <Modal open onClose={onClose} title="Edit note">
+    <Modal open onClose={onClose} title={t('notes.editModalTitle')}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Field label="Title" htmlFor="noteEditTitle">
+        <Field label={t('notes.titleLabel')} htmlFor="noteEditTitle">
           <Input id="noteEditTitle" required value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
         </Field>
-        <Field label="Body" htmlFor="noteEditBody">
+        <Field label={t('notes.bodyLabel')} htmlFor="noteEditBody">
           <Textarea
             id="noteEditBody"
             required
@@ -209,10 +212,10 @@ function NoteEditForm({ campaignId, note, onClose }: { campaignId: string; note:
         {updateMutation.isError && <ErrorBanner message={errorMessage(updateMutation.error)} />}
         <div className="flex gap-2">
           <Button type="submit" variant="primary" disabled={updateMutation.isPending}>
-            {updateMutation.isPending ? 'Saving…' : 'Save changes'}
+            {updateMutation.isPending ? t('notes.saving') : t('notes.saveChanges')}
           </Button>
           <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
+            {t('notes.cancel')}
           </Button>
         </div>
       </form>

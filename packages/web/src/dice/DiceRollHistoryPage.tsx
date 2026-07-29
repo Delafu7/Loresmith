@@ -9,6 +9,7 @@ import { DieFace, keptDieIndex } from '../components/DiceRoller';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { formatModifier } from '../lib/dnd-math';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 
 // Campaign-wide roll history (PLAN.md §6.6/Phase 3.4). Two independent data
 // sources feed this list rather than one merged cache:
@@ -21,6 +22,7 @@ import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Fe
 // lists are rendered back-to-back with source-prefixed React keys so a
 // collision is never a *key* collision, only a harmless visual repeat.
 export function DiceRollHistoryPage() {
+  const { t } = useLocale();
   const { campaignId } = useCampaignShell();
   const { socket } = useSocket();
 
@@ -71,13 +73,13 @@ export function DiceRollHistoryPage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-4">
-      <h2 className="text-lg font-semibold">Dice Rolls</h2>
+      <h2 className="text-lg font-semibold">{t('dice.historyTitle')}</h2>
 
       <QuickDiceRoller />
 
-      {isInitialLoading && <Loading label="Loading roll history…" />}
+      {isInitialLoading && <Loading label={t('dice.historyLoadingRolls')} />}
       {pageQuery.isError && <ErrorBanner message={errorMessage(pageQuery.error)} />}
-      {isEmpty && <EmptyState message="No dice rolls yet." />}
+      {isEmpty && <EmptyState message={t('dice.historyNoRolls')} />}
 
       <ul className="space-y-2">
         {liveRolls.map((roll) => (
@@ -96,7 +98,7 @@ export function DiceRollHistoryPage() {
             onClick={() => setCursor(nextCursor)}
             className="rounded-md border border-stone-700 px-4 py-2 text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-60"
           >
-            {pageQuery.isFetching ? 'Loading…' : 'Load more'}
+            {pageQuery.isFetching ? t('dice.historyLoadingMore') : t('dice.historyLoadMore')}
           </button>
         </div>
       )}
@@ -129,25 +131,26 @@ function socketPayloadToDiceRoll(payload: DiceRolledEvent): DiceRoll {
 // names for every roll would mean a new per-roll (or bulk-lookup) request
 // this phase doesn't need; roll_context (e.g. "Stealth", "Scimitar") is
 // usually informative enough on its own.
-function rollerLabel(roll: DiceRoll): string {
-  if (roll.character_id) return `Character #${roll.character_id}`;
-  if (roll.monster_instance_id) return `Monster #${roll.monster_instance_id}`;
-  return `User #${roll.user_id}`;
+function rollerLabel(roll: DiceRoll, t: ReturnType<typeof useLocale>['t']): string {
+  if (roll.character_id) return t('dice.historyCharacterLabel', { id: roll.character_id });
+  if (roll.monster_instance_id) return t('dice.historyMonsterLabel', { id: roll.monster_instance_id });
+  return t('dice.historyUserLabel', { id: roll.user_id });
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: ReturnType<typeof useLocale>['t']): string {
   const diffSec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  if (diffSec < 5) return 'just now';
-  if (diffSec < 60) return `${diffSec}s ago`;
+  if (diffSec < 5) return t('dice.historyJustNow');
+  if (diffSec < 60) return t('dice.historySecondsAgo', { count: diffSec });
   const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 60) return t('dice.historyMinutesAgo', { count: diffMin });
   const diffHour = Math.round(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffHour < 24) return t('dice.historyHoursAgo', { count: diffHour });
   const diffDay = Math.round(diffHour / 24);
-  return `${diffDay}d ago`;
+  return t('dice.historyDaysAgo', { count: diffDay });
 }
 
 function DiceRollRow({ roll }: { roll: DiceRoll }) {
+  const { t } = useLocale();
   const keptIndex = keptDieIndex(roll.d20_rolls, roll.keep);
   return (
     <li className="rounded-md bg-stone-900 shadow-sm p-3 flex items-center justify-between gap-3 flex-wrap">
@@ -159,12 +162,12 @@ function DiceRollRow({ roll }: { roll: DiceRoll }) {
         </div>
         <div className="min-w-0">
           <div className="text-sm text-stone-200 truncate">
-            <span className="text-stone-300">{rollerLabel(roll)}</span>
+            <span className="text-stone-300">{rollerLabel(roll, t)}</span>
             <span className="text-stone-600"> · </span>
             <span className="capitalize text-stone-400">{roll.roll_type.replace('_', ' ')}</span>
             {roll.roll_context && <span className="text-stone-500"> — {roll.roll_context}</span>}
           </div>
-          <div className="text-xs text-stone-500">{relativeTime(roll.created_at)}</div>
+          <div className="text-xs text-stone-500">{relativeTime(roll.created_at, t)}</div>
         </div>
       </div>
       <div className="flex items-center gap-1 text-sm flex-shrink-0">

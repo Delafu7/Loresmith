@@ -9,8 +9,10 @@ import { Input } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { formatTimestamp } from '../lib/dates';
+import { useLocale } from '../i18n/LocaleContext';
 
 export function AssetsPage() {
+  const { t } = useLocale();
   const { campaignId, role } = useCampaignShell();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -57,20 +59,20 @@ export function AssetsPage() {
   }
 
   function uploaderName(userId: string): string {
-    if (userId === user?.id) return 'you';
-    return membersQuery.data?.members.find((m) => m.user_id === userId)?.display_name ?? 'someone';
+    if (userId === user?.id) return t('assets.you');
+    return membersQuery.data?.members.find((m) => m.user_id === userId)?.display_name ?? t('assets.someone');
   }
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-display text-lg font-medium">Assets</h2>
+        <h2 className="font-display text-lg font-medium">{t('assets.title')}</h2>
       </div>
 
       {assetsQuery.isLoading && <Loading />}
       {assetsQuery.isError && <ErrorBanner message={errorMessage(assetsQuery.error)} />}
       {assetsQuery.data && assetsQuery.data.assets.length === 0 && (
-        <EmptyState message="No assets uploaded yet — portraits, creature art, and map backgrounds you upload elsewhere in the app will show up here." />
+        <EmptyState message={t('assets.noAssets')} />
       )}
 
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -84,7 +86,7 @@ export function AssetsPage() {
               <Card>
                 <img
                   src={asset.file_url}
-                  alt={asset.title ?? '(untitled)'}
+                  alt={asset.title ?? t('assets.untitled')}
                   className="h-32 w-full rounded-md border border-stone-800 bg-stone-950 object-cover"
                 />
 
@@ -99,16 +101,16 @@ export function AssetsPage() {
                     {renameMutation.isError && <ErrorBanner message={errorMessage(renameMutation.error)} />}
                     <div className="flex gap-2">
                       <Button type="submit" variant="primary" size="sm" disabled={renameMutation.isPending}>
-                        {renameMutation.isPending ? 'Saving…' : 'Save'}
+                        {renameMutation.isPending ? t('assets.saving') : t('assets.save')}
                       </Button>
                       <Button type="button" variant="secondary" size="sm" onClick={() => setRenamingId(null)}>
-                        Cancel
+                        {t('assets.cancel')}
                       </Button>
                     </div>
                   </form>
                 ) : (
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-medium text-stone-100">{asset.title ?? '(untitled)'}</h3>
+                    <h3 className="font-medium text-stone-100">{asset.title ?? t('assets.untitled')}</h3>
                     {canModify && (
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button
@@ -116,18 +118,18 @@ export function AssetsPage() {
                           onClick={() => startRename(asset)}
                           className="min-h-11 px-1 text-amber-500 hover:text-amber-400 text-xs"
                         >
-                          Rename
+                          {t('assets.rename')}
                         </button>
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm(`Delete ${asset.title ?? 'this asset'}? This cannot be undone.`)) {
+                            if (confirm(t('assets.deleteConfirm', { title: asset.title ?? t('assets.thisAsset') }))) {
                               deleteMutation.mutate(asset.id);
                             }
                           }}
                           className="min-h-11 px-1 text-red-400 hover:text-red-300 text-xs"
                         >
-                          Delete
+                          {t('assets.delete')}
                         </button>
                       </div>
                     )}
@@ -135,8 +137,8 @@ export function AssetsPage() {
                 )}
 
                 <p className="text-xs text-stone-500">
-                  Uploaded by {uploaderName(asset.uploaded_by_user_id)} · {formatTimestamp(asset.created_at)}
-                  {wasRenamed && <> · Renamed {formatTimestamp(asset.updated_at)}</>}
+                  {t('assets.uploadedByLine', { uploader: uploaderName(asset.uploaded_by_user_id), date: formatTimestamp(asset.created_at) })}
+                  {wasRenamed && <> · {t('assets.renamed', { date: formatTimestamp(asset.updated_at) })}</>}
                 </p>
               </Card>
             </li>
