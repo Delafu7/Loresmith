@@ -1,0 +1,15 @@
+export const nav = {
+  home: '← Inicio',
+  allCampaigns: 'Todas las campañas',
+  characters: 'Personajes',
+  bestiary: 'Bestiario',
+  session: 'Sesión',
+  sessionLog: 'Registro de sesión',
+  maps: 'Mapas',
+  notes: 'Notas',
+  diceRolls: 'Tiradas de dados',
+  assets: 'Recursos',
+  catalog: 'Catálogo',
+  exportCampaign: 'Exportar campaña (JSON)',
+  exporting: 'Exportando…',
+};

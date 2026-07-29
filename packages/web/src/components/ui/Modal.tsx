@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { useLocale } from '../../i18n/LocaleContext';
 
 export type ModalSize = 'sm' | 'lg';
 
@@ -31,6 +32,7 @@ export function Modal({
   actions?: ReactNode;
   children?: ReactNode;
 }) {
+  const { t } = useLocale();
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export function Modal({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t('common.close')}
           className="flex size-9 flex-none items-center justify-center rounded-md text-stone-400 hover:bg-stone-800 hover:text-stone-100"
         >
           ✕

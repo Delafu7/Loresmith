@@ -1,0 +1,14 @@
+export const common = {
+  loading: 'Cargando…',
+  logOut: 'Cerrar sesión',
+  theme: 'Tema',
+  language: 'Idioma',
+  close: 'Cerrar',
+  search: 'Buscar…',
+  noMatches: 'Sin resultados',
+  cancel: 'Cancelar',
+  save: 'Guardar',
+  delete: 'Eliminar',
+  edit: 'Editar',
+  create: 'Crear',
+};

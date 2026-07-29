@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocale } from '../i18n/LocaleContext';
 
 export interface ComboboxOption {
   value: string;
@@ -18,7 +19,7 @@ export function Combobox({
   options,
   value,
   onChange,
-  placeholder = 'Search…',
+  placeholder,
   className = '',
 }: {
   options: ComboboxOption[];
@@ -27,6 +28,8 @@ export function Combobox({
   placeholder?: string;
   className?: string;
 }) {
+  const { t } = useLocale();
+  const effectivePlaceholder = placeholder ?? t('common.search');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -99,7 +102,7 @@ export function Combobox({
         aria-expanded={open}
         aria-autocomplete="list"
         value={open ? query : (selected?.label ?? '')}
-        placeholder={placeholder}
+        placeholder={effectivePlaceholder}
         onFocus={openDropdown}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -110,7 +113,7 @@ export function Combobox({
       />
       {open && (
         <ul role="listbox" className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-md border border-stone-700 bg-stone-800 shadow-xl">
-          {filtered.length === 0 && <li className="px-2 py-1.5 text-sm text-stone-500 italic">No matches</li>}
+          {filtered.length === 0 && <li className="px-2 py-1.5 text-sm text-stone-500 italic">{t('common.noMatches')}</li>}
           {filtered.map((option, i) => (
             <li
               key={option.value}

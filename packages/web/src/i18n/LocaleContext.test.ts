@@ -7,9 +7,9 @@
 // rather than in isolation here.
 
 import { describe, expect, it } from 'vitest';
-import { en } from './en.js';
-import { es } from './es.js';
-import { fr } from './fr.js';
+import { en } from './dictionaries/en/index.js';
+import { es } from './dictionaries/es/index.js';
+import { fr } from './dictionaries/fr/index.js';
 
 type Dict = Record<string, Record<string, string>>;
 

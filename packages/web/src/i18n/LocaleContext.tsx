@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import type { Locale } from '../lib/types';
-import { en } from './en.js';
-import { es } from './es.js';
-import { fr } from './fr.js';
+import { en } from './dictionaries/en/index.js';
+import { es } from './dictionaries/es/index.js';
+import { fr } from './dictionaries/fr/index.js';
 
 export const SUPPORTED_LOCALES: Locale[] = ['en', 'es', 'fr'];
 

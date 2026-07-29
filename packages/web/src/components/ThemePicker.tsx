@@ -1,4 +1,5 @@
 import { useAuth } from '../auth/AuthContext';
+import { useLocale } from '../i18n/LocaleContext';
 import type { UiTheme } from '../lib/types';
 
 // "Ember" now renders the Nocturne palette, not the old warm ember-orange
@@ -19,11 +20,12 @@ const THEME_LABELS: Record<UiTheme, string> = {
  */
 export function ThemePicker({ className = '' }: { className?: string }) {
   const { user, setTheme, themePending } = useAuth();
+  const { t } = useLocale();
   if (!user) return null;
 
   return (
     <label className={`flex items-center gap-1.5 text-xs text-stone-400 ${className}`}>
-      Theme
+      {t('common.theme')}
       <select
         value={user.uiTheme}
         disabled={themePending}

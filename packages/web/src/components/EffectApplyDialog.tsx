@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { EffectDefinitionCatalog } from '../lib/types';
+import { useLocale } from '../i18n/LocaleContext';
 
 export interface ApplyEffectFormInput {
   effectDefinitionId: string;
@@ -21,6 +22,7 @@ export function EffectApplyDialog({
   pending?: boolean;
   onApply: (input: ApplyEffectFormInput) => void;
 }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [effectDefinitionId, setEffectDefinitionId] = useState('');
   const [durationValue, setDurationValue] = useState('');
@@ -33,7 +35,7 @@ export function EffectApplyDialog({
         disabled={effectDefinitions.length === 0}
         className="text-xs text-amber-500 hover:text-amber-400 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        + Effect
+        {t('effects.addEffect')}
       </button>
     );
   }
@@ -57,7 +59,7 @@ export function EffectApplyDialog({
     <div className="rounded-md border border-stone-700 bg-stone-950 p-2 flex flex-wrap items-end gap-2">
       <div>
         <label className="block text-[10px] text-stone-500 mb-0.5" htmlFor="effect-select">
-          Effect
+          {t('effects.effect')}
         </label>
         <select
           id="effect-select"
@@ -65,7 +67,7 @@ export function EffectApplyDialog({
           onChange={(e) => setEffectDefinitionId(e.target.value)}
           className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100 min-w-[9rem]"
         >
-          <option value="">Select…</option>
+          <option value="">{t('effects.select')}</option>
           {effectDefinitions.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}
@@ -75,13 +77,13 @@ export function EffectApplyDialog({
       </div>
       <div>
         <label className="block text-[10px] text-stone-500 mb-0.5" htmlFor="effect-duration">
-          Duration override
+          {t('effects.durationOverride')}
         </label>
         <input
           id="effect-duration"
           type="number"
           min={0}
-          placeholder="default"
+          placeholder={t('effects.default')}
           value={durationValue}
           onChange={(e) => setDurationValue(e.target.value)}
           className="w-20 rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
@@ -93,14 +95,14 @@ export function EffectApplyDialog({
         onClick={submit}
         className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-2 py-1 text-xs"
       >
-        Apply
+        {t('effects.apply')}
       </button>
       <button
         type="button"
         onClick={reset}
         className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800"
       >
-        Cancel
+        {t('common.cancel')}
       </button>
     </div>
   );

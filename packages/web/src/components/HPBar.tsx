@@ -1,7 +1,11 @@
+import { useLocale } from '../i18n/LocaleContext';
+
 // Decorative status label only (Healthy/Injured/.../Down) — computed
 // client-side from the always-visible exact HP numbers. Not related to the
 // old hide/reveal "banded" visibility mode, which was removed; HP is always
-// exact for every role now.
+// exact for every role now. `HpBand` stays the internal English-keyed enum
+// (used for color lookups and as a stable identifier) — only the displayed
+// label is translated, via i18n's `hp.*` keys.
 type HpBand = 'Healthy' | 'Injured' | 'Bloodied' | 'Critical' | 'Down';
 
 const BAND_COLOR: Record<HpBand, string> = {
@@ -20,8 +24,17 @@ const BAND_TEXT: Record<HpBand, string> = {
   Down: 'text-stone-400',
 };
 
+const BAND_KEY = {
+  Healthy: 'hp.healthy',
+  Injured: 'hp.injured',
+  Bloodied: 'hp.bloodied',
+  Critical: 'hp.critical',
+  Down: 'hp.down',
+} as const;
+
 /** Exact-HP variant: current/max numeric bar with a temp-HP overlay segment. */
 export function HPBar({ current, max, temp = 0 }: { current: number; max: number; temp?: number }) {
+  const { t } = useLocale();
   const pct = max > 0 ? Math.max(0, Math.min(100, (current / max) * 100)) : 0;
   const tempPct = max > 0 ? Math.max(0, Math.min(100 - pct, (temp / max) * 100)) : 0;
   const band = bandFor(current, max);
@@ -33,7 +46,7 @@ export function HPBar({ current, max, temp = 0 }: { current: number; max: number
           {current} / {max}
           {temp > 0 && <span className="text-sky-400 font-normal"> (+{temp})</span>}
         </span>
-        <span className={`text-xs font-medium ${BAND_TEXT[band]}`}>{band}</span>
+        <span className={`text-xs font-medium ${BAND_TEXT[band]}`}>{t(BAND_KEY[band])}</span>
       </div>
       <div className="h-3 w-full rounded-full bg-stone-800 overflow-hidden flex" role="progressbar" aria-valuenow={current} aria-valuemin={0} aria-valuemax={max}>
         <div className={`h-full ${BAND_COLOR[band]} transition-all`} style={{ width: `${pct}%` }} />
