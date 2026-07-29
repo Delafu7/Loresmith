@@ -12,6 +12,9 @@ import {
 } from '../schemas/campaigns.js';
 import * as campaignsService from '../services/campaigns.js';
 import { rollAbilityScores } from '../services/abilityScoreRoll.js';
+import { exportCampaign } from '../services/campaignExport.js';
+import { importCampaign } from '../services/campaignImport.js';
+import { campaignExportSchema } from '../schemas/campaignExport.js';
 
 export const campaignsRouter = Router();
 
@@ -23,6 +26,15 @@ campaignsRouter.post('/', async (req, res) => {
   const input = createCampaignSchema.parse(req.body);
   const campaign = await campaignsService.createCampaign(pool, req.user!.id, input);
   res.status(201).json({ campaign });
+});
+
+// Phase 4: JSON campaign import/export. Import always creates a brand-new
+// campaign (never overwrites/merges) — see services/campaignImport.ts.
+// Registered here, not under /:id, since there's no existing campaign yet.
+campaignsRouter.post('/import', async (req, res) => {
+  const data = campaignExportSchema.parse(req.body);
+  const { campaignId } = await importCampaign(pool, req.user!.id, data);
+  res.status(201).json({ campaignId });
 });
 
 campaignsRouter.get('/', async (req, res) => {
@@ -44,6 +56,13 @@ campaignsRouter.patch('/:id', requireCampaignMember(), requireRole('dm'), async 
 campaignsRouter.delete('/:id', requireCampaignMember(), requireRole('dm'), async (req, res) => {
   await campaignsService.deleteCampaign(pool, req.campaignId!);
   res.status(204).send();
+});
+
+// DM-only, same as every other catalog/roster write in this campaign — see
+// services/campaignExport.ts for exactly what's included.
+campaignsRouter.get('/:id/export', requireCampaignMember(), requireRole('dm'), async (req, res) => {
+  const data = await exportCampaign(pool, req.campaignId!);
+  res.json(data);
 });
 
 // Automated Ability Score Rolls (Phase 3.8). Any campaign member — not

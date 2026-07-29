@@ -21,14 +21,19 @@ import type { CatalogTableConfig } from '../services/catalogHomebrew.js';
 
 // urlSegment matches the existing GET /catalog/* route names (routes/catalog.ts) —
 // only damage_types differs (hyphenated in URLs, per that file's own convention).
-const ENTITIES: Array<{ urlSegment: string; table: HomebrewCatalogTable; keyColumn: CatalogTableConfig['keyColumn'] }> = [
-  { urlSegment: 'items', table: 'items', keyColumn: 'slug' },
-  { urlSegment: 'spells', table: 'spells', keyColumn: 'slug' },
-  { urlSegment: 'races', table: 'races', keyColumn: 'index_key' },
-  { urlSegment: 'subraces', table: 'subraces', keyColumn: 'index_key' },
+const ENTITIES: Array<{
+  urlSegment: string;
+  table: HomebrewCatalogTable;
+  keyColumn: CatalogTableConfig['keyColumn'];
+  jsonbColumns?: CatalogTableConfig['jsonbColumns'];
+}> = [
+  { urlSegment: 'items', table: 'items', keyColumn: 'slug', jsonbColumns: new Set(['properties']) },
+  { urlSegment: 'spells', table: 'spells', keyColumn: 'slug', jsonbColumns: new Set(['damage_at_level']) },
+  { urlSegment: 'races', table: 'races', keyColumn: 'index_key', jsonbColumns: new Set(['ability_bonuses', 'traits']) },
+  { urlSegment: 'subraces', table: 'subraces', keyColumn: 'index_key', jsonbColumns: new Set(['ability_bonuses', 'traits']) },
   { urlSegment: 'classes', table: 'classes', keyColumn: 'index_key' },
   { urlSegment: 'subclasses', table: 'subclasses', keyColumn: 'index_key' },
-  { urlSegment: 'backgrounds', table: 'backgrounds', keyColumn: 'index_key' },
+  { urlSegment: 'backgrounds', table: 'backgrounds', keyColumn: 'index_key', jsonbColumns: new Set(['ability_bonus_choices']) },
   { urlSegment: 'feats', table: 'feats', keyColumn: 'index_key' },
   { urlSegment: 'alignments', table: 'alignments', keyColumn: 'index_key' },
   { urlSegment: 'languages', table: 'languages', keyColumn: 'index_key' },
@@ -56,7 +61,7 @@ export const campaignCatalogRouter = Router({ mergeParams: true });
 campaignCatalogRouter.use(requireAuth, requireCampaignMember());
 
 for (const entity of ENTITIES) {
-  const config: CatalogTableConfig = { table: entity.table, keyColumn: entity.keyColumn };
+  const config: CatalogTableConfig = { table: entity.table, keyColumn: entity.keyColumn, jsonbColumns: entity.jsonbColumns };
 
   campaignCatalogRouter.post(`/${entity.urlSegment}`, requireRole('dm'), async (req, res) => {
     const input = createHomebrewSchemas[entity.table].parse(req.body) as Record<string, unknown>;

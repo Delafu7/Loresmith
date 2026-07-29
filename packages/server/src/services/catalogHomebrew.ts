@@ -21,6 +21,23 @@ export interface CatalogTableConfig {
   // at all (e.g. effect_definitions) — the suffix-append below exists only
   // to dodge that constraint, so it's simply skipped when there isn't one.
   keyColumn: 'slug' | 'index_key' | null;
+  // jsonb columns on this table (e.g. races.traits, items.properties). `pg`
+  // only auto-serializes a plain JS *object* param into jsonb correctly — a
+  // plain JS *array* param (traits is `jsonb` holding an array of trait
+  // objects) gets bound as a Postgres ARRAY literal instead and the insert
+  // fails with "invalid input syntax for type json". Explicitly
+  // JSON.stringify-ing every column named here sidesteps that regardless of
+  // whether the value underneath happens to be an object or an array.
+  jsonbColumns?: Set<string>;
+}
+
+function serializeJsonbColumns(config: CatalogTableConfig, values: Record<string, unknown>): Record<string, unknown> {
+  if (!config.jsonbColumns || config.jsonbColumns.size === 0) return values;
+  const out: Record<string, unknown> = { ...values };
+  for (const col of config.jsonbColumns) {
+    if (col in out && out[col] !== null && out[col] !== undefined) out[col] = JSON.stringify(out[col]);
+  }
+  return out;
 }
 
 function randomSuffix(): string {
@@ -46,13 +63,13 @@ export async function createHomebrewCatalogRow(
   const role = await requireMembership(pool, campaignId, actorId);
   requireDm(role);
 
-  let scopedValues = values;
+  let scopedValues = serializeJsonbColumns(config, values);
   if (config.keyColumn !== null) {
     const keyValue = values[config.keyColumn];
     if (typeof keyValue !== 'string' || keyValue.length === 0) {
       throw new AppError('VALIDATION_ERROR', `${config.keyColumn} is required`);
     }
-    scopedValues = { ...values, [config.keyColumn]: `${keyValue}-${randomSuffix()}` };
+    scopedValues = { ...scopedValues, [config.keyColumn]: `${keyValue}-${randomSuffix()}` };
   }
 
   const columns = Object.keys(scopedValues);
@@ -100,7 +117,8 @@ export async function updateHomebrewCatalogRow(
 ): Promise<Record<string, unknown>> {
   await fetchOwnedRowOrThrow(pool, actorId, campaignId, config, id);
 
-  const columns = Object.keys(values).filter((c) => values[c] !== undefined);
+  const scopedValues = serializeJsonbColumns(config, values);
+  const columns = Object.keys(scopedValues).filter((c) => scopedValues[c] !== undefined);
   if (columns.length === 0) {
     const current = await pool.query(`SELECT * FROM ${config.table} WHERE id = $1`, [id]);
     return current.rows[0];
@@ -108,7 +126,7 @@ export async function updateHomebrewCatalogRow(
   const sets = columns.map((c, i) => `${c} = $${i + 1}`);
   const result = await pool.query(
     `UPDATE ${config.table} SET ${sets.join(', ')}, updated_at = now() WHERE id = $${columns.length + 1} RETURNING *`,
-    [...columns.map((c) => values[c]), id],
+    [...columns.map((c) => scopedValues[c]), id],
   );
   return result.rows[0];
 }
