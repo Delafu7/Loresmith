@@ -6,6 +6,7 @@ import { Field, Input, Textarea, Select } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
 import { useFormDraft } from '../lib/useFormDraft';
+import { useLocale } from '../i18n/LocaleContext';
 
 export type DraftValues = Record<string, string>;
 
@@ -30,8 +31,15 @@ export function draftFromEntry(fields: CatalogField[], entry: Record<string, unk
  * Builds the JSON request body from draft string values, per field type.
  * Throws a plain Error with a field-identifying message on a bad JSON
  * field, caught by the caller and shown inline rather than crashing.
+ * `invalidJsonMessage` lets the caller supply a localized message (see
+ * useLocale's `catalog.form.invalidJson`) — this module has no component
+ * context of its own to call t() with.
  */
-export function buildPayload(fields: CatalogField[], draft: DraftValues): Record<string, unknown> {
+export function buildPayload(
+  fields: CatalogField[],
+  draft: DraftValues,
+  invalidJsonMessage: (label: string) => string = (label) => `"${label}" isn't valid JSON.`,
+): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   for (const f of fields) {
     const raw = draft[f.key] ?? '';
@@ -55,7 +63,7 @@ export function buildPayload(fields: CatalogField[], draft: DraftValues): Record
         try {
           payload[f.key] = JSON.parse(raw);
         } catch {
-          throw new Error(`"${f.label}" isn't valid JSON.`);
+          throw new Error(invalidJsonMessage(f.label));
         }
         break;
       default:
@@ -93,12 +101,13 @@ function ReferenceSelectField({
   campaignId: string;
   edition: string;
 }) {
+  const { t } = useLocale();
   const options = useReferenceOptions(field.reference!, campaignId, edition);
   const id = `catalog-field-${field.key}`;
   return (
     <Field label={field.label} htmlFor={id} hint={field.helpText}>
       <Select id={id} value={value} onChange={(e) => onChange(e.target.value)} required={field.required}>
-        <option value="">{field.required ? 'Select…' : '(none)'}</option>
+        <option value="">{field.required ? t('catalog.form.selectPlaceholder') : t('catalog.form.noneOption')}</option>
         {options.map((opt) => (
           <option key={opt.id} value={opt.id}>
             {opt.name}
@@ -171,6 +180,7 @@ export function CatalogEntryForm({
   onCancel: () => void;
   submitting: boolean;
 }) {
+  const { t } = useLocale();
   const [draft, setDraft, clearDraft] = useFormDraft<DraftValues>(draftKey, () => draftFromEntry(fields, entry));
   const [formError, setFormError] = useState<unknown>(null);
 
@@ -182,7 +192,7 @@ export function CatalogEntryForm({
     e.preventDefault();
     setFormError(null);
     try {
-      const payload = buildPayload(fields, draft);
+      const payload = buildPayload(fields, draft, (label) => t('catalog.form.invalidJson', { label }));
       await onSubmit(payload);
       clearDraft();
     } catch (err) {
@@ -236,7 +246,7 @@ export function CatalogEntryForm({
           return (
             <Field key={f.key} label={f.label} htmlFor={id}>
               <Select id={id} value={draft[f.key] ?? ''} onChange={(e) => setField(f.key, e.target.value)} required={f.required}>
-                <option value="">{f.required ? 'Select…' : '(none)'}</option>
+                <option value="">{f.required ? t('catalog.form.selectPlaceholder') : t('catalog.form.noneOption')}</option>
                 {(f.options ?? []).map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}
@@ -275,10 +285,10 @@ export function CatalogEntryForm({
       {formError !== null && <ErrorBanner message={errorMessage(formError)} />}
       <div className="flex gap-2 pt-2">
         <Button type="submit" variant="primary" disabled={submitting}>
-          {submitting ? 'Saving…' : entry ? 'Save changes' : 'Create'}
+          {submitting ? t('catalog.form.saving') : entry ? t('catalog.form.saveChanges') : t('common.create')}
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
-          Cancel
+          {t('common.cancel')}
         </Button>
       </div>
     </form>

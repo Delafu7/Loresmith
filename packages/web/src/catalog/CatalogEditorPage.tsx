@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { Select } from '../components/ui/Field';
 import { formatTimestamp } from '../lib/dates';
+import { useLocale } from '../i18n/LocaleContext';
 
 type CatalogRow = Record<string, unknown> & {
   id: string;
@@ -26,6 +27,7 @@ type CatalogRow = Record<string, unknown> & {
 // the server's requireRole('dm') gate on every write route.
 export function CatalogEditorPage() {
   const { campaignId, campaign, role } = useCampaignShell();
+  const { t } = useLocale();
   const isDm = role === 'dm';
   const queryClient = useQueryClient();
   const [entitySegment, setEntitySegment] = useState(CATALOG_ENTITIES[0]!.segment);
@@ -89,15 +91,14 @@ export function CatalogEditorPage() {
     <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="font-display text-lg font-medium">Content catalog</h2>
+          <h2 className="font-display text-lg font-medium">{t('catalog.list.heading')}</h2>
           <p className="text-sm text-stone-400">
-            Official {config.pluralLabel.toLowerCase()} are shared across every campaign and can&apos;t be edited in
-            place — duplicate one to fork it into your own, editable copy.
+            {t('catalog.list.subtitle', { plural: config.pluralLabel.toLowerCase() })}
           </p>
         </div>
         {isDm && (
           <Button variant="primary" size="sm" onClick={() => setEditingEntry('new')}>
-            + New {config.label.toLowerCase()}
+            {t('catalog.list.newEntity', { label: config.label.toLowerCase() })}
           </Button>
         )}
       </div>
@@ -112,7 +113,9 @@ export function CatalogEditorPage() {
 
       {listQuery.isLoading && <Loading />}
       {listQuery.isError && <ErrorBanner message={errorMessage(listQuery.error)} />}
-      {listQuery.data && entries.length === 0 && <EmptyState message={`No ${config.pluralLabel.toLowerCase()} yet.`} />}
+      {listQuery.data && entries.length === 0 && (
+        <EmptyState message={t('catalog.list.noEntries', { plural: config.pluralLabel.toLowerCase() })} />
+      )}
 
       <ul className="space-y-2">
         {entries.map((entry) => (
@@ -120,13 +123,18 @@ export function CatalogEditorPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-stone-100 truncate">{entry.name}</span>
-                <Badge variant={entry.is_homebrew ? 'accent' : 'neutral'}>{entry.is_homebrew ? 'Homebrew' : 'Official'}</Badge>
+                <Badge variant={entry.is_homebrew ? 'accent' : 'neutral'}>
+                  {entry.is_homebrew ? t('catalog.list.homebrewBadge') : t('catalog.list.officialBadge')}
+                </Badge>
               </div>
               {/* Only meaningful for homebrew rows — official rows' created_at
                   is just whenever the homebrew-scope migration ran. */}
               {entry.is_homebrew && (
                 <p className="text-xs text-stone-500 mt-0.5">
-                  Created {formatTimestamp(entry.created_at)} · Updated {formatTimestamp(entry.updated_at)}
+                  {t('catalog.list.createdUpdated', {
+                    created: formatTimestamp(entry.created_at),
+                    updated: formatTimestamp(entry.updated_at),
+                  })}
                 </p>
               )}
             </div>
@@ -138,7 +146,7 @@ export function CatalogEditorPage() {
                     onClick={() => setEditingEntry(entry)}
                     className="min-h-11 px-2 text-amber-500 hover:text-amber-400 text-sm"
                   >
-                    Edit
+                    {t('common.edit')}
                   </button>
                 )}
                 <button
@@ -147,18 +155,18 @@ export function CatalogEditorPage() {
                   disabled={duplicateMutation.isPending}
                   className="min-h-11 px-2 text-stone-300 hover:text-stone-100 text-sm disabled:opacity-50"
                 >
-                  Duplicate
+                  {t('catalog.list.duplicate')}
                 </button>
                 {ownsEntry(entry) && (
                   <button
                     type="button"
                     onClick={() => {
-                      if (confirm(`Delete "${entry.name}"? This can't be undone.`)) deleteMutation.mutate(entry.id);
+                      if (confirm(t('catalog.list.confirmDelete', { name: entry.name }))) deleteMutation.mutate(entry.id);
                     }}
                     disabled={deleteMutation.isPending}
                     className="min-h-11 px-2 text-red-400 hover:text-red-300 text-sm disabled:opacity-50"
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 )}
               </div>
@@ -204,12 +212,22 @@ function CatalogEntryModal({
   onUpdate: (id: string, payload: Record<string, unknown>) => Promise<unknown>;
   submitting: boolean;
 }) {
+  const { t } = useLocale();
   if (editingEntry === null) return null;
   const entry = editingEntry === 'new' ? null : editingEntry;
   const draftKey = `draft:catalog:${campaignId}:${config.segment}:${entry ? entry.id : 'new'}`;
 
   return (
-    <Modal open onClose={onClose} title={entry ? `Edit ${config.label.toLowerCase()}` : `New ${config.label.toLowerCase()}`} size="lg">
+    <Modal
+      open
+      onClose={onClose}
+      title={
+        entry
+          ? t('catalog.list.modalEditTitle', { label: config.label.toLowerCase() })
+          : t('catalog.list.modalNewTitle', { label: config.label.toLowerCase() })
+      }
+      size="lg"
+    >
       <CatalogEntryForm
         fields={config.fields}
         entry={entry}

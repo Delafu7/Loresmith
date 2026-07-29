@@ -7,20 +7,22 @@
 // `/creature/:id` sheet.
 
 import { Link, NavLink, Outlet } from 'react-router-dom';
+import { useLocale } from '../i18n/LocaleContext';
 
 export function BestiaryLayout() {
+  const { t } = useLocale();
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] flex items-center justify-between flex-wrap gap-3 sm:px-6">
         <div className="flex items-center gap-4">
           <Link to="/home" className="text-xs text-stone-500 hover:text-stone-300">
-            ← Home
+            {t('nav.home')}
           </Link>
-          <h1 className="font-display text-xl font-medium">Bestiary</h1>
+          <h1 className="font-display text-xl font-medium">{t('nav.bestiary')}</h1>
         </div>
         <nav className="flex gap-1">
-          <BestiaryTab to="/bestiary/basic" label="Basic creatures" />
-          <BestiaryTab to="/bestiary/campaign" label="Campaign-specific" />
+          <BestiaryTab to="/bestiary/basic" label={t('bestiary.layout.tabBasic')} />
+          <BestiaryTab to="/bestiary/campaign" label={t('bestiary.layout.tabCampaign')} />
         </nav>
       </header>
       <main className="max-w-6xl mx-auto px-4 py-6 sm:py-8">

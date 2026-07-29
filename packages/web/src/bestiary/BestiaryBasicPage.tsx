@@ -7,8 +7,10 @@ import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Fe
 import { Portrait } from '../components/Portrait';
 import { Input, Select } from '../components/ui/Field';
 import { formatCrLabel } from './formatCr';
+import { useLocale } from '../i18n/LocaleContext';
 
 export function BestiaryBasicPage() {
+  const { t } = useLocale();
   const [search, setSearch] = useState('');
   const [creatureType, setCreatureType] = useState('');
   const [crMin, setCrMin] = useState('');
@@ -38,29 +40,29 @@ export function BestiaryBasicPage() {
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <Input
           type="search"
-          placeholder="Search creatures…"
+          placeholder={t('bestiary.basic.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="col-span-2 sm:w-48"
         />
         <Select value={creatureType} onChange={(e) => setCreatureType(e.target.value)} className="sm:w-40">
-          <option value="">All types</option>
-          {creatureTypes.map((t) => (
-            <option key={t} value={t}>
-              {t}
+          <option value="">{t('bestiary.basic.allTypes')}</option>
+          {creatureTypes.map((ct) => (
+            <option key={ct} value={ct}>
+              {ct}
             </option>
           ))}
         </Select>
         <Input
           type="number"
-          placeholder="CR min"
+          placeholder={t('bestiary.basic.crMin')}
           value={crMin}
           onChange={(e) => setCrMin(e.target.value)}
           className="sm:w-24"
         />
         <Input
           type="number"
-          placeholder="CR max"
+          placeholder={t('bestiary.basic.crMax')}
           value={crMax}
           onChange={(e) => setCrMax(e.target.value)}
           className="sm:w-24"
@@ -69,7 +71,7 @@ export function BestiaryBasicPage() {
 
       {monstersQuery.isLoading && <Loading />}
       {monstersQuery.isError && <ErrorBanner message={errorMessage(monstersQuery.error)} />}
-      {filtered.length === 0 && !monstersQuery.isLoading && <EmptyState message="No creatures match this filter." />}
+      {filtered.length === 0 && !monstersQuery.isLoading && <EmptyState message={t('bestiary.basic.noMatches')} />}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
         {filtered.map((m) => (
@@ -84,7 +86,7 @@ export function BestiaryBasicPage() {
             <div className="p-3">
               <p className="font-medium text-stone-100 truncate group-hover:text-amber-400">{m.name}</p>
               <p className="text-xs text-stone-500">
-                CR {formatCrLabel(m.challenge_rating)} · {m.creature_type}
+                {t('bestiary.crType', { cr: formatCrLabel(m.challenge_rating), type: m.creature_type })}
               </p>
             </div>
           </Link>

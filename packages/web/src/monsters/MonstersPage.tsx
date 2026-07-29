@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import type { MonsterCatalogEntry, MonsterInstance, StatBlockEntry } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useDamageTypesCatalog } from '../lib/useCatalog';
+import { useLocale } from '../i18n/LocaleContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { HPBar } from '../components/HPBar';
 import { HpAdjustForm } from '../components/HpAdjustForm';
@@ -14,6 +15,7 @@ import { parseDiceExpression } from '../components/QuickDiceRoller';
 
 export function MonstersPage() {
   const { campaignId, campaign, role } = useCampaignShell();
+  const { t } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [creatureTypeFilter, setCreatureTypeFilter] = useState('');
@@ -94,7 +96,7 @@ export function MonstersPage() {
   if (role !== 'dm') {
     return (
       <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
-        <ErrorBanner message="The bestiary is only available to the DM." />
+        <ErrorBanner message={t('monsters.dmOnly')} />
       </div>
     );
   }
@@ -108,17 +110,17 @@ export function MonstersPage() {
     <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto space-y-8">
       <section>
         <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-          <h2 className="text-lg font-semibold">Bestiary</h2>
+          <h2 className="text-lg font-semibold">{t('nav.bestiary')}</h2>
           <div className="flex items-center gap-2">
             <select
               value={creatureTypeFilter}
               onChange={(e) => setCreatureTypeFilter(e.target.value)}
               className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             >
-              <option value="">All types</option>
-              {creatureTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              <option value="">{t('monsters.list.allTypes')}</option>
+              {creatureTypes.map((ct) => (
+                <option key={ct} value={ct}>
+                  {ct}
                 </option>
               ))}
             </select>
@@ -127,7 +129,7 @@ export function MonstersPage() {
               onClick={() => navigate(`/campaigns/${campaignId}/monsters/new`)}
               className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
             >
-              + New homebrew creature
+              {t('monsters.list.newHomebrew')}
             </button>
           </div>
         </div>
@@ -142,11 +144,11 @@ export function MonstersPage() {
           <table className="w-full text-sm">
             <thead className="bg-stone-900 text-stone-500 text-xs uppercase">
               <tr>
-                <th className="text-left px-3 py-2">Name</th>
-                <th className="text-left px-3 py-2">Type</th>
-                <th className="text-left px-3 py-2">CR</th>
-                <th className="text-left px-3 py-2">AC</th>
-                <th className="text-left px-3 py-2">HP</th>
+                <th className="text-left px-3 py-2">{t('monsters.list.colName')}</th>
+                <th className="text-left px-3 py-2">{t('monsters.list.colType')}</th>
+                <th className="text-left px-3 py-2">{t('monsters.list.colCr')}</th>
+                <th className="text-left px-3 py-2">{t('monsters.list.colAc')}</th>
+                <th className="text-left px-3 py-2">{t('monsters.list.colHp')}</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -164,12 +166,12 @@ export function MonstersPage() {
                       </button>
                       {m.is_homebrew && (
                         <span className="ml-2 inline-block rounded border border-amber-700 text-amber-500 text-[10px] uppercase px-1 py-0.5 align-middle">
-                          Homebrew
+                          {t('monsters.list.homebrewBadge')}
                         </span>
                       )}
                       {m.is_unique && (
                         <span className="ml-2 inline-block rounded border border-purple-700 text-purple-400 text-[10px] uppercase px-1 py-0.5 align-middle">
-                          Unique
+                          {t('monsters.list.uniqueBadge')}
                         </span>
                       )}
                     </td>
@@ -183,7 +185,7 @@ export function MonstersPage() {
                         onClick={() => setExpandedMonsterId((cur) => (cur === m.id ? null : m.id))}
                         className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800"
                       >
-                        {expandedMonsterId === m.id ? 'Hide' : 'View'}
+                        {expandedMonsterId === m.id ? t('monsters.list.hide') : t('monsters.list.view')}
                       </button>
                       {m.is_homebrew && (
                         <button
@@ -191,7 +193,7 @@ export function MonstersPage() {
                           onClick={() => navigate(`/campaigns/${campaignId}/monsters/${m.id}/edit`)}
                           className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800"
                         >
-                          Edit
+                          {t('common.edit')}
                         </button>
                       )}
                       <button
@@ -200,21 +202,21 @@ export function MonstersPage() {
                         onClick={() => duplicateMonsterMutation.mutate(m.id)}
                         className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800 disabled:opacity-50"
                       >
-                        Duplicate
+                        {t('monsters.list.duplicate')}
                       </button>
                       {m.is_homebrew && (
                         <button
                           type="button"
                           disabled={deleteMonsterMutation.isPending}
                           onClick={() => {
-                            if (confirm(`Delete ${m.name}? This cannot be undone.`)) {
+                            if (confirm(t('monsters.list.confirmDelete', { name: m.name }))) {
                               deleteMonsterMutation.mutate(m.id);
                             }
                           }}
                           className="text-red-400 hover:text-red-300 text-xs px-1"
-                          aria-label={`Delete ${m.name}`}
+                          aria-label={t('monsters.list.deleteAriaLabel', { name: m.name })}
                         >
-                          Delete
+                          {t('common.delete')}
                         </button>
                       )}
                       {(() => {
@@ -225,11 +227,11 @@ export function MonstersPage() {
                           <button
                             type="button"
                             disabled={spawnMutation.isPending || alreadySpawned}
-                            title={alreadySpawned ? 'Unique creature already has an active instance' : undefined}
+                            title={alreadySpawned ? t('monsters.list.uniqueAlreadySpawnedTitle') : undefined}
                             onClick={() => spawnMutation.mutate(m)}
                             className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1 text-xs"
                           >
-                            {alreadySpawned ? 'Already spawned' : 'Spawn instance'}
+                            {alreadySpawned ? t('monsters.list.alreadySpawned') : t('monsters.list.spawnInstance')}
                           </button>
                         );
                       })()}
@@ -247,7 +249,7 @@ export function MonstersPage() {
               {filteredMonsters.length === 0 && !bestiaryQuery.isLoading && (
                 <tr>
                   <td colSpan={6}>
-                    <EmptyState message="No monsters match this filter." />
+                    <EmptyState message={t('monsters.list.noMatches')} />
                   </td>
                 </tr>
               )}
@@ -257,11 +259,11 @@ export function MonstersPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-3">Monster instances</h2>
+        <h2 className="text-lg font-semibold mb-3">{t('monsters.instances.heading')}</h2>
         {instancesQuery.isLoading && <Loading />}
         {instancesQuery.isError && <ErrorBanner message={errorMessage(instancesQuery.error)} />}
         {instancesQuery.data && instancesQuery.data.monsterInstances.length === 0 && (
-          <EmptyState message="No monster instances yet — spawn one from the bestiary above." />
+          <EmptyState message={t('monsters.instances.empty')} />
         )}
         <ul className="grid sm:grid-cols-2 gap-3">
           {instancesQuery.data?.monsterInstances.map((mi) => (
@@ -274,7 +276,7 @@ export function MonstersPage() {
                     type="button"
                     onClick={() => deleteInstanceMutation.mutate(mi.id)}
                     className="text-red-400 hover:text-red-300 text-xs"
-                    aria-label="Delete instance"
+                    aria-label={t('monsters.instances.deleteAria')}
                   >
                     ✕
                   </button>
@@ -305,6 +307,7 @@ export function MonstersPage() {
 // like InventoryPanel's per-weapon buttons do for characters.
 function MonsterInstanceAttacks({ instance, monster }: { instance: MonsterInstance; monster: MonsterCatalogEntry | undefined }) {
   const damageTypesQuery = useDamageTypesCatalog();
+  const { t } = useLocale();
   if (!monster || !Array.isArray(monster.actions)) return null;
   const actions = (monster.actions as StatBlockEntry[]).filter((a) => typeof a.attackBonus === 'number');
   if (actions.length === 0) return null;
@@ -322,7 +325,7 @@ function MonsterInstanceAttacks({ instance, monster }: { instance: MonsterInstan
               rollContext={`${monster.name} — ${action.name}`}
               modifier={action.attackBonus!}
               monsterInstanceId={instance.id}
-              triggerLabel="⚄ Attack"
+              triggerLabel={t('monsters.instances.attackLabel')}
             />
             {parsedDamage && (
               <DiceRoller
@@ -332,7 +335,7 @@ function MonsterInstanceAttacks({ instance, monster }: { instance: MonsterInstan
                 diceSides={parsedDamage.sides}
                 diceCount={parsedDamage.count}
                 monsterInstanceId={instance.id}
-                triggerLabel="🩸 Damage"
+                triggerLabel={t('monsters.instances.damageLabel')}
               />
             )}
           </div>

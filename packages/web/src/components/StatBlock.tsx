@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
 import type { MonsterCatalogEntry, StatBlockEntry } from '../lib/types';
 import { formatTimestamp } from '../lib/dates';
+import { useLocale } from '../i18n/LocaleContext';
 
 const ABILITIES: Array<{ key: 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha'; label: string }> = [
   { key: 'str', label: 'STR' },
@@ -101,6 +102,7 @@ function kvList(record: Record<string, number> | null | undefined): string {
 }
 
 export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
+  const { t } = useLocale();
   const proficiencyBonus = crToProficiencyBonus(monster.challenge_rating);
   const speedText = Object.entries(monster.speed ?? {})
     .map(([k, v]) => (k === 'walk' ? `${v} ft.` : `${k} ${v} ft.`))
@@ -130,20 +132,20 @@ export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
 
       <div className="text-sm space-y-1">
         <p>
-          <span className="font-semibold text-stone-100">Armor Class</span>{' '}
+          <span className="font-semibold text-stone-100">{t('statBlock.armorClass')}</span>{' '}
           <span className="text-stone-300">
             {monster.armor_class}
             {monster.armor_class_notes ? ` (${monster.armor_class_notes})` : ''}
           </span>
         </p>
         <p>
-          <span className="font-semibold text-stone-100">Hit Points</span>{' '}
+          <span className="font-semibold text-stone-100">{t('statBlock.hitPoints')}</span>{' '}
           <span className="text-stone-300">
             {monster.hit_point_average} ({monster.hit_dice})
           </span>
         </p>
         <p>
-          <span className="font-semibold text-stone-100">Speed</span>{' '}
+          <span className="font-semibold text-stone-100">{t('statBlock.speed')}</span>{' '}
           <span className="text-stone-300">{speedText || '—'}</span>
         </p>
       </div>
@@ -162,74 +164,74 @@ export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
         })}
       </div>
 
-      <CollapsibleSection title="Saves, skills & senses">
+      <CollapsibleSection title={t('statBlock.savesSkillsSenses')}>
         <div className="text-sm space-y-1">
           {savingThrowsText && (
             <p>
-              <span className="font-semibold text-stone-100">Saving Throws</span>{' '}
+              <span className="font-semibold text-stone-100">{t('statBlock.savingThrows')}</span>{' '}
               <span className="text-stone-300">{savingThrowsText}</span>
             </p>
           )}
           {skillsText && (
             <p>
-              <span className="font-semibold text-stone-100">Skills</span>{' '}
+              <span className="font-semibold text-stone-100">{t('statBlock.skills')}</span>{' '}
               <span className="text-stone-300">{skillsText}</span>
             </p>
           )}
           {vulnerabilities.length > 0 && (
             <p>
-              <span className="font-semibold text-stone-100">Damage Vulnerabilities</span>{' '}
+              <span className="font-semibold text-stone-100">{t('statBlock.damageVulnerabilities')}</span>{' '}
               <span className="text-stone-300">{vulnerabilities.join(', ')}</span>
             </p>
           )}
           {resistances.length > 0 && (
             <p>
-              <span className="font-semibold text-stone-100">Damage Resistances</span>{' '}
+              <span className="font-semibold text-stone-100">{t('statBlock.damageResistances')}</span>{' '}
               <span className="text-stone-300">{resistances.join(', ')}</span>
             </p>
           )}
           {immunities.length > 0 && (
             <p>
-              <span className="font-semibold text-stone-100">Damage Immunities</span>{' '}
+              <span className="font-semibold text-stone-100">{t('statBlock.damageImmunities')}</span>{' '}
               <span className="text-stone-300">{immunities.join(', ')}</span>
             </p>
           )}
           {monster.senses && (
             <p>
-              <span className="font-semibold text-stone-100">Senses</span>{' '}
+              <span className="font-semibold text-stone-100">{t('statBlock.senses')}</span>{' '}
               <span className="text-stone-300">{monster.senses}</span>
             </p>
           )}
           {monster.languages && (
             <p>
-              <span className="font-semibold text-stone-100">Languages</span>{' '}
+              <span className="font-semibold text-stone-100">{t('statBlock.languages')}</span>{' '}
               <span className="text-stone-300">{monster.languages}</span>
             </p>
           )}
           <p>
-            <span className="font-semibold text-stone-100">Challenge</span>{' '}
+            <span className="font-semibold text-stone-100">{t('statBlock.challenge')}</span>{' '}
             <span className="text-stone-300">
               {formatCr(monster.challenge_rating)} ({monster.xp_value.toLocaleString()} XP)
             </span>{' '}
-            <span className="font-semibold text-stone-100">Proficiency Bonus</span>{' '}
+            <span className="font-semibold text-stone-100">{t('statBlock.proficiencyBonus')}</span>{' '}
             <span className="text-stone-300">{formatModifier(proficiencyBonus)}</span>
           </p>
         </div>
       </CollapsibleSection>
 
       {traits.length > 0 && (
-        <CollapsibleSection title="Traits">
+        <CollapsibleSection title={t('statBlock.traits')}>
           <EntryList title="" entries={traits} />
         </CollapsibleSection>
       )}
-      <EntryList title="Actions" entries={actions} />
+      <EntryList title={t('statBlock.actions')} entries={actions} />
       {legendaryActions.length > 0 && (
-        <CollapsibleSection title="Legendary Actions">
+        <CollapsibleSection title={t('statBlock.legendaryActions')}>
           <EntryList title="" entries={legendaryActions} />
         </CollapsibleSection>
       )}
       {reactions.length > 0 && (
-        <CollapsibleSection title="Reactions">
+        <CollapsibleSection title={t('statBlock.reactions')}>
           <EntryList title="" entries={reactions} />
         </CollapsibleSection>
       )}
@@ -237,7 +239,10 @@ export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
           created_at is just whenever that migration happened to run. */}
       {monster.is_homebrew && (
         <p className="text-xs text-stone-500 pt-1">
-          Created {formatTimestamp(monster.created_at)} · Updated {formatTimestamp(monster.updated_at)}
+          {t('statBlock.createdUpdated', {
+            created: formatTimestamp(monster.created_at),
+            updated: formatTimestamp(monster.updated_at),
+          })}
         </p>
       )}
     </div>

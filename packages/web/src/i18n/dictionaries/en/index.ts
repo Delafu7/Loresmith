@@ -27,8 +27,13 @@ import { assets } from './assets.js';
 import { dice } from './dice.js';
 import { landing } from './landing.js';
 import { characters } from './characters.js';
+import { monsters } from './monsters.js';
+import { bestiary } from './bestiary.js';
+import { statBlock } from './statBlock.js';
+import { catalog } from './catalog.js';
 
 export const en = {
   common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust, upload,
   campaigns, notes, sessionLog, assets, dice, landing, characters,
+  monsters, bestiary, statBlock, catalog,
 };

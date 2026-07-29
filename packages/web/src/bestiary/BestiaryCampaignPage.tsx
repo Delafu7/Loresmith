@@ -7,11 +7,13 @@ import { Portrait } from '../components/Portrait';
 import { ButtonLink } from '../components/ui/Button';
 import { formatCrLabel } from './formatCr';
 import { isUuid } from '../lib/ids';
+import { useLocale } from '../i18n/LocaleContext';
 
 // No :id in the URL — a picker over the user's own campaigns, since
 // "campaign-specific creatures" only means something once you've chosen
 // which campaign. Route: /bestiary/campaign.
 export function BestiaryCampaignPickerPage() {
+  const { t } = useLocale();
   const campaignsQuery = useQuery({
     queryKey: ['campaigns'],
     queryFn: () => api.get<{ campaigns: Campaign[] }>('/campaigns'),
@@ -19,11 +21,11 @@ export function BestiaryCampaignPickerPage() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-stone-400">Pick a campaign to see its homebrew creatures.</p>
+      <p className="text-sm text-stone-400">{t('bestiary.campaign.pickPrompt')}</p>
       {campaignsQuery.isLoading && <Loading />}
       {campaignsQuery.isError && <ErrorBanner message={errorMessage(campaignsQuery.error)} />}
       {campaignsQuery.data && campaignsQuery.data.campaigns.length === 0 && (
-        <EmptyState message="You're not in any campaigns yet." />
+        <EmptyState message={t('bestiary.campaign.noCampaigns')} />
       )}
       <ul className="grid sm:grid-cols-2 gap-3">
         {campaignsQuery.data?.campaigns.map((c) => (
@@ -47,6 +49,7 @@ export function BestiaryCampaignPickerPage() {
 // Route: /bestiary/campaign/:id — that campaign's homebrew creatures only
 // (no global-catalog union; the Basic tab already covers that).
 export function BestiaryCampaignPage() {
+  const { t } = useLocale();
   const params = useParams<{ id: string }>();
   const campaignId = params.id ?? '';
 
@@ -72,7 +75,7 @@ export function BestiaryCampaignPage() {
         <h2 className="font-display text-lg font-medium">{campaignQuery.data?.campaign.name}</h2>
         {campaignQuery.data?.myRole === 'dm' && (
           <ButtonLink to={`/campaigns/${campaignId}/monsters/new`} variant="primary" size="sm">
-            + New homebrew creature
+            {t('bestiary.campaign.newHomebrew')}
           </ButtonLink>
         )}
       </div>
@@ -80,7 +83,7 @@ export function BestiaryCampaignPage() {
       {monstersQuery.isLoading && <Loading />}
       {monstersQuery.isError && <ErrorBanner message={errorMessage(monstersQuery.error)} />}
       {monstersQuery.data && monstersQuery.data.monsters.length === 0 && (
-        <EmptyState message="No homebrew creatures in this campaign yet." />
+        <EmptyState message={t('bestiary.campaign.noHomebrewCreatures')} />
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
@@ -96,7 +99,7 @@ export function BestiaryCampaignPage() {
             <div className="p-3">
               <p className="font-medium text-stone-100 truncate group-hover:text-amber-400">{m.name}</p>
               <p className="text-xs text-stone-500">
-                CR {formatCrLabel(m.challenge_rating)} · {m.creature_type}
+                {t('bestiary.crType', { cr: formatCrLabel(m.challenge_rating), type: m.creature_type })}
               </p>
             </div>
           </Link>

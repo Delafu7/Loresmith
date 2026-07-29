@@ -20,6 +20,7 @@ import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { StatBlock } from '../components/StatBlock';
 import { useFormDraft } from '../lib/useFormDraft';
+import { useLocale } from '../i18n/LocaleContext';
 
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 const CR_OPTIONS = [
@@ -289,6 +290,7 @@ export function CreatureEditorPage() {
   const monsterId = params.monsterId ?? null;
   const isEdit = monsterId !== null;
   const { campaignId, campaign, role } = useCampaignShell();
+  const { t } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -348,17 +350,17 @@ export function CreatureEditorPage() {
   if (role !== 'dm') {
     return (
       <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
-        <ErrorBanner message="The bestiary is only available to the DM." />
+        <ErrorBanner message={t('monsters.dmOnly')} />
       </div>
     );
   }
 
-  if (isEdit && bestiaryQuery.isLoading) return <Loading label="Loading creature…" />;
+  if (isEdit && bestiaryQuery.isLoading) return <Loading label={t('monsters.editor.loadingCreature')} />;
   if (isEdit && bestiaryQuery.isError) return <ErrorBanner message={errorMessage(bestiaryQuery.error)} />;
   if (isEdit && bestiaryQuery.data && !existingMonster) {
     return (
       <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
-        <ErrorBanner message="This creature no longer exists or isn't homebrew for this campaign." />
+        <ErrorBanner message={t('monsters.editor.creatureNotFound')} />
       </div>
     );
   }
@@ -368,13 +370,13 @@ export function CreatureEditorPage() {
   }
 
   function validate(): string | null {
-    if (!form.name.trim()) return 'Name is required.';
-    if (!form.creatureType.trim()) return 'Creature type is required.';
-    if (!form.hitDice.trim()) return 'Hit dice is required.';
-    if (!form.armorClass || Number(form.armorClass) <= 0) return 'Armor class must be a positive number.';
-    if (!form.hitPointAverage || Number(form.hitPointAverage) <= 0) return 'Hit point average must be a positive number.';
+    if (!form.name.trim()) return t('monsters.editor.nameRequired');
+    if (!form.creatureType.trim()) return t('monsters.editor.creatureTypeRequired');
+    if (!form.hitDice.trim()) return t('monsters.editor.hitDiceRequired');
+    if (!form.armorClass || Number(form.armorClass) <= 0) return t('monsters.editor.armorClassPositive');
+    if (!form.hitPointAverage || Number(form.hitPointAverage) <= 0) return t('monsters.editor.hitPointAveragePositive');
     const validActions = form.actions.filter((a) => a.name.trim() && a.description.trim());
-    if (validActions.length === 0) return 'At least one action (with name and description) is required.';
+    if (validActions.length === 0) return t('monsters.editor.actionRequired');
     return null;
   }
 
@@ -398,20 +400,22 @@ export function CreatureEditorPage() {
     <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-stone-100">
-          {isEdit ? `Edit ${existingMonster?.name ?? 'creature'}` : 'New homebrew creature'}
+          {isEdit
+            ? t('monsters.editor.editTitle', { name: existingMonster?.name ?? t('monsters.editor.creatureFallback') })
+            : t('monsters.editor.newTitle')}
         </h2>
         <button
           type="button"
           onClick={() => navigate(`/campaigns/${campaignId}/monsters`)}
           className="text-xs text-stone-400 hover:text-stone-200"
         >
-          ← Back to bestiary
+          {t('monsters.editor.backToBestiary')}
         </button>
       </div>
 
       {hadDraft && (
         <p className="text-xs text-amber-500 bg-amber-500/10 border border-amber-800 rounded-md px-3 py-2">
-          Restored unsaved changes from your last visit.{' '}
+          {t('monsters.editor.draftRestored')}{' '}
           <button
             type="button"
             onClick={() => {
@@ -420,16 +424,16 @@ export function CreatureEditorPage() {
             }}
             className="underline hover:text-amber-400"
           >
-            Discard draft
+            {t('monsters.editor.discardDraft')}
           </button>
         </p>
       )}
 
       {/* Identity */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
-        <h3 className="text-xs uppercase text-stone-500">Identity</h3>
+        <h3 className="text-xs uppercase text-stone-500">{t('monsters.editor.sectionIdentity')}</h3>
         <div className="grid sm:grid-cols-2 gap-3">
-          <Field label="Name" required>
+          <Field label={t('monsters.editor.fieldName')} required>
             <input
               type="text"
               value={form.name}
@@ -437,7 +441,7 @@ export function CreatureEditorPage() {
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
           </Field>
-          <Field label="Size">
+          <Field label={t('monsters.editor.fieldSize')}>
             <select
               value={form.size}
               onChange={(e) => update('size', e.target.value)}
@@ -450,16 +454,16 @@ export function CreatureEditorPage() {
               ))}
             </select>
           </Field>
-          <Field label="Creature type" required>
+          <Field label={t('monsters.editor.fieldCreatureType')} required>
             <input
               type="text"
               value={form.creatureType}
               onChange={(e) => update('creatureType', e.target.value)}
-              placeholder="e.g. beast, fiend, humanoid"
+              placeholder={t('monsters.editor.creatureTypePlaceholder')}
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
           </Field>
-          <Field label="Alignment">
+          <Field label={t('monsters.editor.fieldAlignment')}>
             <input
               type="text"
               value={form.alignment}
@@ -467,7 +471,7 @@ export function CreatureEditorPage() {
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
           </Field>
-          <Field label="Source">
+          <Field label={t('monsters.editor.fieldSource')}>
             <input
               type="text"
               value={form.source}
@@ -483,15 +487,15 @@ export function CreatureEditorPage() {
             onChange={(e) => update('isUnique', e.target.checked)}
             className="rounded border-stone-700 bg-stone-800"
           />
-          Unique (named/legendary — limit to one active instance per campaign)
+          {t('monsters.editor.uniqueLabel')}
         </label>
       </section>
 
       {/* Defense */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
-        <h3 className="text-xs uppercase text-stone-500">Defense</h3>
+        <h3 className="text-xs uppercase text-stone-500">{t('monsters.editor.sectionDefense')}</h3>
         <div className="grid sm:grid-cols-2 gap-3">
-          <Field label="Armor class" required>
+          <Field label={t('monsters.editor.fieldArmorClass')} required>
             <input
               type="number"
               value={form.armorClass}
@@ -499,16 +503,16 @@ export function CreatureEditorPage() {
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
           </Field>
-          <Field label="Armor class notes">
+          <Field label={t('monsters.editor.fieldArmorClassNotes')}>
             <input
               type="text"
               value={form.armorClassNotes}
               onChange={(e) => update('armorClassNotes', e.target.value)}
-              placeholder="e.g. natural armor"
+              placeholder={t('monsters.editor.armorClassNotesPlaceholder')}
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
           </Field>
-          <Field label="Hit point average" required>
+          <Field label={t('monsters.editor.fieldHitPointAverage')} required>
             <input
               type="number"
               value={form.hitPointAverage}
@@ -516,18 +520,18 @@ export function CreatureEditorPage() {
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
           </Field>
-          <Field label="Hit dice" required>
+          <Field label={t('monsters.editor.fieldHitDice')} required>
             <input
               type="text"
               value={form.hitDice}
               onChange={(e) => update('hitDice', e.target.value)}
-              placeholder="e.g. 2d8+2"
+              placeholder={t('monsters.editor.hitDicePlaceholder')}
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
           </Field>
         </div>
         <KvEditor
-          label="Speed (ft.)"
+          label={t('monsters.editor.speedLabel')}
           rows={form.speedRows}
           onChange={(rows) => update('speedRows', rows)}
           keyPlaceholder="walk"
@@ -537,7 +541,7 @@ export function CreatureEditorPage() {
 
       {/* Ability scores */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
-        <h3 className="text-xs uppercase text-stone-500">Ability scores</h3>
+        <h3 className="text-xs uppercase text-stone-500">{t('monsters.editor.sectionAbilityScores')}</h3>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map((key) => (
             <div key={key} className="rounded-lg border border-stone-800 bg-stone-950 p-3 text-center">
@@ -554,42 +558,42 @@ export function CreatureEditorPage() {
           ))}
         </div>
         <div className="grid sm:grid-cols-2 gap-3">
-          <KvEditor label="Saving throws" rows={form.savingThrowRows} onChange={(rows) => update('savingThrowRows', rows)} keyPlaceholder="dex" />
-          <KvEditor label="Skills" rows={form.skillRows} onChange={(rows) => update('skillRows', rows)} keyPlaceholder="stealth" />
+          <KvEditor label={t('monsters.editor.savingThrowsLabel')} rows={form.savingThrowRows} onChange={(rows) => update('savingThrowRows', rows)} keyPlaceholder="dex" />
+          <KvEditor label={t('monsters.editor.skillsLabel')} rows={form.skillRows} onChange={(rows) => update('skillRows', rows)} keyPlaceholder="stealth" />
         </div>
       </section>
 
       {/* Damage & senses */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
-        <h3 className="text-xs uppercase text-stone-500">Damage &amp; senses</h3>
+        <h3 className="text-xs uppercase text-stone-500">{t('monsters.editor.sectionDamageSenses')}</h3>
         <div className="grid sm:grid-cols-3 gap-3">
           <StringListEditor
-            label="Vulnerabilities"
+            label={t('monsters.editor.vulnerabilitiesLabel')}
             values={form.damageVulnerabilities}
             onChange={(v) => update('damageVulnerabilities', v)}
           />
           <StringListEditor
-            label="Resistances"
+            label={t('monsters.editor.resistancesLabel')}
             values={form.damageResistances}
             onChange={(v) => update('damageResistances', v)}
           />
           <StringListEditor
-            label="Immunities"
+            label={t('monsters.editor.immunitiesLabel')}
             values={form.damageImmunities}
             onChange={(v) => update('damageImmunities', v)}
           />
         </div>
         <div className="grid sm:grid-cols-2 gap-3">
-          <Field label="Senses">
+          <Field label={t('monsters.editor.fieldSenses')}>
             <input
               type="text"
               value={form.senses}
               onChange={(e) => update('senses', e.target.value)}
-              placeholder="e.g. darkvision 60 ft., passive Perception 12"
+              placeholder={t('monsters.editor.sensesPlaceholder')}
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
           </Field>
-          <Field label="Languages">
+          <Field label={t('monsters.editor.fieldLanguages')}>
             <input
               type="text"
               value={form.languages}
@@ -602,9 +606,9 @@ export function CreatureEditorPage() {
 
       {/* Challenge */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
-        <h3 className="text-xs uppercase text-stone-500">Challenge</h3>
+        <h3 className="text-xs uppercase text-stone-500">{t('monsters.editor.sectionChallenge')}</h3>
         <div className="grid sm:grid-cols-2 gap-3">
-          <Field label="Challenge rating">
+          <Field label={t('monsters.editor.fieldChallengeRating')}>
             <select
               value={form.challengeRating}
               onChange={(e) => update('challengeRating', e.target.value)}
@@ -617,7 +621,7 @@ export function CreatureEditorPage() {
               ))}
             </select>
           </Field>
-          <Field label="XP value">
+          <Field label={t('monsters.editor.fieldXpValue')}>
             <input
               type="number"
               value={form.xpValue}
@@ -630,30 +634,30 @@ export function CreatureEditorPage() {
 
       {/* Art */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
-        <h3 className="text-xs uppercase text-stone-500">Art</h3>
+        <h3 className="text-xs uppercase text-stone-500">{t('monsters.editor.sectionArt')}</h3>
         <div className="flex items-center gap-3">
           <Portrait
             fileUrl={selectedAsset?.file_url}
-            alt={`${form.name || 'Creature'} art`}
+            alt={`${form.name || t('monsters.editor.creatureNameFallback')} art`}
             size="lg"
             placeholderLabel={form.name}
           />
           <div className="flex flex-col gap-2">
-            <ImageUploadField campaignId={campaignId} onUploaded={handleAssetUploaded} label="Upload new image" />
+            <ImageUploadField campaignId={campaignId} onUploaded={handleAssetUploaded} label={t('monsters.editor.uploadNewImage')} />
             {form.artAssetId !== null && (
               <button
                 type="button"
                 onClick={() => update('artAssetId', null)}
                 className="text-xs text-stone-400 hover:text-stone-200 text-left"
               >
-                Clear selection
+                {t('monsters.editor.clearSelection')}
               </button>
             )}
           </div>
         </div>
         {assetsQuery.data && assetsQuery.data.assets.length > 0 && (
           <div>
-            <p className="text-[10px] text-stone-500 mb-1.5">Or pick an existing campaign asset:</p>
+            <p className="text-[10px] text-stone-500 mb-1.5">{t('monsters.editor.orPickExisting')}</p>
             <div className="flex flex-wrap gap-2">
               {assetsQuery.data.assets
                 .filter((a) => a.asset_type === 'image')
@@ -665,9 +669,9 @@ export function CreatureEditorPage() {
                     className={`rounded-md ${
                       form.artAssetId === a.id ? 'ring-2 ring-amber-500' : ''
                     }`}
-                    aria-label={`Select ${a.title ?? 'asset'} as creature art`}
+                    aria-label={t('monsters.editor.selectAsArt', { title: a.title ?? t('monsters.editor.assetFallback') })}
                   >
-                    <Portrait fileUrl={a.file_url} alt={a.title ?? 'Campaign asset'} size="sm" />
+                    <Portrait fileUrl={a.file_url} alt={a.title ?? t('monsters.editor.campaignAssetFallback')} size="sm" />
                   </button>
                 ))}
             </div>
@@ -677,23 +681,23 @@ export function CreatureEditorPage() {
 
       {/* Stat block entries */}
       <StatEntryListEditor
-        label="Traits"
+        label={t('monsters.editor.traitsLabel')}
         entries={form.traits}
         onChange={(entries) => update('traits', entries)}
       />
       <StatEntryListEditor
-        label="Actions"
+        label={t('monsters.editor.actionsLabel')}
         entries={form.actions}
         onChange={(entries) => update('actions', entries)}
         required
       />
       <StatEntryListEditor
-        label="Legendary actions"
+        label={t('monsters.editor.legendaryActionsLabel')}
         entries={form.legendaryActions}
         onChange={(entries) => update('legendaryActions', entries)}
       />
       <StatEntryListEditor
-        label="Reactions"
+        label={t('monsters.editor.reactionsLabel')}
         entries={form.reactions}
         onChange={(entries) => update('reactions', entries)}
       />
@@ -708,21 +712,25 @@ export function CreatureEditorPage() {
           onClick={submit}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
         >
-          {saveMutation.isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Create creature'}
+          {saveMutation.isPending
+            ? t('monsters.editor.saving')
+            : isEdit
+              ? t('monsters.editor.saveChanges')
+              : t('monsters.editor.createCreature')}
         </button>
         <button
           type="button"
           onClick={() => navigate(`/campaigns/${campaignId}/monsters`)}
           className="rounded-md border border-stone-700 px-4 py-2 text-sm text-stone-300 hover:bg-stone-800"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
         <button
           type="button"
           onClick={() => setShowPreview((v) => !v)}
           className="ml-auto text-xs text-amber-500 hover:text-amber-400"
         >
-          {showPreview ? 'Hide preview' : 'Show live preview'}
+          {showPreview ? t('monsters.editor.hidePreview') : t('monsters.editor.showLivePreview')}
         </button>
       </div>
 
@@ -756,6 +764,7 @@ function KvEditor({
   keyPlaceholder?: string;
   protectedKeys?: string[];
 }) {
+  const { t } = useLocale();
   function addRow() {
     onChange([...rows, { key: '', value: '0' }]);
   }
@@ -771,7 +780,7 @@ function KvEditor({
       <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] text-stone-500">{label}</span>
         <button type="button" onClick={addRow} className="text-xs text-amber-500 hover:text-amber-400">
-          + Add
+          {t('monsters.editor.addRow')}
         </button>
       </div>
       <div className="space-y-1.5">
@@ -795,7 +804,7 @@ function KvEditor({
               <button
                 type="button"
                 onClick={() => removeRow(i)}
-                aria-label="Remove row"
+                aria-label={t('monsters.editor.removeRowAria')}
                 className="text-red-400 hover:text-red-300 text-xs px-1"
               >
                 ✕
@@ -803,7 +812,7 @@ function KvEditor({
             )}
           </div>
         ))}
-        {rows.length === 0 && <p className="text-xs text-stone-600 italic">None</p>}
+        {rows.length === 0 && <p className="text-xs text-stone-600 italic">{t('monsters.editor.noneLabel')}</p>}
       </div>
     </div>
   );
@@ -818,6 +827,7 @@ function StringListEditor({
   values: string[];
   onChange: (values: string[]) => void;
 }) {
+  const { t } = useLocale();
   function addRow() {
     onChange([...values, '']);
   }
@@ -833,7 +843,7 @@ function StringListEditor({
       <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] text-stone-500">{label}</span>
         <button type="button" onClick={addRow} className="text-xs text-amber-500 hover:text-amber-400">
-          + Add
+          {t('monsters.editor.addRow')}
         </button>
       </div>
       <div className="space-y-1.5">
@@ -848,14 +858,14 @@ function StringListEditor({
             <button
               type="button"
               onClick={() => removeRow(i)}
-              aria-label="Remove"
+              aria-label={t('monsters.editor.removeAria')}
               className="text-red-400 hover:text-red-300 text-xs px-1"
             >
               ✕
             </button>
           </div>
         ))}
-        {values.length === 0 && <p className="text-xs text-stone-600 italic">None</p>}
+        {values.length === 0 && <p className="text-xs text-stone-600 italic">{t('monsters.editor.noneLabel')}</p>}
       </div>
     </div>
   );
@@ -872,6 +882,7 @@ function StatEntryListEditor({
   onChange: (entries: EntryDraft[]) => void;
   required?: boolean;
 }) {
+  const { t } = useLocale();
   function addEntry() {
     onChange([...entries, emptyEntry()]);
   }
@@ -887,19 +898,19 @@ function StatEntryListEditor({
       <div className="flex items-center justify-between">
         <h3 className="text-xs uppercase text-stone-500">
           {label}
-          {required && <span className="text-red-400"> * (at least 1)</span>}
+          {required && <span className="text-red-400"> {t('monsters.editor.requiredAtLeastOne')}</span>}
         </h3>
         <button type="button" onClick={addEntry} className="text-xs text-amber-500 hover:text-amber-400">
-          + Add entry
+          {t('monsters.editor.addEntry')}
         </button>
       </div>
-      {entries.length === 0 && <p className="text-xs text-stone-600 italic">None</p>}
+      {entries.length === 0 && <p className="text-xs text-stone-600 italic">{t('monsters.editor.noneLabel')}</p>}
       <div className="space-y-3">
         {entries.map((entry, i) => (
           <div key={i} className="rounded-md border border-stone-700 bg-stone-950 p-3 space-y-2">
             <div className="flex items-start gap-2">
               <div className="flex-1 grid sm:grid-cols-2 gap-2">
-                <Field label="Name">
+                <Field label={t('monsters.editor.fieldName')}>
                   <input
                     type="text"
                     value={entry.name}
@@ -907,7 +918,7 @@ function StatEntryListEditor({
                     className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
                   />
                 </Field>
-                <Field label="Attack bonus">
+                <Field label={t('monsters.editor.fieldAttackBonus')}>
                   <input
                     type="number"
                     value={entry.attackBonus}
@@ -919,13 +930,13 @@ function StatEntryListEditor({
               <button
                 type="button"
                 onClick={() => removeEntry(i)}
-                aria-label={`Remove ${label} entry`}
+                aria-label={t('monsters.editor.removeEntryAria', { label })}
                 className="text-red-400 hover:text-red-300 text-xs px-1 mt-4"
               >
                 ✕
               </button>
             </div>
-            <Field label="Description">
+            <Field label={t('monsters.editor.fieldDescription')}>
               <textarea
                 rows={2}
                 value={entry.description}
@@ -934,16 +945,16 @@ function StatEntryListEditor({
               />
             </Field>
             <div className="grid sm:grid-cols-3 gap-2">
-              <Field label="Damage dice">
+              <Field label={t('monsters.editor.fieldDamageDice')}>
                 <input
                   type="text"
                   value={entry.damageDice}
-                  placeholder="e.g. 1d6+2"
+                  placeholder={t('monsters.editor.damageDicePlaceholder')}
                   onChange={(e) => updateEntry(i, { damageDice: e.target.value })}
                   className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
                 />
               </Field>
-              <Field label="Damage type">
+              <Field label={t('monsters.editor.fieldDamageType')}>
                 <input
                   type="text"
                   value={entry.damageType}
@@ -951,7 +962,7 @@ function StatEntryListEditor({
                   className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
                 />
               </Field>
-              <Field label="Save DC / ability">
+              <Field label={t('monsters.editor.fieldSaveDcAbility')}>
                 <div className="flex gap-1">
                   <input
                     type="number"

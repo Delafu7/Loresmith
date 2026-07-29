@@ -12,8 +12,10 @@ import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { Portrait } from '../components/Portrait';
 import { StatBlock } from '../components/StatBlock';
 import { isUuid } from '../lib/ids';
+import { useLocale } from '../i18n/LocaleContext';
 
 export function CreatureSheetPage() {
+  const { t } = useLocale();
   const params = useParams<{ id: string }>();
   const id = params.id ?? '';
 
@@ -27,7 +29,7 @@ export function CreatureSheetPage() {
     <div className="min-h-dvh bg-stone-950 text-stone-100">
       <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
         <Link to="/bestiary/basic" className="text-xs text-stone-500 hover:text-stone-300">
-          ← Bestiary
+          {t('bestiary.sheet.backToBestiary')}
         </Link>
       </header>
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-5 sm:py-8">
