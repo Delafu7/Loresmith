@@ -12,9 +12,15 @@ export const dice = {
   historyMinutesAgo: 'il y a {count} min',
   historyHoursAgo: 'il y a {count} h',
   historyDaysAgo: 'il y a {count} j',
-  rollerDisadvantage: 'Désav',
+  // Kept as tight as English's own 'Disadv'/'Adv' — this three-button
+  // toggle renders inline in very dense rows (one per ability score in
+  // SavingThrowsPanel). Note: that row overflows its grid cell even in
+  // English at narrower widths — a pre-existing SavingThrowsPanel/
+  // DiceRoller layout bug, not something translation length caused or
+  // this abbreviation fully fixes; out of scope for a translation pass.
+  rollerDisadvantage: 'Dés',
   rollerNormal: 'Normal',
-  rollerAdvantage: 'Avant',
+  rollerAdvantage: 'Av',
   rollerRollModeLabel: 'Mode de lancer',
   rollerRollButton: 'Lancer',
   rollerKept: 'Conservé',
