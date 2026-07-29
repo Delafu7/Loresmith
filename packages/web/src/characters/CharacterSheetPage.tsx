@@ -39,12 +39,14 @@ import { proficiencyBonusForLevel } from '../lib/dnd-math';
 import type { ProficiencyLevel } from '../components/ProficiencyToggle';
 import { isUuid } from '../lib/ids';
 import { formatTimestamp } from '../lib/dates';
+import { useLocale } from '../i18n/LocaleContext';
 
 export function CharacterSheetPage() {
   const params = useParams<{ characterId: string }>();
   const characterId = params.characterId ?? '';
   const { campaignId, campaign, role } = useCampaignShell();
   const { user } = useAuth();
+  const { t } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -200,7 +202,7 @@ export function CharacterSheetPage() {
     );
   }
 
-  if (characterQuery.isLoading) return <Loading label="Loading character…" />;
+  if (characterQuery.isLoading) return <Loading label={t('characters.sheet.loadingCharacter')} />;
   if (characterQuery.isError) return <ErrorBanner message={errorMessage(characterQuery.error)} />;
   if (!character || !coreDraft) return null;
 
@@ -253,21 +255,24 @@ export function CharacterSheetPage() {
                   characterId={characterId}
                   title={`${character.name} portrait`}
                   onUploaded={handlePortraitUploaded}
-                  label={portraitAsset ? 'Change' : 'Upload'}
+                  label={portraitAsset ? t('characters.sheet.changePortrait') : t('characters.sheet.uploadPortrait')}
                 />
               )}
             </div>
             <div>
               <h2 className="text-xl font-semibold text-stone-100">{character.name}</h2>
               <p className="text-sm text-stone-400">
-                {character.is_pc ? 'Player character' : 'NPC'}
+                {character.is_pc ? t('characters.common.playerCharacter') : t('characters.common.npc')}
                 {raceName ? ` · ${raceName}` : ''}
                 {backgroundName ? ` · ${backgroundName}` : ''}
                 {character.alignment ? ` · ${character.alignment}` : ''}
               </p>
-              {!character.is_alive && <p className="text-red-400 text-sm font-semibold mt-1">Deceased</p>}
+              {!character.is_alive && <p className="text-red-400 text-sm font-semibold mt-1">{t('characters.common.deceased')}</p>}
               <p className="text-xs text-stone-500 mt-1">
-                Created {formatTimestamp(character.created_at)} · Updated {formatTimestamp(character.updated_at)}
+                {t('characters.sheet.createdUpdated', {
+                  created: formatTimestamp(character.created_at),
+                  updated: formatTimestamp(character.updated_at),
+                })}
               </p>
             </div>
           </div>
@@ -279,16 +284,16 @@ export function CharacterSheetPage() {
                 disabled={duplicateMutation.isPending}
                 className="text-xs text-stone-300 hover:text-stone-100 border border-stone-700 rounded-md px-2 py-1 disabled:opacity-50"
               >
-                {duplicateMutation.isPending ? 'Duplicating…' : 'Duplicate'}
+                {duplicateMutation.isPending ? t('characters.sheet.duplicating') : t('characters.sheet.duplicate')}
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm(`Delete ${character.name}? This cannot be undone.`)) deleteMutation.mutate();
+                  if (confirm(t('characters.sheet.confirmDelete', { name: character.name }))) deleteMutation.mutate();
                 }}
                 className="text-xs text-red-400 hover:text-red-300 border border-red-900 rounded-md px-2 py-1"
               >
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           )}
@@ -298,7 +303,7 @@ export function CharacterSheetPage() {
 
       {/* HP panel */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Hit points</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">{t('characters.sheet.hitPoints')}</h3>
         <HPBar current={character.hp_current} max={character.hp_max} temp={character.hp_temp} />
         {editable && (
           <HpAdjustForm
@@ -312,14 +317,14 @@ export function CharacterSheetPage() {
       {/* Core stats */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Ability scores</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">{t('characters.sheet.abilityScores')}</h3>
           {editable && !editingCore && (
             <button
               type="button"
               onClick={() => setEditingCore(true)}
               className="text-xs text-amber-500 hover:text-amber-400"
             >
-              Edit
+              {t('common.edit')}
             </button>
           )}
         </div>
@@ -330,11 +335,11 @@ export function CharacterSheetPage() {
         />
         <div className="grid grid-cols-2 gap-4 mt-4 max-w-xs">
           <div>
-            <label className="block text-xs text-stone-500 mb-1">Armor Class</label>
+            <label className="block text-xs text-stone-500 mb-1">{t('characters.common.armorClass')}</label>
             {character.armor_class_mode === 'auto' ? (
               <div className="flex items-center gap-1.5">
                 <span className="text-lg font-semibold text-stone-100">{character.armor_class}</span>
-                <span className="text-[10px] uppercase text-stone-500">(auto)</span>
+                <span className="text-[10px] uppercase text-stone-500">{t('characters.sheet.autoLabel')}</span>
               </div>
             ) : editingCore ? (
               <input
@@ -348,7 +353,7 @@ export function CharacterSheetPage() {
             )}
           </div>
           <div>
-            <label className="block text-xs text-stone-500 mb-1">Speed</label>
+            <label className="block text-xs text-stone-500 mb-1">{t('characters.sheet.speed')}</label>
             {editingCore ? (
               <input
                 type="number"
@@ -386,14 +391,14 @@ export function CharacterSheetPage() {
               }
               className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
             >
-              Save
+              {t('common.save')}
             </button>
             <button
               type="button"
               onClick={() => setEditingCore(false)}
               className="rounded-md border border-stone-700 px-3 py-1.5 text-sm text-stone-300 hover:bg-stone-800"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         )}
@@ -470,7 +475,7 @@ export function CharacterSheetPage() {
       <CharacterEffectsPanel characterId={characterId} campaignId={campaignId} isDm={role === 'dm'} />
 
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">Notes</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">{t('characters.sheet.notes')}</h3>
         {editingCore ? (
           <textarea
             rows={4}

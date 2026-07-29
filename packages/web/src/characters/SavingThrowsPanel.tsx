@@ -1,6 +1,7 @@
 import type { AbilityScoreCatalog } from '../lib/types';
 import { DiceRoller } from '../components/DiceRoller';
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
+import { useLocale } from '../i18n/LocaleContext';
 
 interface CharacterAbilities {
   str: number;
@@ -37,6 +38,7 @@ export function SavingThrowsPanel({
   // its comment for the reasoning.
   characterId: string;
 }) {
+  const { t } = useLocale();
   const ordered = [...abilityScoresCatalog].sort((a, b) => {
     const ai = KEY_ORDER.indexOf((abilityKeyFor(a) ?? 'str') as keyof CharacterAbilities);
     const bi = KEY_ORDER.indexOf((abilityKeyFor(b) ?? 'str') as keyof CharacterAbilities);
@@ -45,7 +47,7 @@ export function SavingThrowsPanel({
 
   return (
     <div className="rounded-md bg-stone-900 shadow-sm p-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Saving throws</h3>
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">{t('characters.savingThrows.title')}</h3>
       <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {ordered.map((a) => {
           const key = abilityKeyFor(a);
@@ -58,7 +60,7 @@ export function SavingThrowsPanel({
                 type="button"
                 role="checkbox"
                 aria-checked={isProficient}
-                aria-label={`${a.name} save proficiency`}
+                aria-label={t('characters.savingThrows.saveProficiencyAria', { name: a.name })}
                 disabled={!editable}
                 onClick={() => onToggle(a.id)}
                 className={`h-4 w-4 rounded-full border flex-shrink-0 ${
@@ -70,7 +72,7 @@ export function SavingThrowsPanel({
               {editable && (
                 <DiceRoller
                   rollType="saving_throw"
-                  rollContext={`${a.name} Save`}
+                  rollContext={t('characters.savingThrows.saveRollContext', { name: a.name })}
                   modifier={mod}
                   characterId={characterId}
                   triggerLabel="⚄"

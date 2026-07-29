@@ -11,13 +11,20 @@ import { en } from './dictionaries/en/index.js';
 import { es } from './dictionaries/es/index.js';
 import { fr } from './dictionaries/fr/index.js';
 
-type Dict = Record<string, Record<string, string>>;
+// A dictionary section can nest arbitrarily deep (see DotPaths<T> in
+// LocaleContext.tsx, which recursively supports any depth) — e.g.
+// characters.abilityGenerator.methods.manual. flatten() walks the whole
+// tree down to string leaves rather than assuming a fixed two-level shape.
+type Dict = { [key: string]: string | Dict };
 
-function flatten(dict: Dict): Record<string, string> {
+function flatten(dict: Dict, prefix = ''): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [section, entries] of Object.entries(dict)) {
-    for (const [key, value] of Object.entries(entries)) {
-      out[`${section}.${key}`] = value;
+  for (const [key, value] of Object.entries(dict)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === 'string') {
+      out[path] = value;
+    } else {
+      Object.assign(out, flatten(value, path));
     }
   }
   return out;

@@ -4,6 +4,7 @@ import { ProficiencyToggle } from '../components/ProficiencyToggle';
 import { DiceRoller } from '../components/DiceRoller';
 import { skillModifier, formatModifier } from '../lib/dnd-math';
 import { abilityKeyFor } from './SavingThrowsPanel';
+import { useLocale } from '../i18n/LocaleContext';
 
 interface CharacterAbilities {
   str: number;
@@ -40,6 +41,7 @@ export function SkillsPanel({
   // player's PC" state to distinguish, so the existing gate covers it.
   characterId: string;
 }) {
+  const { t } = useLocale();
   // Known gap (dnd-srd-rules-validator, Phase 3.4): Bard's Jack of All Trades
   // (add half proficiency bonus, rounded down, to non-proficient checks) isn't
   // modeled — the tri-state proficiency toggle has no "half" state, so a
@@ -52,7 +54,7 @@ export function SkillsPanel({
 
   return (
     <div className="rounded-md bg-stone-900 shadow-sm p-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">Skills</h3>
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">{t('characters.skills.title')}</h3>
       <ul className="space-y-1">
         {sorted.map((skill) => {
           const ability = abilityById.get(skill.ability_score_id);

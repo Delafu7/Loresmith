@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useCharacterResources, useResourcePoolMutations, resourcesQueryKey } from './useResourcePools';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 
 // Spell-slot rows get their own dedicated tracker (SpellcastingPanel) — this
 // panel is deliberately everything else (second_wind, ki_points, rage_uses,
@@ -30,6 +31,7 @@ export function ResourcePoolPanel({
   editable: boolean;
   isDm: boolean;
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const resourcesQuery = useCharacterResources(characterId);
   const { spend, recover } = useResourcePoolMutations(characterId);
@@ -54,7 +56,7 @@ export function ResourcePoolPanel({
   return (
     <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Resources</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">{t('characters.resources.title')}</h3>
         {isDm && (
           <div className="flex gap-2">
             <button
@@ -63,7 +65,7 @@ export function ResourcePoolPanel({
               onClick={() => restMutation.mutate('short')}
               className="text-xs rounded-md bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-100 px-2 py-1 disabled:opacity-60"
             >
-              Short rest
+              {t('characters.resources.shortRest')}
             </button>
             <button
               type="button"
@@ -71,14 +73,14 @@ export function ResourcePoolPanel({
               onClick={() => restMutation.mutate('long')}
               className="text-xs rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-2 py-1 disabled:opacity-60"
             >
-              Long rest
+              {t('characters.resources.longRest')}
             </button>
           </div>
         )}
       </div>
 
       {pools.length === 0 ? (
-        <p className="text-stone-500 text-sm italic">No tracked resources.</p>
+        <p className="text-stone-500 text-sm italic">{t('characters.resources.noResources')}</p>
       ) : (
         <ul className="grid sm:grid-cols-2 gap-2">
           {pools.map((pool) => (
@@ -89,7 +91,9 @@ export function ResourcePoolPanel({
                   {pool.current_value}/{pool.max_value}
                 </span>
               </div>
-              <div className="text-[10px] text-stone-600 uppercase mb-2">Recharges on {pool.recharge_on.replace('_', ' ')}</div>
+              <div className="text-[10px] text-stone-600 uppercase mb-2">
+                {t('characters.resources.rechargesOn', { value: pool.recharge_on.replace('_', ' ') })}
+              </div>
               {editable && (
                 <div className="flex items-center gap-2">
                   <input
@@ -98,7 +102,7 @@ export function ResourcePoolPanel({
                     placeholder="1"
                     value={spendAmount[pool.resource_key] ?? ''}
                     onChange={(e) => setSpendAmount((m) => ({ ...m, [pool.resource_key]: e.target.value }))}
-                    aria-label={`${poolLabel(pool.resource_key)} amount`}
+                    aria-label={t('characters.resources.amountAria', { label: poolLabel(pool.resource_key) })}
                     className="w-14 rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
                   />
                   <button
@@ -109,7 +113,7 @@ export function ResourcePoolPanel({
                     }
                     className="rounded-md bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-medium px-2 py-1"
                   >
-                    Spend
+                    {t('characters.resources.spend')}
                   </button>
                   <button
                     type="button"
@@ -119,7 +123,7 @@ export function ResourcePoolPanel({
                     }
                     className="rounded-md bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-medium px-2 py-1"
                   >
-                    Recover
+                    {t('characters.resources.recover')}
                   </button>
                 </div>
               )}

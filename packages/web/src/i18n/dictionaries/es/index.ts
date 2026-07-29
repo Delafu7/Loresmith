@@ -15,8 +15,9 @@ import { sessionLog } from './sessionLog.js';
 import { assets } from './assets.js';
 import { dice } from './dice.js';
 import { landing } from './landing.js';
+import { characters } from './characters.js';
 
 export const es = {
   common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust, upload,
-  campaigns, notes, sessionLog, assets, dice, landing,
+  campaigns, notes, sessionLog, assets, dice, landing, characters,
 } satisfies typeof en;

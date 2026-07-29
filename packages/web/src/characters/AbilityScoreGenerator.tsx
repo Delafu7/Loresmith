@@ -12,14 +12,15 @@ import {
   type AbilityKey,
 } from './abilityScoreGeneration';
 import type { AbilityScoreRollSet } from '../lib/types';
+import { useLocale, type TranslationKey } from '../i18n/LocaleContext';
 
 type Method = 'manual' | 'standard_array' | 'point_buy' | 'roll';
 
-const METHOD_LABELS: Record<Method, string> = {
-  manual: 'Manual',
-  standard_array: 'Standard array',
-  point_buy: 'Point buy',
-  roll: 'Roll (4d6 drop lowest)',
+const METHOD_LABEL_KEYS: Record<Method, TranslationKey> = {
+  manual: 'characters.abilityGenerator.methods.manual',
+  standard_array: 'characters.abilityGenerator.methods.standardArray',
+  point_buy: 'characters.abilityGenerator.methods.pointBuy',
+  roll: 'characters.abilityGenerator.methods.roll',
 };
 
 /**
@@ -39,6 +40,7 @@ export function AbilityScoreGenerator({
   allowReroll: boolean;
   onApply: (scores: Record<AbilityKey, number>) => void;
 }) {
+  const { t } = useLocale();
   const [method, setMethod] = useState<Method>('manual');
   const [assignments, setAssignments] = useState<Partial<Record<AbilityKey, number>>>({});
   const [pointBuy, setPointBuy] = useState<Record<AbilityKey, number>>({
@@ -73,11 +75,11 @@ export function AbilityScoreGenerator({
   return (
     <div className="rounded-md border border-stone-800 bg-stone-950/40 p-3 space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs uppercase text-stone-500">Generate scores:</span>
-        {(Object.keys(METHOD_LABELS) as Method[]).map((m) => (
+        <span className="text-xs uppercase text-stone-500">{t('characters.abilityGenerator.generateScores')}</span>
+        {(Object.keys(METHOD_LABEL_KEYS) as Method[]).map((m) => (
           <label key={m} className="flex items-center gap-1 text-xs text-stone-300">
             <input type="radio" checked={method === m} onChange={() => setMethod(m)} />
-            {METHOD_LABELS[m]}
+            {t(METHOD_LABEL_KEYS[m])}
           </label>
         ))}
       </div>
@@ -95,10 +97,14 @@ export function AbilityScoreGenerator({
               disabled={rollMutation.isPending || (hasRolledOnce && !allowReroll)}
               className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 px-2 py-1 text-xs"
             >
-              {rollMutation.isPending ? 'Rolling…' : hasRolledOnce ? 'Reroll' : 'Roll ability scores'}
+              {rollMutation.isPending
+                ? t('characters.abilityGenerator.rolling')
+                : hasRolledOnce
+                  ? t('characters.abilityGenerator.reroll')
+                  : t('characters.abilityGenerator.rollScores')}
             </button>
             {hasRolledOnce && !allowReroll && (
-              <span className="text-xs text-stone-500">Rerolling is disabled by the DM for this campaign.</span>
+              <span className="text-xs text-stone-500">{t('characters.abilityGenerator.rerollDisabled')}</span>
             )}
           </div>
           {rollMutation.isError && <ErrorBanner message={errorMessage(rollMutation.error)} />}
@@ -128,7 +134,7 @@ export function AbilityScoreGenerator({
       {method === 'point_buy' && (
         <div className="space-y-2">
           <div className="text-xs text-stone-400">
-            Points remaining:{' '}
+            {t('characters.abilityGenerator.pointsRemaining')}{' '}
             <span className={pointBuyRemaining < 0 ? 'text-red-400' : 'text-stone-100'}>{pointBuyRemaining}</span> /{' '}
             {POINT_BUY_BUDGET}
           </div>
@@ -178,7 +184,7 @@ export function AbilityScoreGenerator({
           }}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
         >
-          Apply to character
+          {t('characters.abilityGenerator.applyToCharacter')}
         </button>
       )}
     </div>

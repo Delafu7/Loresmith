@@ -13,6 +13,7 @@ import { useSpellsCatalog } from '../lib/useCatalog';
 import { useCharacterResources, useResourcePoolMutations } from './useResourcePools';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
 import { Combobox } from '../components/Combobox';
+import { useLocale } from '../i18n/LocaleContext';
 
 const SPELL_SLOT_RE = /^spell_slot_(\d+)$/;
 const PACT_SLOT_RE = /^warlock_pact_slot_(\d+)$/;
@@ -51,6 +52,7 @@ export function SpellcastingPanel({
   classesCatalog: ClassCatalog[];
   editable: boolean;
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
 
@@ -129,11 +131,11 @@ export function SpellcastingPanel({
 
   return (
     <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Spellcasting</h3>
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">{t('characters.spells.title')}</h3>
 
       {spellSlotPools.length > 0 && (
         <div>
-          <h4 className="text-xs font-semibold text-stone-400 mb-2">Spell slots</h4>
+          <h4 className="text-xs font-semibold text-stone-400 mb-2">{t('characters.spells.spellSlots')}</h4>
           <div className="flex flex-wrap gap-2">
             {spellSlotPools.map((pool) => (
               <SlotMeter
@@ -152,7 +154,7 @@ export function SpellcastingPanel({
       {pactSlotPools.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold text-stone-400 mb-2">
-            Pact Magic <span className="text-stone-600 normal-case">(Warlock — kept separate from spell slots)</span>
+            {t('characters.spells.pactMagic')} <span className="text-stone-600 normal-case">{t('characters.spells.pactMagicNote')}</span>
           </h4>
           <div className="flex flex-wrap gap-2">
             {pactSlotPools.map((pool) => (
@@ -175,16 +177,16 @@ export function SpellcastingPanel({
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-semibold text-stone-400">Spells</h4>
+          <h4 className="text-xs font-semibold text-stone-400">{t('characters.spells.spellsHeading')}</h4>
           {editable && !adding && (
             <button type="button" onClick={() => setAdding(true)} className="text-xs text-amber-500 hover:text-amber-400">
-              + Learn spell
+              {t('characters.spells.learnSpell')}
             </button>
           )}
         </div>
 
         {spellRows.length === 0 ? (
-          <p className="text-stone-500 text-sm italic">No spells known yet.</p>
+          <p className="text-stone-500 text-sm italic">{t('characters.spells.noSpells')}</p>
         ) : (
           <ul className="space-y-1">
             {spellRows.map((row) => {
@@ -195,7 +197,9 @@ export function SpellcastingPanel({
                     type="button"
                     role="checkbox"
                     aria-checked={row.is_prepared || row.always_prepared}
-                    aria-label={`${spell?.name ?? `Spell #${row.spell_id}`} prepared`}
+                    aria-label={t('characters.spells.preparedAria', {
+                      name: spell?.name ?? t('characters.spells.spellFallbackId', { id: row.spell_id }),
+                    })}
                     disabled={!editable || row.always_prepared || toggleMutation.isPending}
                     onClick={() =>
                       toggleMutation.mutate({ spellId: row.spell_id, classId: row.class_id, isPrepared: !row.is_prepared })
@@ -203,10 +207,18 @@ export function SpellcastingPanel({
                     className={`h-4 w-4 rounded-full border flex-shrink-0 ${
                       row.is_prepared || row.always_prepared ? 'bg-amber-500 border-amber-500' : 'bg-transparent border-stone-600'
                     } ${editable && !row.always_prepared ? 'cursor-pointer' : 'cursor-default'}`}
-                    title={row.always_prepared ? 'Always prepared' : row.is_prepared ? 'Prepared' : 'Not prepared'}
+                    title={
+                      row.always_prepared
+                        ? t('characters.spells.alwaysPrepared')
+                        : row.is_prepared
+                          ? t('characters.spells.prepared')
+                          : t('characters.spells.notPrepared')
+                    }
                   />
                   <span className="text-stone-300 flex-1 truncate">{spell?.name ?? `Spell #${row.spell_id}`}</span>
-                  <span className="text-xs text-stone-600 w-14 text-right">{spell ? (spell.level === 0 ? 'Cantrip' : `Lv ${spell.level}`) : ''}</span>
+                  <span className="text-xs text-stone-600 w-14 text-right">
+                    {spell ? (spell.level === 0 ? t('characters.spells.cantrip') : t('characters.spells.levelAbbrev', { level: spell.level })) : ''}
+                  </span>
                   {row.class_id != null && (
                     <span className="text-xs text-stone-600 w-20 truncate">{classById.get(row.class_id)?.name ?? ''}</span>
                   )}
@@ -215,7 +227,7 @@ export function SpellcastingPanel({
                       type="button"
                       onClick={() => unlearnMutation.mutate({ spellId: row.spell_id, classId: row.class_id })}
                       className="text-red-400 hover:text-red-300 text-sm px-1"
-                      aria-label={`Unlearn ${spell?.name ?? 'spell'}`}
+                      aria-label={t('characters.spells.unlearnAria', { name: spell?.name ?? t('characters.spells.spellFallback') })}
                     >
                       ✕
                     </button>
@@ -265,11 +277,12 @@ function SlotMeter({
   onSpend: () => void;
   onRecover: () => void;
 }) {
+  const { t } = useLocale();
   const level = slotLevel(pool.resource_key);
   const pips = Array.from({ length: pool.max_value });
   return (
     <div className="rounded-md border border-stone-700 bg-stone-950 px-3 py-2 min-w-[4.5rem] text-center">
-      <div className="text-[10px] uppercase text-stone-500">Lv {level}</div>
+      <div className="text-[10px] uppercase text-stone-500">{t('characters.spells.levelAbbrev', { level })}</div>
       <div className="flex items-center justify-center gap-0.5 my-1 flex-wrap max-w-[6rem]">
         {pips.map((_, i) => {
           const filled = i < pool.current_value;
@@ -278,8 +291,12 @@ function SlotMeter({
               key={i}
               type="button"
               disabled={!editable}
-              title={filled ? 'Use slot' : 'Restore slot'}
-              aria-label={filled ? `Use level ${level} slot` : `Restore level ${level} slot`}
+              title={filled ? t('characters.spells.useSlot') : t('characters.spells.restoreSlot')}
+              aria-label={
+                filled
+                  ? t('characters.spells.useSlotAria', { level })
+                  : t('characters.spells.restoreSlotAria', { level })
+              }
               onClick={() => (filled ? onSpend() : onRecover())}
               className={`h-3 w-3 rounded-full border flex-shrink-0 ${
                 filled ? TONE_FILLED[tone] : 'bg-transparent border-stone-600'
@@ -318,6 +335,7 @@ function LearnSpellForm({
   }) => void;
   onCancel: () => void;
 }) {
+  const { t } = useLocale();
   const classById = new Map(classesCatalog.map((c) => [c.id, c]));
   const [spellId, setSpellId] = useState('');
   const [classId, setClassId] = useState<string>(characterClasses[0]?.class_id ?? '');
@@ -342,59 +360,59 @@ function LearnSpellForm({
     <div className="rounded-md border border-stone-700 bg-stone-950 p-3 mt-2 space-y-2">
       <div className="flex flex-wrap gap-2 items-end">
         <div className="flex-1 min-w-[10rem]">
-          <label className="block text-[10px] text-stone-500 mb-0.5">Spell</label>
+          <label className="block text-[10px] text-stone-500 mb-0.5">{t('characters.spells.spellLabel')}</label>
           <Combobox
             value={spellId}
             onChange={setSpellId}
-            placeholder="Search spells…"
+            placeholder={t('characters.spells.searchSpells')}
             options={sorted.map((s) => {
               const key = `${s.id}:${classId || 'none'}`;
               const known = knownSpellIds.has(key);
               return {
                 value: String(s.id),
-                label: `${s.level === 0 ? 'Cantrip' : `Lv ${s.level}`} — ${s.name}${known ? ' (known)' : ''}`,
+                label: `${s.level === 0 ? t('characters.spells.cantrip') : t('characters.spells.levelAbbrev', { level: s.level })} — ${s.name}${known ? ` (${t('characters.spells.known')})` : ''}`,
                 disabled: known,
               };
             })}
           />
         </div>
         <div>
-          <label className="block text-[10px] text-stone-500 mb-0.5">Granting class</label>
+          <label className="block text-[10px] text-stone-500 mb-0.5">{t('characters.spells.grantingClass')}</label>
           <select
             value={classId}
             onChange={(e) => setClassId(e.target.value)}
             className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
           >
-            <option value="">None</option>
+            <option value="">{t('characters.spells.noneOption')}</option>
             {characterClasses.map((cc) => (
               <option key={cc.class_id} value={cc.class_id}>
-                {classById.get(cc.class_id)?.name ?? `Class #${cc.class_id}`}
+                {classById.get(cc.class_id)?.name ?? t('characters.classSummary.classFallback', { id: cc.class_id })}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-[10px] text-stone-500 mb-0.5">Source</label>
+          <label className="block text-[10px] text-stone-500 mb-0.5">{t('characters.spells.sourceLabel')}</label>
           <select
             value={source}
             onChange={(e) => setSource(e.target.value as CharacterSpellSource)}
             className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
           >
-            <option value="class">Class</option>
-            <option value="race">Race</option>
-            <option value="feat">Feat</option>
-            <option value="item">Item</option>
+            <option value="class">{t('characters.spells.sourceClass')}</option>
+            <option value="race">{t('characters.spells.sourceRace')}</option>
+            <option value="feat">{t('characters.spells.sourceFeat')}</option>
+            <option value="item">{t('characters.spells.sourceItem')}</option>
           </select>
         </div>
       </div>
       <div className="flex flex-wrap gap-4">
         <label className="flex items-center gap-1.5 text-xs text-stone-400">
           <input type="checkbox" checked={isPrepared} onChange={(e) => setIsPrepared(e.target.checked)} />
-          Prepared
+          {t('characters.spells.prepared')}
         </label>
         <label className="flex items-center gap-1.5 text-xs text-stone-400">
           <input type="checkbox" checked={alwaysPrepared} onChange={(e) => setAlwaysPrepared(e.target.checked)} />
-          Always prepared
+          {t('characters.spells.alwaysPrepared')}
         </label>
       </div>
       <div className="flex gap-2">
@@ -404,14 +422,14 @@ function LearnSpellForm({
           onClick={submit}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
         >
-          Learn
+          {t('characters.spells.learnButton')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md border border-stone-700 px-3 py-1.5 text-sm text-stone-300 hover:bg-stone-800"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>

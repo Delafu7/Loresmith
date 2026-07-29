@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ClassCatalog, CharacterClass, MulticlassPrereqFailure, SubclassCatalog } from '../lib/types';
 import { ApiError } from '../lib/api';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
+import { useLocale, type TranslationKey } from '../i18n/LocaleContext';
 
 interface DraftRow {
   classId: string;
@@ -9,17 +10,22 @@ interface DraftRow {
   level: number;
 }
 
-function formatValidationError(error: unknown) {
+function formatValidationError(error: unknown, t: (key: TranslationKey, params?: Record<string, string | number>) => string) {
   if (error instanceof ApiError && error.code === 'VALIDATION_ERROR') {
     const failures = (error.details as { failures?: MulticlassPrereqFailure[] } | null | undefined)?.failures;
     if (Array.isArray(failures) && failures.length > 0) {
       return (
         <div role="alert" className="rounded-md border border-red-800 bg-red-950/50 text-red-300 text-xs px-3 py-2 space-y-1">
-          <p className="font-semibold">Multiclass prerequisites not met:</p>
+          <p className="font-semibold">{t('characters.classSummary.prereqFailedTitle')}</p>
           <ul className="list-disc list-inside space-y-0.5">
             {failures.map((f, i) => (
               <li key={i}>
-                {f.className} requires {f.abilityIndex.toUpperCase()} {f.required} (this character has {f.actual})
+                {t('characters.classSummary.prereqFailureLine', {
+                  className: f.className,
+                  ability: f.abilityIndex.toUpperCase(),
+                  required: f.required,
+                  actual: f.actual,
+                })}
               </li>
             ))}
           </ul>
@@ -49,6 +55,7 @@ export function ClassSummaryPanel({
   onSave: (rows: DraftRow[]) => Promise<unknown>;
   saving?: boolean;
 }) {
+  const { t } = useLocale();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<DraftRow[]>(
     classRows.map((r) => ({ classId: r.class_id, subclassId: r.subclass_id, level: r.level })),
@@ -69,7 +76,7 @@ export function ClassSummaryPanel({
     return (
       <div className="rounded-md bg-stone-900 shadow-sm p-4">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Class &amp; level</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">{t('characters.classSummary.title')}</h3>
           {editable && (
             <button
               type="button"
@@ -79,26 +86,26 @@ export function ClassSummaryPanel({
               }}
               className="text-xs text-amber-500 hover:text-amber-400"
             >
-              Edit
+              {t('common.edit')}
             </button>
           )}
         </div>
         {classRows.length === 0 ? (
-          <p className="text-stone-500 text-sm italic">No classes set.</p>
+          <p className="text-stone-500 text-sm italic">{t('characters.classSummary.noClasses')}</p>
         ) : (
           <ul className="text-sm text-stone-200 space-y-1">
             {classRows.map((r) => {
               const subclass = r.subclass_id != null ? subclassById.get(r.subclass_id) : undefined;
               return (
                 <li key={r.class_id}>
-                  {classById.get(r.class_id)?.name ?? `Class #${r.class_id}`} {r.level}
+                  {classById.get(r.class_id)?.name ?? t('characters.classSummary.classFallback', { id: r.class_id })} {r.level}
                   {subclass ? ` (${subclass.name})` : ''}
                 </li>
               );
             })}
           </ul>
         )}
-        <p className="text-xs text-stone-500 mt-2">Total level {totalLevel}</p>
+        <p className="text-xs text-stone-500 mt-2">{t('characters.classSummary.totalLevel', { level: totalLevel })}</p>
       </div>
     );
   }
@@ -119,7 +126,7 @@ export function ClassSummaryPanel({
 
   return (
     <div className="rounded-md bg-stone-900 shadow-sm p-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">Class &amp; level</h3>
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">{t('characters.classSummary.title')}</h3>
       <div className="space-y-2">
         {draft.map((row, idx) => {
           const subclassOptions = subclassesCatalog.filter((s) => s.class_id === row.classId);
@@ -142,7 +149,9 @@ export function ClassSummaryPanel({
                 disabled={subclassOptions.length === 0}
                 className="flex-1 min-w-[8rem] rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100 text-sm disabled:opacity-50"
               >
-                <option value="">No subclass{subclassOptions.length === 0 ? ' (none yet)' : ''}</option>
+                <option value="">
+                  {subclassOptions.length === 0 ? t('characters.classSummary.noSubclassNoneYet') : t('characters.classSummary.noSubclass')}
+                </option>
                 {subclassOptions.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -161,7 +170,7 @@ export function ClassSummaryPanel({
                 type="button"
                 onClick={() => setDraft((d) => d.filter((_, i) => i !== idx))}
                 className="text-red-400 hover:text-red-300 text-sm px-1"
-                aria-label="Remove class"
+                aria-label={t('characters.classSummary.removeClass')}
               >
                 ✕
               </button>
@@ -174,10 +183,10 @@ export function ClassSummaryPanel({
           disabled={classesCatalog.length === 0}
           className="text-xs text-amber-500 hover:text-amber-400"
         >
-          + Add class {draft.length > 0 ? '(multiclass)' : ''}
+          {draft.length > 0 ? t('characters.classSummary.addClassMulticlass') : t('characters.classSummary.addClass')}
         </button>
       </div>
-      {saveError !== null && <div className="mt-3">{formatValidationError(saveError)}</div>}
+      {saveError !== null && <div className="mt-3">{formatValidationError(saveError, t)}</div>}
       <div className="flex gap-2 mt-3">
         <button
           type="button"
@@ -185,7 +194,7 @@ export function ClassSummaryPanel({
           onClick={handleSave}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
         >
-          Save
+          {t('common.save')}
         </button>
         <button
           type="button"
@@ -195,7 +204,7 @@ export function ClassSummaryPanel({
           }}
           className="rounded-md border border-stone-700 px-3 py-1.5 text-sm text-stone-300 hover:bg-stone-800"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>

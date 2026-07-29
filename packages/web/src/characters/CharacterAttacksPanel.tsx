@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { CharacterAttack } from '../lib/types';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 
 const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'] as const;
 
@@ -26,6 +27,7 @@ function emptyDraft(): AttackDraft {
 }
 
 export function CharacterAttacksPanel({ characterId, editable }: { characterId: string; editable: boolean }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState<AttackDraft>(emptyDraft());
@@ -62,14 +64,14 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
   return (
     <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Attacks</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">{t('characters.attacks.title')}</h3>
         {editable && (
           <button
             type="button"
             onClick={() => setShowForm((s) => !s)}
             className="text-xs text-amber-500 hover:text-amber-400"
           >
-            {showForm ? 'Cancel' : '+ Add attack'}
+            {showForm ? t('common.cancel') : `+ ${t('characters.attacks.addAttack')}`}
           </button>
         )}
       </div>
@@ -77,7 +79,7 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
       {attacksQuery.isLoading && <Loading />}
       {attacksQuery.isError && <ErrorBanner message={errorMessage(attacksQuery.error)} />}
       {attacksQuery.data && attacksQuery.data.attacks.length === 0 && !showForm && (
-        <EmptyState message="No attacks yet — unarmed strike, a spell attack, a class feature, or a weapon." />
+        <EmptyState message={t('characters.attacks.empty')} />
       )}
 
       <ul className="space-y-1.5 mb-2">
@@ -87,9 +89,9 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
               <span className="text-stone-100 font-medium">{a.name}</span>
               <span className="text-stone-500 text-xs ml-2">
                 {a.save_dc != null
-                  ? `DC ${a.save_dc} ${a.save_ability_index?.toUpperCase() ?? ''} save`
+                  ? t('characters.attacks.dcSave', { dc: a.save_dc, ability: a.save_ability_index?.toUpperCase() ?? '' })
                   : a.attack_bonus != null
-                    ? `+${a.attack_bonus} to hit`
+                    ? t('characters.attacks.toHit', { bonus: a.attack_bonus })
                     : null}
                 {a.damage_dice && ` · ${a.damage_dice}${a.damage_type ? ` ${a.damage_type}` : ''}`}
               </span>
@@ -100,7 +102,7 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
                 onClick={() => deleteMutation.mutate(a.id)}
                 disabled={deleteMutation.isPending}
                 className="text-red-400 hover:text-red-300 text-xs"
-                aria-label={`Delete ${a.name}`}
+                aria-label={t('characters.attacks.deleteAria', { name: a.name })}
               >
                 ✕
               </button>
@@ -114,7 +116,7 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
           {addMutation.isError && <ErrorBanner message={errorMessage(addMutation.error)} />}
           <input
             type="text"
-            placeholder="Name (e.g. Longsword, Unarmed Strike, Eldritch Blast)"
+            placeholder={t('characters.attacks.namePlaceholder')}
             value={draft.name}
             onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
             className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
@@ -122,21 +124,21 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
           <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
             <label className="flex items-center gap-1">
               <input type="radio" checked={draft.mode === 'attack'} onChange={() => setDraft((d) => ({ ...d, mode: 'attack' }))} />
-              Attack roll
+              {t('characters.attacks.modeAttack')}
             </label>
             <label className="flex items-center gap-1">
               <input type="radio" checked={draft.mode === 'save'} onChange={() => setDraft((d) => ({ ...d, mode: 'save' }))} />
-              Saving throw
+              {t('characters.attacks.modeSave')}
             </label>
             <label className="flex items-center gap-1">
               <input type="radio" checked={draft.mode === 'none'} onChange={() => setDraft((d) => ({ ...d, mode: 'none' }))} />
-              Neither (flavor only)
+              {t('characters.attacks.modeNeither')}
             </label>
           </div>
           {draft.mode === 'attack' && (
             <input
               type="number"
-              placeholder="Attack bonus (e.g. 5)"
+              placeholder={t('characters.attacks.attackBonusPlaceholder')}
               value={draft.attackBonus}
               onChange={(e) => setDraft((d) => ({ ...d, attackBonus: e.target.value }))}
               className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
@@ -146,7 +148,7 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
             <div className="flex gap-2">
               <input
                 type="number"
-                placeholder="Save DC"
+                placeholder={t('characters.attacks.saveDcPlaceholder')}
                 value={draft.saveDc}
                 onChange={(e) => setDraft((d) => ({ ...d, saveDc: e.target.value }))}
                 className="flex-1 rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
@@ -167,14 +169,14 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="Damage dice (e.g. 1d8+3)"
+              placeholder={t('characters.attacks.damageDicePlaceholder')}
               value={draft.damageDice}
               onChange={(e) => setDraft((d) => ({ ...d, damageDice: e.target.value }))}
               className="flex-1 rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
             />
             <input
               type="text"
-              placeholder="Damage type (e.g. slashing)"
+              placeholder={t('characters.attacks.damageTypePlaceholder')}
               value={draft.damageType}
               onChange={(e) => setDraft((d) => ({ ...d, damageType: e.target.value }))}
               className="flex-1 rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
@@ -186,7 +188,7 @@ export function CharacterAttacksPanel({ characterId, editable }: { characterId: 
             onClick={() => addMutation.mutate()}
             className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
           >
-            {addMutation.isPending ? 'Adding…' : 'Add attack'}
+            {addMutation.isPending ? t('characters.attacks.adding') : t('characters.attacks.addAttack')}
           </button>
         </div>
       )}

@@ -9,6 +9,7 @@ import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Fe
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
 import { AbilityScoreGenerator } from './AbilityScoreGenerator';
 import { useFormDraft } from '../lib/useFormDraft';
+import { useLocale } from '../i18n/LocaleContext';
 
 function emptyCharacterForm() {
   return {
@@ -29,6 +30,7 @@ function emptyCharacterForm() {
 export function CharactersListPage() {
   const { campaignId, campaign, role } = useCampaignShell();
   const { user } = useAuth();
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
 
@@ -97,13 +99,13 @@ export function CharactersListPage() {
   return (
     <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Characters</h2>
+        <h2 className="text-lg font-semibold">{t('characters.list.title')}</h2>
         <button
           type="button"
           onClick={() => setShowCreate((v) => !v)}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
         >
-          {showCreate ? 'Cancel' : role === 'dm' ? 'New character' : 'Create my PC'}
+          {showCreate ? t('common.cancel') : role === 'dm' ? t('characters.list.newCharacter') : t('characters.list.createMyPc')}
         </button>
       </div>
 
@@ -115,7 +117,7 @@ export function CharactersListPage() {
             disabled={allowRerollMutation.isPending}
             onChange={(e) => allowRerollMutation.mutate(e.target.checked)}
           />
-          Allow players to reroll ability scores
+          {t('characters.list.allowReroll')}
         </label>
       )}
 
@@ -123,7 +125,7 @@ export function CharactersListPage() {
         <form onSubmit={handleCreate} className="mb-6 bg-stone-900 border border-stone-800 rounded-lg p-5 space-y-4">
           <div>
             <label htmlFor="charName" className="block text-sm font-medium text-stone-300 mb-1">
-              Name
+              {t('characters.list.nameLabel')}
             </label>
             <input
               id="charName"
@@ -142,7 +144,7 @@ export function CharactersListPage() {
                   checked={form.isPc}
                   onChange={() => setForm((f) => ({ ...f, isPc: true }))}
                 />
-                Player character
+                {t('characters.common.playerCharacter')}
               </label>
               <label className="flex items-center gap-2 text-sm text-stone-300">
                 <input
@@ -150,7 +152,7 @@ export function CharactersListPage() {
                   checked={!form.isPc}
                   onChange={() => setForm((f) => ({ ...f, isPc: false }))}
                 />
-                NPC
+                {t('characters.common.npc')}
               </label>
             </div>
           )}
@@ -158,7 +160,7 @@ export function CharactersListPage() {
           {role === 'dm' && form.isPc && (
             <div>
               <label htmlFor="owner" className="block text-sm font-medium text-stone-300 mb-1">
-                Owning player
+                {t('characters.list.owningPlayer')}
               </label>
               <select
                 id="owner"
@@ -167,7 +169,7 @@ export function CharactersListPage() {
                 onChange={(e) => setForm((f) => ({ ...f, ownerUserId: e.target.value }))}
                 className="w-full rounded-md bg-stone-800 border border-stone-700 px-3 py-2 text-stone-100"
               >
-                <option value="">Select a player…</option>
+                <option value="">{t('characters.list.selectPlayer')}</option>
                 {players.map((p) => (
                   <option key={p.user_id} value={p.user_id}>
                     {p.display_name} ({p.email})
@@ -205,7 +207,7 @@ export function CharactersListPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="ac" className="block text-sm font-medium text-stone-300 mb-1">
-                Armor Class
+                {t('characters.common.armorClass')}
               </label>
               <input
                 id="ac"
@@ -218,7 +220,7 @@ export function CharactersListPage() {
             </div>
             <div>
               <label htmlFor="hpMax" className="block text-sm font-medium text-stone-300 mb-1">
-                Max HP
+                {t('characters.list.maxHp')}
               </label>
               <input
                 id="hpMax"
@@ -237,7 +239,7 @@ export function CharactersListPage() {
             disabled={createMutation.isPending}
             className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
           >
-            {createMutation.isPending ? 'Creating…' : 'Create'}
+            {createMutation.isPending ? t('characters.list.creating') : t('common.create')}
           </button>
         </form>
       )}
@@ -246,8 +248,8 @@ export function CharactersListPage() {
       {charactersQuery.isError && <ErrorBanner message={errorMessage(charactersQuery.error)} />}
 
       <section className="mb-8">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">Player characters</h3>
-        {pcs.length === 0 && <EmptyState message="No player characters yet." />}
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">{t('characters.list.playerCharactersHeading')}</h3>
+        {pcs.length === 0 && <EmptyState message={t('characters.list.noPcs')} />}
         <ul className="grid sm:grid-cols-2 gap-3">
           {pcs.map((c) => (
             <CharacterCard key={c.id} character={c} campaignId={campaignId} />
@@ -257,8 +259,8 @@ export function CharactersListPage() {
 
       {role === 'dm' && (
         <section>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">NPCs</h3>
-          {npcs.length === 0 && <EmptyState message="No NPCs yet." />}
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-2">{t('characters.list.npcsHeading')}</h3>
+          {npcs.length === 0 && <EmptyState message={t('characters.list.noNpcs')} />}
           <ul className="grid sm:grid-cols-2 gap-3">
             {npcs.map((c) => (
               <CharacterCard key={c.id} character={c} campaignId={campaignId} />
@@ -271,6 +273,7 @@ export function CharactersListPage() {
 }
 
 function CharacterCard({ character, campaignId }: { character: Character; campaignId: string }) {
+  const { t } = useLocale();
   return (
     <li>
       <Link
@@ -279,7 +282,7 @@ function CharacterCard({ character, campaignId }: { character: Character; campai
       >
         <div className="flex items-center justify-between">
           <span className="font-medium text-stone-100">{character.name}</span>
-          {!character.is_alive && <span className="text-xs text-red-400 font-semibold">DECEASED</span>}
+          {!character.is_alive && <span className="text-xs text-red-400 font-semibold uppercase">{t('characters.common.deceased')}</span>}
         </div>
         <div className="flex items-center gap-3 text-xs text-stone-400 mt-1">
           <span>

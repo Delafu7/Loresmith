@@ -5,6 +5,7 @@ import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
 import { EffectBadge } from '../components/EffectBadge';
 import { EffectApplyDialog, type ApplyEffectFormInput } from '../components/EffectApplyDialog';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
+import { useLocale } from '../i18n/LocaleContext';
 
 /**
  * Active effects applied to this character OUTSIDE combat (PLAN.md's
@@ -29,6 +30,7 @@ export function CharacterEffectsPanel({
   campaignId: string;
   isDm: boolean;
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
 
   const effectsQuery = useQuery({
@@ -62,9 +64,9 @@ export function CharacterEffectsPanel({
 
   return (
     <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Active effects</h3>
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">{t('characters.effectsPanel.title')}</h3>
       <div className="flex flex-wrap items-center gap-1.5">
-        {effects.length === 0 && <p className="text-stone-500 text-sm italic">No active effects.</p>}
+        {effects.length === 0 && <p className="text-stone-500 text-sm italic">{t('characters.effectsPanel.empty')}</p>}
         {effects.map((e) => (
           <EffectBadge
             key={e.id}

@@ -8,6 +8,7 @@ import { DiceRoller } from '../components/DiceRoller';
 import { parseDiceExpression } from '../components/QuickDiceRoller';
 import { Combobox } from '../components/Combobox';
 import { abilityModifier, proficiencyBonusForLevel } from '../lib/dnd-math';
+import { useLocale, type TranslationKey } from '../i18n/LocaleContext';
 
 const RARITY_COLOR: Record<ItemRarity, string> = {
   mundane: 'text-stone-500',
@@ -52,12 +53,18 @@ function weaponAttackAbilityModifier(catalogEntry: ItemCatalogEntry, str: number
 // is threaded in for the "= N" tail rather than recomputed here, so this
 // string can never itself drift from the server's number even if this
 // helper's logic ever falls out of sync with services/armorClass.ts.
-function armorClassBreakdown(dex: number, armor: ItemCatalogEntry | null, hasShield: boolean, armorClass: number): string {
+function armorClassBreakdown(
+  dex: number,
+  armor: ItemCatalogEntry | null,
+  hasShield: boolean,
+  armorClass: number,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): string {
   const dexMod = abilityModifier(dex);
-  const shieldTerm = hasShield ? ' + 2 (Shield)' : '';
+  const shieldTerm = hasShield ? ` + 2 (${t('characters.inventory.shieldLabel')})` : '';
 
   if (!armor) {
-    return `10 + ${dexMod} (Dex)${shieldTerm} = ${armorClass} (unarmored)`;
+    return `10 + ${dexMod} (${t('characters.inventory.dexLabel')})${shieldTerm} = ${armorClass} (${t('characters.inventory.unarmoredLabel')})`;
   }
 
   const base = armor.armor_class_base ?? 0;
@@ -75,7 +82,7 @@ function armorClassBreakdown(dex: number, armor: ItemCatalogEntry | null, hasShi
       break;
   }
   const categoryLabel = armor.armor_category ? `, ${armor.armor_category}` : '';
-  return `${base} (${armor.name}) + ${dexContribution} (Dex${categoryLabel})${shieldTerm} = ${armorClass}`;
+  return `${base} (${armor.name}) + ${dexContribution} (${t('characters.inventory.dexLabel')}${categoryLabel})${shieldTerm} = ${armorClass}`;
 }
 
 /** Inventory panel (PLAN.md §6.2's InventoryPanel + ItemCard grid). */
@@ -98,6 +105,7 @@ export function InventoryPanel({
   armorClass: number;
   armorClassMode: 'auto' | 'manual';
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
 
@@ -179,26 +187,28 @@ export function InventoryPanel({
     .find((i) => i.is_equipped && catalogById.get(i.item_id)?.item_type === 'armor');
   const equippedArmorCatalog = equippedArmorItem ? catalogById.get(equippedArmorItem.item_id) ?? null : null;
   const hasEquippedShield = items.some((i) => i.is_equipped && catalogById.get(i.item_id)?.item_type === 'shield');
-  const acBreakdown = armorClassBreakdown(dex, equippedArmorCatalog, hasEquippedShield, armorClass);
+  const acBreakdown = armorClassBreakdown(dex, equippedArmorCatalog, hasEquippedShield, armorClass, t);
+  const acModeLabel = (mode: 'auto' | 'manual') =>
+    mode === 'manual' ? t('characters.inventory.acModeManual') : t('characters.inventory.acModeAuto');
 
   return (
     <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Inventory</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500">{t('characters.inventory.title')}</h3>
         {editable && !adding && (
           <button type="button" onClick={() => setAdding(true)} className="text-xs text-amber-500 hover:text-amber-400">
-            + Add item
+            {t('characters.inventory.addItem')}
           </button>
         )}
       </div>
 
       <div className="rounded-md border border-stone-800 bg-stone-950 p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Armor Class</h4>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">{t('characters.common.armorClass')}</h4>
           {editable && (
             <div
               role="radiogroup"
-              aria-label="Armor class mode"
+              aria-label={t('characters.inventory.acModeAriaLabel')}
               className="inline-flex rounded-md border border-stone-700 overflow-hidden text-[10px] leading-none flex-shrink-0"
             >
               {(['manual', 'auto'] as const).map((m) => (
@@ -215,7 +225,7 @@ export function InventoryPanel({
                       : 'bg-stone-900 text-stone-400 hover:bg-stone-800'
                   }`}
                 >
-                  {m}
+                  {acModeLabel(m)}
                 </button>
               ))}
             </div>
@@ -223,14 +233,14 @@ export function InventoryPanel({
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-2xl font-semibold text-stone-100">{armorClass}</span>
-          {!editable && <span className="text-xs text-stone-500 capitalize">({armorClassMode})</span>}
+          {!editable && <span className="text-xs text-stone-500 capitalize">({acModeLabel(armorClassMode)})</span>}
         </div>
         {armorClassMode === 'auto' && <p className="text-xs text-stone-500">{acBreakdown}</p>}
         {armorClassModeMutation.isError && <ErrorBanner message={errorMessage(armorClassModeMutation.error)} />}
       </div>
 
       {items.length === 0 ? (
-        <EmptyState message="No items yet." />
+        <EmptyState message={t('characters.inventory.noItems')} />
       ) : (
         <div className="grid sm:grid-cols-2 gap-3">
           {items.map((item) => (
@@ -287,6 +297,7 @@ function ItemCard({
   onUpdate: (patch: UpdateCharacterItemBody) => void;
   onRemove: () => void;
 }) {
+  const { t } = useLocale();
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState(item.notes ?? '');
   const name = item.custom_name || catalogEntry?.name || `Item #${item.item_id}`;
@@ -310,14 +321,14 @@ function ItemCard({
           <div className="text-xs text-stone-500 flex items-center gap-1.5 flex-wrap mt-0.5">
             {catalogEntry && <span className={`capitalize ${RARITY_COLOR[catalogEntry.rarity]}`}>{catalogEntry.rarity.replace('_', ' ')}</span>}
             {catalogEntry && <span className="capitalize">{catalogEntry.item_type.replace('_', ' ')}</span>}
-            {catalogEntry?.requires_attunement && <span className="text-violet-400">Attunement</span>}
+            {catalogEntry?.requires_attunement && <span className="text-violet-400">{t('characters.inventory.attunementTag')}</span>}
           </div>
         </div>
         {editable && (
           <button
             type="button"
             onClick={onRemove}
-            aria-label={`Remove ${name}`}
+            aria-label={t('characters.inventory.removeItem', { name })}
             className="text-red-400 hover:text-red-300 text-sm px-1 flex-shrink-0"
           >
             ✕
@@ -332,7 +343,7 @@ function ItemCard({
             disabled={!editable || item.quantity <= 0}
             onClick={() => onUpdate({ quantity: Math.max(0, item.quantity - 1) })}
             className="h-6 w-6 rounded bg-stone-800 border border-stone-700 text-stone-300 disabled:opacity-40"
-            aria-label={`Decrease ${name} quantity`}
+            aria-label={t('characters.inventory.decreaseQty', { name })}
           >
             −
           </button>
@@ -342,7 +353,7 @@ function ItemCard({
             disabled={!editable}
             onClick={() => onUpdate({ quantity: item.quantity + 1 })}
             className="h-6 w-6 rounded bg-stone-800 border border-stone-700 text-stone-300 disabled:opacity-40"
-            aria-label={`Increase ${name} quantity`}
+            aria-label={t('characters.inventory.increaseQty', { name })}
           >
             +
           </button>
@@ -354,7 +365,7 @@ function ItemCard({
             checked={item.is_equipped}
             onChange={(e) => onUpdate({ isEquipped: e.target.checked })}
           />
-          Equipped
+          {t('characters.inventory.equipped')}
         </label>
         {catalogEntry?.requires_attunement && (
           <label className="flex items-center gap-1 text-xs text-stone-400">
@@ -364,7 +375,7 @@ function ItemCard({
               checked={item.is_attuned}
               onChange={(e) => onUpdate({ isAttuned: e.target.checked })}
             />
-            Attuned
+            {t('characters.inventory.attuned')}
           </label>
         )}
       </div>
@@ -376,7 +387,7 @@ function ItemCard({
             rollContext={name}
             modifier={weaponAttackAbilityModifier(catalogEntry, str, dex) + proficiencyBonus}
             characterId={characterId}
-            triggerLabel="⚄ Attack"
+            triggerLabel={t('characters.inventory.attackTrigger')}
           />
           {parsedDamage && (
             <DiceRoller
@@ -386,7 +397,7 @@ function ItemCard({
               diceSides={parsedDamage.sides}
               diceCount={parsedDamage.count}
               characterId={characterId}
-              triggerLabel="🩸 Damage"
+              triggerLabel={t('characters.inventory.damageTrigger')}
             />
           )}
         </div>
@@ -410,7 +421,7 @@ function ItemCard({
                 }}
                 className="text-xs text-amber-500 hover:text-amber-400"
               >
-                Save note
+                {t('characters.inventory.saveNote')}
               </button>
               <button
                 type="button"
@@ -420,13 +431,13 @@ function ItemCard({
                 }}
                 className="text-xs text-stone-400 hover:text-stone-300"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
         ) : (
           <button type="button" onClick={() => setEditingNotes(true)} className="text-xs text-stone-500 hover:text-stone-300 text-left">
-            {item.notes || 'Add note…'}
+            {item.notes || t('characters.inventory.addNote')}
           </button>
         )
       ) : (
@@ -447,6 +458,7 @@ function AddItemForm({
   onAdd: (input: { itemId: string; quantity: number; isEquipped: boolean; isAttuned: boolean; customName: string | null }) => void;
   onCancel: () => void;
 }) {
+  const { t } = useLocale();
   const [itemId, setItemId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [isEquipped, setIsEquipped] = useState(false);
@@ -470,16 +482,16 @@ function AddItemForm({
     <div className="rounded-md border border-stone-700 bg-stone-950 p-3 space-y-2">
       <div className="flex flex-wrap gap-2 items-end">
         <div className="flex-1 min-w-[10rem]">
-          <label className="block text-[10px] text-stone-500 mb-0.5">Item</label>
+          <label className="block text-[10px] text-stone-500 mb-0.5">{t('characters.inventory.itemLabel')}</label>
           <Combobox
             value={itemId}
             onChange={setItemId}
-            placeholder="Search items…"
+            placeholder={t('characters.inventory.searchItems')}
             options={sorted.map((i) => ({ value: String(i.id), label: `${i.name} (${i.rarity})` }))}
           />
         </div>
         <div>
-          <label className="block text-[10px] text-stone-500 mb-0.5">Qty</label>
+          <label className="block text-[10px] text-stone-500 mb-0.5">{t('characters.inventory.qtyLabel')}</label>
           <input
             type="number"
             min={0}
@@ -489,7 +501,7 @@ function AddItemForm({
           />
         </div>
         <div className="flex-1 min-w-[8rem]">
-          <label className="block text-[10px] text-stone-500 mb-0.5">Custom name (optional)</label>
+          <label className="block text-[10px] text-stone-500 mb-0.5">{t('characters.inventory.customNameLabel')}</label>
           <input
             type="text"
             value={customName}
@@ -501,11 +513,11 @@ function AddItemForm({
       <div className="flex gap-4">
         <label className="flex items-center gap-1.5 text-xs text-stone-400">
           <input type="checkbox" checked={isEquipped} onChange={(e) => setIsEquipped(e.target.checked)} />
-          Equipped
+          {t('characters.inventory.equipped')}
         </label>
         <label className="flex items-center gap-1.5 text-xs text-stone-400">
           <input type="checkbox" checked={isAttuned} onChange={(e) => setIsAttuned(e.target.checked)} />
-          Attuned
+          {t('characters.inventory.attuned')}
         </label>
       </div>
       <div className="flex gap-2">
@@ -515,14 +527,14 @@ function AddItemForm({
           onClick={submit}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
         >
-          Add
+          {t('characters.inventory.addButton')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md border border-stone-700 px-3 py-1.5 text-sm text-stone-300 hover:bg-stone-800"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>
