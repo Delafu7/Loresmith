@@ -361,11 +361,18 @@ export async function seedDemo(client: Client): Promise<void> {
 
     for (let i = 0; i < rolled.length; i++) {
       const p = rolled[i];
+      // combat_participants.faction has no PC-aware default at the DB level
+      // (plain column default is 'enemy') — services/encounters.ts's own
+      // addCombatParticipant computes "player for PCs, enemy otherwise"
+      // itself rather than trusting that default; this raw seed insert
+      // bypasses that service function, so it has to make the same call
+      // explicitly or every seeded PC silently ends up on the enemy faction.
+      const faction = p.characterId ? 'player' : 'enemy';
       await client.query(
         `INSERT INTO combat_participants
-           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round)
-         VALUES ($1, $2, $3, $4, $5, $6, 1)`,
-        [encounterId, p.characterId, p.monsterInstanceId, p.roll, p.tiebreak, i],
+           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, faction)
+         VALUES ($1, $2, $3, $4, $5, $6, 1, $7)`,
+        [encounterId, p.characterId, p.monsterInstanceId, p.roll, p.tiebreak, i, faction],
       );
     }
     console.log(`  encounter '${'Ambush on the Old Road'}' prepared with ${rolled.length} combat_participants (initiative rolled, status='preparing')`);

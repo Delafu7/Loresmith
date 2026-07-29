@@ -651,10 +651,16 @@ async function seedSpells(
       for (const edition of EDITIONS) {
         const classId = classMap.get(`${edition}:${classIndex}`);
         if (!classId) throw new Error(`Unknown class '${classIndex}' (${edition}) for spell '${s.slug}'`);
+        // Matches the real unique index (post-UUID-migration:
+        // spell_classes_spell_id_coalesce_coalesce1_idx) which coalesces a
+        // null class_id/subclass_id to the nil UUID, not the pre-migration
+        // integer sentinel -1 — an integer literal here can't be compared
+        // against a uuid column at all ("COALESCE types uuid and integer
+        // cannot be matched").
         await client.query(
           `INSERT INTO spell_classes (spell_id, class_id, subclass_id)
            VALUES ($1, $2, NULL)
-           ON CONFLICT (spell_id, COALESCE(class_id,-1), COALESCE(subclass_id,-1)) DO NOTHING`,
+           ON CONFLICT (spell_id, COALESCE(class_id,'00000000-0000-0000-0000-000000000000'::uuid), COALESCE(subclass_id,'00000000-0000-0000-0000-000000000000'::uuid)) DO NOTHING`,
           [spellId, classId],
         );
       }
