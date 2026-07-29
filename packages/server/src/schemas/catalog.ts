@@ -18,6 +18,15 @@ export const campaignScopedQuerySchema = z.object({
 });
 export type CampaignScopedQuery = z.infer<typeof campaignScopedQuerySchema>;
 
+// For `conditions` (Phase 2 selector work): edition-varying like languages,
+// but never campaign-scoped — it has no owning_campaign_id column (PLAN.md
+// §3.1: it's flavor text only, not homebrew-forkable like effect_definitions
+// which wraps it).
+export const editionOnlyQuerySchema = z.object({
+  edition: z.enum(['2014', '2024', 'both']).optional(),
+});
+export type EditionOnlyQuery = z.infer<typeof editionOnlyQuerySchema>;
+
 export const monsterQuerySchema = editionQuerySchema.extend({
   creatureType: z.string().optional(),
   crMin: z.coerce.number().optional(),

@@ -7,6 +7,7 @@ import {
   itemQuerySchema,
   effectDefinitionQuerySchema,
   campaignScopedQuerySchema,
+  editionOnlyQuerySchema,
 } from '../schemas/catalog.js';
 import * as catalogService from '../services/catalog.js';
 import { requireMembership } from '../services/authz.js';
@@ -29,6 +30,16 @@ catalogRouter.get('/ability-scores', async (_req, res) => {
 
 catalogRouter.get('/skills', async (_req, res) => {
   res.json({ skills: await catalogService.listSkills(pool) });
+});
+
+// Phase 2 selector work — see services/catalog.ts's listMagicSchools/listConditions.
+catalogRouter.get('/magic-schools', async (_req, res) => {
+  res.json({ magicSchools: await catalogService.listMagicSchools(pool) });
+});
+
+catalogRouter.get('/conditions', async (req, res) => {
+  const query = editionOnlyQuerySchema.parse(req.query);
+  res.json({ conditions: await catalogService.listConditions(pool, query) });
 });
 
 catalogRouter.get('/languages', async (req, res) => {

@@ -9,7 +9,7 @@
 // surface those homebrew rows alongside the global catalog.
 
 import type { Pool } from 'pg';
-import type { EditionQuery, MonsterQuery, SpellQuery, ItemQuery, EffectDefinitionQuery, CampaignScopedQuery } from '../schemas/catalog.js';
+import type { EditionQuery, MonsterQuery, SpellQuery, ItemQuery, EffectDefinitionQuery, CampaignScopedQuery, EditionOnlyQuery } from '../schemas/catalog.js';
 
 // `edition=2014|2024` means "rows for that edition OR edition-agnostic
 // ('both') rows"; `edition=both` or omitted means "everything, no filter" —
@@ -41,6 +41,24 @@ export async function listAbilityScores(pool: Pool) {
 
 export async function listSkills(pool: Pool) {
   const result = await pool.query(`SELECT * FROM skills ORDER BY id ASC`);
+  return result.rows;
+}
+
+// Phase 2 selector work: magic_schools/conditions were seeded as FK targets
+// (spells.school_id, effect_definitions.condition_id) but never got a list
+// endpoint, so the UI had no way to turn either id into a name — same gap
+// listDamageTypes closed for items.damage_type_id. Neither table has an
+// owning_campaign_id column (both are global-only, non-homebrew-forkable),
+// so no campaign scoping here, matching listAbilityScores/listSkills above.
+export async function listMagicSchools(pool: Pool) {
+  const result = await pool.query(`SELECT * FROM magic_schools ORDER BY name ASC`);
+  return result.rows;
+}
+
+export async function listConditions(pool: Pool, query: EditionOnlyQuery) {
+  const values: unknown[] = [];
+  const where = editionFilter('edition_scope', query.edition, values);
+  const result = await pool.query(`SELECT * FROM conditions ${where} ORDER BY name ASC`, values);
   return result.rows;
 }
 
