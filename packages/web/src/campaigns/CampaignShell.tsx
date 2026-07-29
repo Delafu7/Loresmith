@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -22,6 +22,51 @@ export function useCampaignShell(): CampaignShellContextValue {
   const ctx = useContext(CampaignShellContext);
   if (!ctx) throw new Error('useCampaignShell must be used within CampaignShell');
   return ctx;
+}
+
+// Phase 4: JSON campaign export (DM-only, matches GET /campaigns/:id/export's
+// own requireRole('dm') gate). Downloads the "core content" snapshot
+// (services/campaignExport.ts) as a plain JSON file the DM can later feed
+// into /campaigns/import (see CampaignListPage.tsx) to restore/duplicate it
+// as a brand-new campaign — no dedicated settings page exists yet, so this
+// lives with the other campaign-level chrome in the sidebar.
+function ExportCampaignButton({ campaignId, campaignName }: { campaignId: string; campaignName: string }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function handleExport() {
+    setPending(true);
+    setError(null);
+    try {
+      const data = await api.get<Record<string, unknown>>(`/campaigns/${campaignId}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const slug = campaignName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'campaign';
+      a.href = url;
+      a.download = `${slug}-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="text-xs">
+      <button
+        type="button"
+        onClick={() => void handleExport()}
+        disabled={pending}
+        className="min-h-11 text-stone-400 hover:text-stone-200 disabled:opacity-50"
+      >
+        {pending ? 'Exporting…' : 'Export campaign (JSON)'}
+      </button>
+      {error !== null && <p className="text-red-400 mt-1">{errorMessage(error)}</p>}
+    </div>
+  );
 }
 
 export function CampaignShell() {
@@ -75,6 +120,7 @@ export function CampaignShell() {
             {isDm && <NavItem to="catalog">Catalog</NavItem>}
           </NavItemList>
           <div className="mt-auto flex flex-col gap-3 max-md:flex-row max-md:flex-wrap max-md:items-center">
+            {isDm && <ExportCampaignButton campaignId={campaignId} campaignName={campaignQuery.data.campaign.name} />}
             <ThemePicker />
           </div>
         </Sidebar>

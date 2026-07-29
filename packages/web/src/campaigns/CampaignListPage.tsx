@@ -1,14 +1,62 @@
-import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useRef, useState, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Campaign } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 
+// Phase 4: JSON campaign import — always creates a brand-new campaign owned
+// by the current user (services/campaignImport.ts never overwrites/merges
+// into an existing one), so it lives right next to "New campaign" as an
+// alternative way to populate one, not as a per-campaign settings action.
+function ImportCampaignButton({ onImported }: { onImported: (campaignId: string) => void }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const text = await file.text();
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error('That file isn’t valid JSON.');
+      }
+      return api.post<{ campaignId: string }>('/campaigns/import', data);
+    },
+    onSuccess: (data) => onImported(data.campaignId),
+    onError: (err) => setError(err),
+  });
+
+  function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-choosing the same file after an error
+    if (!file) return;
+    setError(null);
+    importMutation.mutate(file);
+  }
+
+  return (
+    <div>
+      <input ref={fileInputRef} type="file" accept="application/json" onChange={handleFileChosen} className="hidden" />
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={importMutation.isPending}
+        className="rounded-md border border-stone-700 text-stone-300 hover:bg-stone-800 active:bg-stone-800/70 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
+      >
+        {importMutation.isPending ? 'Importing…' : 'Import campaign (JSON)'}
+      </button>
+      {error !== null && <ErrorBanner message={errorMessage(error)} />}
+    </div>
+  );
+}
+
 export function CampaignListPage() {
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
 
   const campaignsQuery = useQuery({
@@ -58,15 +106,23 @@ export function CampaignListPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <h2 className="text-lg font-medium">Your campaigns</h2>
-          <button
-            type="button"
-            onClick={() => setShowCreate((v) => !v)}
-            className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
-          >
-            {showCreate ? 'Cancel' : 'New campaign'}
-          </button>
+          <div className="flex items-center gap-2">
+            <ImportCampaignButton
+              onImported={(campaignId) => {
+                void queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+                navigate(`/campaigns/${campaignId}/characters`);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowCreate((v) => !v)}
+              className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
+            >
+              {showCreate ? 'Cancel' : 'New campaign'}
+            </button>
+          </div>
         </div>
 
         {showCreate && (
