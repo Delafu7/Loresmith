@@ -41,6 +41,10 @@ export interface ActionDefinition {
   isDash?: boolean;
   rollTrigger?: ActionRollTrigger;
   description: string;
+  /** Omitted = available in every edition (the common case). Present only
+   * for an action that's genuinely edition-specific, e.g. Study (2024 split
+   * 2014's single Search action into Search + Study — see docs/rules/actions.md). */
+  editions?: Array<'2014' | '2024'>;
 }
 
 export const ACTION_REGISTRY: ActionDefinition[] = [
@@ -111,6 +115,21 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
     rollTrigger: { rollContext: 'Search (Perception)', ability: 'wis' },
     description:
       "GM-adjudicated check to find something — Wisdom (Perception) or Intelligence (Investigation) in 2014; Wisdom (Insight, Medicine, Perception, or Survival) in 2024.",
+  },
+  {
+    key: 'study',
+    label: 'Study',
+    slot: 'action',
+    // docs/rules/actions.md's Grapple/Dodge/Help/Hide/Study section: 2024
+    // split 2014's single Search action into Search (Wisdom skills) and
+    // Study (Intelligence skills) — Study has no 2014 equivalent by this
+    // name. GM picks among Arcana/History/Investigation/Nature/Religion;
+    // Investigation is the representative default, same "GM discretion,
+    // one common default" pattern as Search's Perception default above.
+    editions: ['2024'],
+    rollTrigger: { rollContext: 'Study (Investigation)', ability: 'int' },
+    description:
+      'GM-adjudicated check to recall or work out information — Intelligence (Arcana, History, Investigation, Nature, or Religion).',
   },
   {
     key: 'ready',

@@ -130,7 +130,7 @@ function PlayerPanelBody({
           <EconomyPip label={t('encounters.actionEconomy.reaction')} used={participant.reactionUsed} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {ACTION_REGISTRY.map((action) => {
+          {ACTION_REGISTRY.filter((action) => !action.editions || action.editions.includes(campaign.srd_edition)).map((action) => {
             const used =
               action.slot === 'action'
                 ? participant.actionUsed

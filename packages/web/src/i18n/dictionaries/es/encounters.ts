@@ -97,6 +97,8 @@ export const encounters = {
     dmOverride: 'Anulación del DJ (total del PNJ):',
     autoRoll: 'tirada automática',
     shove: 'Empujar',
+    grappleNpc: 'Agarrar PNJ:',
+    grapple: 'Agarrar',
     attackerRolled: 'El atacante tiró {roll}',
     vsSeparator: ' contra ',
     dmSetTotal: 'total fijado por el DJ: {total}',
@@ -133,6 +135,11 @@ export const encounters = {
         label: 'Buscar',
         description:
           'Prueba adjudicada por el DJ para encontrar algo — Sabiduría (Percepción) o Inteligencia (Investigación) en 2014; Sabiduría (Perspicacia, Medicina, Percepción o Supervivencia) en 2024.',
+      },
+      study: {
+        label: 'Estudiar',
+        description:
+          'Prueba adjudicada por el DJ para recordar o deducir información — Inteligencia (Arcanos, Historia, Investigación, Naturaleza o Religión).',
       },
       ready: {
         label: 'Preparar',

@@ -1290,12 +1290,13 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
     // Fresh action economy for whoever's turn is starting — turn_order is
     // assigned 0..participantCount-1 (rollInitiative), matching
     // current_turn_index 1:1, so nextIndex directly selects the right row.
-    await client.query(
+    const startingRes = await client.query<{ character_id: string | null; monster_instance_id: string | null }>(
       `UPDATE combat_participants
        SET action_used = false, bonus_action_used = false, reaction_used = false,
            dash_used = false, movement_used_ft = 0, object_interaction_used = false,
            last_action_economy_snapshot = NULL
-       WHERE encounter_id = $1 AND turn_order = $2`,
+       WHERE encounter_id = $1 AND turn_order = $2
+       RETURNING character_id, monster_instance_id`,
       [encounterId, nextIndex],
     );
 
@@ -1326,6 +1327,29 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
         [expiredIds],
       );
       expiredEffects = expiredRes.rows;
+    }
+
+    // Dodge (docs/rules/actions.md's Dodge section): "until the start of
+    // YOUR next turn" is a per-participant trigger, not a global round
+    // countdown, so it can't use the 'rounds' decrement path above — instead
+    // directly soft-remove any still-live Dodge effect belonging to
+    // whichever participant's turn is starting right now.
+    const startingParticipant = startingRes.rows[0];
+    const dodgeTargetColumn = startingParticipant?.character_id != null ? 'character_id' : 'monster_instance_id';
+    const dodgeTargetId = startingParticipant?.character_id ?? startingParticipant?.monster_instance_id ?? null;
+    if (dodgeTargetId != null) {
+      const dodgeExpiredRes = await client.query<ExpiredEffectRow>(
+        `UPDATE active_effects ae
+         SET removed_at = now()
+         FROM effect_definitions ed
+         WHERE ae.effect_definition_id = ed.id AND ed.name = 'Dodge'
+           AND ae.removed_at IS NULL AND ae.${dodgeTargetColumn} = $1
+         RETURNING ae.id, ae.character_id, ae.monster_instance_id, ae.effect_definition_id,
+                   ae.duration_type, ae.duration_value, ae.concentration, ae.source_character_id,
+                   ed.name AS effect_definition_name`,
+        [dodgeTargetId],
+      );
+      expiredEffects = [...expiredEffects, ...dodgeExpiredRes.rows];
     }
 
     await client.query('COMMIT');

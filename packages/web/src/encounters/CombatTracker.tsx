@@ -124,7 +124,12 @@ export function ParticipantStatLookup({
         </dl>
         {c.notes && <p className="text-xs text-stone-400 whitespace-pre-wrap">{c.notes}</p>}
         {encounterId !== undefined && (
-          <CharacterAttackRoller characterId={c.id} encounterId={encounterId} targets={attackTargetsFor(allParticipants, participant.participantId)} />
+          <CharacterAttackRoller
+            characterId={c.id}
+            encounterId={encounterId}
+            rollerParticipantId={participant.participantId}
+            targets={attackTargetsFor(allParticipants, participant.participantId)}
+          />
         )}
       </div>
     );
@@ -152,6 +157,7 @@ export function ParticipantStatLookup({
           attacks={monsterAttacks}
           rollerMonsterInstanceId={mi.id}
           encounterId={encounterId}
+          rollerParticipantId={participant.participantId}
           targets={attackTargetsFor(allParticipants, participant.participantId)}
         />
       )}
@@ -162,7 +168,17 @@ export function ParticipantStatLookup({
 // Split out only because it needs its own useQuery for character_attacks —
 // the monster branch above already has its attacks in hand (monster.actions,
 // no fetch needed) so it calls AttackRoller directly.
-function CharacterAttackRoller({ characterId, encounterId, targets }: { characterId: string; encounterId: string; targets: AttackTarget[] }) {
+function CharacterAttackRoller({
+  characterId,
+  encounterId,
+  rollerParticipantId,
+  targets,
+}: {
+  characterId: string;
+  encounterId: string;
+  rollerParticipantId: string;
+  targets: AttackTarget[];
+}) {
   const attacksQuery = useQuery({
     queryKey: ['character', characterId, 'attacks'],
     queryFn: () => api.get<{ attacks: CharacterAttack[] }>(`/characters/${characterId}/attacks`),
@@ -177,7 +193,15 @@ function CharacterAttackRoller({ characterId, encounterId, targets }: { characte
     saveAbilityIndex: a.save_ability_index,
   }));
   if (normalized.length === 0) return null;
-  return <AttackRoller attacks={normalized} rollerCharacterId={characterId} encounterId={encounterId} targets={targets} />;
+  return (
+    <AttackRoller
+      attacks={normalized}
+      rollerCharacterId={characterId}
+      encounterId={encounterId}
+      rollerParticipantId={rollerParticipantId}
+      targets={targets}
+    />
+  );
 }
 
 export function CombatTracker({ encounter }: { encounter: Encounter }) {

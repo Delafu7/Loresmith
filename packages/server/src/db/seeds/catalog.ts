@@ -877,12 +877,32 @@ const CONDITION_EFFECT_DURATIONS: Record<string, { durationType: string; duratio
   unconscious: { durationType: 'until_removed', durationValue: null, stackingRule: 'none' },
 };
 
+// Non-condition effect templates — spell-driven ones above, plus one
+// action-driven one below. "Dodge" isn't one of the 15 SRD conditions (no
+// `conditions` catalog row to link via condition_id), but it's still a real
+// mechanical state worth tracking as an active_effects row so a DM/player
+// can see it's active and it can be auto-cleared — see services/encounters.ts's
+// advanceTurn, which soft-removes any live "Dodge" effect for the
+// participant whose turn is starting (docs/rules/actions.md's Dodge
+// section: "until the start of your next turn", not a round countdown, so
+// this can't use the generic `rounds` duration-decrement path the way a
+// spell effect would).
 const SPELL_EFFECT_DEFINITIONS: Array<{
   name: string; description: string; durationType: string; durationValue: number | null;
   concentration: boolean; stackingRule: 'none' | 'stack' | 'refresh';
 }> = [
   { name: 'Bless', description: 'Target adds 1d4 to attack rolls and saving throws.', durationType: 'minutes', durationValue: 1, concentration: true, stackingRule: 'refresh' },
   { name: 'Hex', description: 'Extra 1d6 necrotic damage on hit, plus disadvantage on ability checks with a chosen ability.', durationType: 'hours', durationValue: 1, concentration: true, stackingRule: 'refresh' },
+  { name: 'Dodge', description: 'Attack rolls against this creature have disadvantage (if the attacker can see it), and it makes Dexterity saving throws with advantage — until the start of its next turn.', durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'refresh' },
+  // Hide (docs/rules/actions.md's Hide section, 2014-confirmed mechanic —
+  // "a creature that can't see you"): grants advantage on this creature's
+  // attacks against anyone who can't see it, disadvantage on their attacks
+  // against it, and attacking gives away its location. No automatic
+  // duration trigger exists for this (unlike Dodge's "start of next turn")
+  // — broken by narrated events (being seen/heard, attacking), so the DM
+  // removes it manually via the existing effect-remove flow, same as every
+  // other until_removed condition without a mechanical end trigger.
+  { name: 'Hidden', description: "Advantage on this creature's attacks against creatures that can't see it; disadvantage on their attacks against it. Ends when it's seen or heard, or when it attacks.", durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'refresh' },
 ];
 
 async function seedEffectDefinitions(client: Client): Promise<void> {

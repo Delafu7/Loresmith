@@ -102,6 +102,8 @@ export const encounters = {
     dmOverride: 'DM override (NPC total):',
     autoRoll: 'auto-roll',
     shove: 'Shove',
+    grappleNpc: 'Grapple NPC:',
+    grapple: 'Grapple',
     attackerRolled: 'Attacker rolled {roll}',
     vsSeparator: ' vs ',
     dmSetTotal: 'DM-set {total}',
@@ -138,6 +140,11 @@ export const encounters = {
         label: 'Search',
         description:
           'GM-adjudicated check to find something — Wisdom (Perception) or Intelligence (Investigation) in 2014; Wisdom (Insight, Medicine, Perception, or Survival) in 2024.',
+      },
+      study: {
+        label: 'Study',
+        description:
+          'GM-adjudicated check to recall or work out information — Intelligence (Arcana, History, Investigation, Nature, or Religion).',
       },
       ready: {
         label: 'Ready',

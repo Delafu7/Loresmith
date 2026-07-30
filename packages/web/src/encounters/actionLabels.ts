@@ -32,6 +32,8 @@ export function actionLabel(t: LocaleT, key: string): string {
       return t('encounters.actionEconomy.actions.disengage.label');
     case 'search':
       return t('encounters.actionEconomy.actions.search.label');
+    case 'study':
+      return t('encounters.actionEconomy.actions.study.label');
     case 'ready':
       return t('encounters.actionEconomy.actions.ready.label');
     case 'use_object':
@@ -61,6 +63,8 @@ export function actionDescription(t: LocaleT, key: string): string {
       return t('encounters.actionEconomy.actions.disengage.description');
     case 'search':
       return t('encounters.actionEconomy.actions.search.description');
+    case 'study':
+      return t('encounters.actionEconomy.actions.study.description');
     case 'ready':
       return t('encounters.actionEconomy.actions.ready.description');
     case 'use_object':

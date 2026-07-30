@@ -56,12 +56,18 @@ export function AttackRoller({
   rollerCharacterId,
   rollerMonsterInstanceId,
   encounterId,
+  rollerParticipantId,
   targets,
 }: {
   attacks: NormalizedAttack[];
   rollerCharacterId?: string | null;
   rollerMonsterInstanceId?: string | null;
   encounterId: string;
+  /** The roller's own combat_participants id — present whenever this
+   * renders inside a live encounter (every current call site has it), used
+   * only for the best-effort action-economy spend below; absent, the attack
+   * roll still works exactly as before, just without that side effect. */
+  rollerParticipantId?: string;
   /** Every other live participant this roller could plausibly hit — the DM
    * picks which one actually takes the damage. */
   targets: AttackTarget[];
@@ -76,6 +82,7 @@ export function AttackRoller({
           key={attack.key}
           attack={attack}
           encounterId={encounterId}
+          rollerParticipantId={rollerParticipantId}
           targets={targets}
           rollerCharacterId={rollerCharacterId}
           rollerMonsterInstanceId={rollerMonsterInstanceId}
@@ -88,12 +95,14 @@ export function AttackRoller({
 function AttackRow({
   attack,
   encounterId,
+  rollerParticipantId,
   targets,
   rollerCharacterId,
   rollerMonsterInstanceId,
 }: {
   attack: NormalizedAttack;
   encounterId: string;
+  rollerParticipantId?: string;
   targets: AttackTarget[];
   rollerCharacterId?: string | null;
   rollerMonsterInstanceId?: string | null;
@@ -103,6 +112,21 @@ function AttackRow({
   const [targetId, setTargetId] = useState<number | ''>('');
   const parsedDamage = attack.damageDice ? parseDiceExpression(attack.damageDice) : null;
   const isSaveBased = attack.saveDc != null;
+
+  // Best-effort action-economy spend (Phase 7): an attack roll marks the
+  // action slot used when it's free, but NEVER blocks the roll itself —
+  // Extra Attack (a second attack that's part of the SAME action) and
+  // opportunity attacks (a reaction, not tracked per-trigger here) aren't
+  // modeled as separate cases, so treating "already used" as an error would
+  // incorrectly block them. Errors from this mutation are intentionally
+  // swallowed (no ErrorBanner, no thrown promise) — see onError below.
+  const spendActionMutation = useMutation({
+    mutationFn: () => {
+      if (!rollerParticipantId) return Promise.resolve();
+      return api.patch(`/encounters/${encounterId}/participants/${rollerParticipantId}/action-economy`, { spend: 'action' });
+    },
+    onError: () => {}, // best-effort only — already-used/off-turn/etc. are not user-facing errors here
+  });
 
   // docs/rules/attacks-and-damage.md §1.5/§3: a 20 only counts as a crit if
   // it's the KEPT die — never the discarded one under disadvantage.
@@ -155,7 +179,10 @@ function AttackRow({
             rollContext={`${attack.name} — attack roll`}
             modifier={attack.attackBonus}
             triggerLabel={t('encounters.attackRoller.attackTrigger')}
-            onRoll={setLastAttackRoll}
+            onRoll={(roll) => {
+              setLastAttackRoll(roll);
+              spendActionMutation.mutate();
+            }}
             characterId={rollerCharacterId ?? undefined}
             monsterInstanceId={rollerMonsterInstanceId ?? undefined}
             encounterId={encounterId}

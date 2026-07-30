@@ -689,3 +689,18 @@ export interface ShoveResult {
   outcome: 'push_5ft' | 'knock_prone' | null;
   message: string;
 }
+
+// POST /encounters/:id/participants/:pid/grapple's response (Phase 7) —
+// same shape as ShoveResult, just no push/prone outcome (a successful
+// Grapple always means "the target is now Grappled") and an appliedEffect
+// (the new active_effects row, null on failure) instead.
+export interface GrappleResult {
+  participant: Record<string, unknown>;
+  attackerRoll: DiceRoll;
+  defenderRoll: DiceRoll | null;
+  defenderTotal: number;
+  defenderOverridden: boolean;
+  success: boolean;
+  appliedEffect: Record<string, unknown> | null;
+  message: string;
+}

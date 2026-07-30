@@ -5,7 +5,9 @@ import { abilityModifier } from '../lib/dnd-math';
 import { DiceRoller } from '../components/DiceRoller';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
 import { ACTION_REGISTRY, highJumpDistanceFt, jumpDistanceFt, standUpCostFt, type ActionSlot } from './actionEconomy';
-import type { ShoveResult, SnapshotParticipant } from '../lib/types';
+import type { GrappleResult, ShoveResult, SnapshotParticipant } from '../lib/types';
+import { useCampaignShell } from '../campaigns/CampaignShell';
+import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
 import { useLocale } from '../i18n/LocaleContext';
 import { actionDescription, actionLabel } from './actionLabels';
 
@@ -45,6 +47,7 @@ export function ActionEconomyPanel({
   otherParticipants: SnapshotParticipant[];
 }) {
   const { t } = useLocale();
+  const { campaignId, campaign } = useCampaignShell();
   const queryClient = useQueryClient();
   const [running, setRunning] = useState(true);
   const [moveFeet, setMoveFeet] = useState('');
@@ -56,6 +59,13 @@ export function ActionEconomyPanel({
   const [defenderSkill, setDefenderSkill] = useState<'athletics' | 'acrobatics'>('athletics');
   const [defenderOverride, setDefenderOverride] = useState('');
 
+  // Grapple Check Against a Specific NPC — same PC-attacker/NPC-defender
+  // scope as Shove above (reuses the same shoveTargets list), own state
+  // since it's a separate contested check with its own outcome.
+  const [grappleTargetId, setGrappleTargetId] = useState<string | ''>('');
+  const [grappleDefenderSkill, setGrappleDefenderSkill] = useState<'athletics' | 'acrobatics'>('athletics');
+  const [grappleDefenderOverride, setGrappleDefenderOverride] = useState('');
+
   const spendMutation = useMutation({
     mutationFn: (body: { spend?: ActionSlot | 'object_interaction'; dash?: boolean; addMovementFt?: number }) =>
       api.patch(`/encounters/${encounterId}/participants/${participant.participantId}/action-economy`, body),
@@ -65,6 +75,29 @@ export function ActionEconomyPanel({
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounterId] });
     },
+  });
+
+  // Dodge (docs/rules/actions.md's Dodge section) actually grants its
+  // mechanical benefit — not just a slot-spend label — by applying the
+  // seeded "Dodge" effect_definition to whichever participant takes it,
+  // same POST /encounters/:id/effects CombatTracker.tsx's own
+  // EffectApplyDialog already uses. DM-only (this whole panel is), same
+  // "conditions are a DM tool" authorization this app already applies
+  // everywhere else — a player clicking Dodge in their own quick-reference
+  // panel (BattleModePlayerPanel.tsx) still only spends the action slot;
+  // the DM applies the actual condition from here. Auto-cleared at the
+  // start of the participant's own next turn by services/encounters.ts's
+  // advanceTurn, not a manual removal.
+  const effectDefinitionsQuery = useEffectDefinitionsCatalog(campaignId);
+  const dodgeEffectDefinitionId = effectDefinitionsQuery.data?.effectDefinitions.find((d) => d.name === 'Dodge')?.id;
+  const applyDodgeMutation = useMutation({
+    mutationFn: (effectDefinitionId: string) =>
+      api.post(`/encounters/${encounterId}/effects`, {
+        ...(participant.characterId != null
+          ? { characterId: participant.characterId }
+          : { monsterInstanceId: participant.monsterInstanceId }),
+        effectDefinitionId,
+      }),
   });
 
   // REFACTOR-PLAN.md §5 ("allow the DM to undo") — restores exactly whatever
@@ -95,6 +128,20 @@ export function ActionEconomyPanel({
   const shoveMutation = useMutation({
     mutationFn: (body: { targetParticipantId: string; desiredEffect: 'push_5ft' | 'knock_prone'; defenderSkill: 'athletics' | 'acrobatics'; defenderRollOverride?: number }) =>
       api.post<ShoveResult>(`/encounters/${encounterId}/participants/${participant.participantId}/shove`, body),
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounterId] });
+    },
+  });
+
+  // Grapple Check Against a Specific NPC — same "read the response directly"
+  // shape as Shove above; a successful grapple's Grappled condition arrives
+  // both in this response (appliedEffect) and, independently, over the
+  // socket as EFFECT_APPLIED (useEncounterLive already patches
+  // participant.effects from that — this response is only for the
+  // inline success/fail message, not a second source of truth for state).
+  const grappleMutation = useMutation({
+    mutationFn: (body: { targetParticipantId: string; defenderSkill: 'athletics' | 'acrobatics'; defenderRollOverride?: number }) =>
+      api.post<GrappleResult>(`/encounters/${encounterId}/participants/${participant.participantId}/grapple`, body),
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounterId] });
     },
@@ -148,7 +195,7 @@ export function ActionEconomyPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {ACTION_REGISTRY.map((action) => {
+        {ACTION_REGISTRY.filter((action) => !action.editions || action.editions.includes(campaign.srd_edition)).map((action) => {
           const used =
             action.slot === 'action'
               ? participant.actionUsed
@@ -163,7 +210,12 @@ export function ActionEconomyPanel({
                 type="button"
                 title={actionDescription(t, action.key)}
                 disabled={used || spendMutation.isPending}
-                onClick={() => spendMutation.mutate({ spend: action.slot, dash: action.isDash })}
+                onClick={() => {
+                  spendMutation.mutate({ spend: action.slot, dash: action.isDash });
+                  if (action.key === 'dodge' && dodgeEffectDefinitionId) {
+                    applyDodgeMutation.mutate(dodgeEffectDefinitionId);
+                  }
+                }}
                 className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs px-2 py-1"
               >
                 {actionLabel(t, action.key)}
@@ -309,6 +361,74 @@ export function ActionEconomyPanel({
         </div>
       )}
 
+      {participant.characterId !== null && shoveTargets.length > 0 && (
+        <div className="flex flex-col gap-1.5 text-xs text-stone-400 border-t border-stone-800 pt-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-stone-500">{t('encounters.actionEconomy.grappleNpc')}</span>
+            <select
+              value={grappleTargetId}
+              onChange={(e) => setGrappleTargetId(e.target.value)}
+              className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
+            >
+              <option value="">{t('encounters.actionEconomy.selectTarget')}</option>
+              {shoveTargets.map((target) => (
+                <option key={target.participantId} value={target.participantId}>
+                  {target.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={grappleDefenderSkill}
+              onChange={(e) => setGrappleDefenderSkill(e.target.value as 'athletics' | 'acrobatics')}
+              className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
+            >
+              <option value="athletics">{t('encounters.actionEconomy.defendsAthletics')}</option>
+              <option value="acrobatics">{t('encounters.actionEconomy.defendsAcrobatics')}</option>
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1">
+              {t('encounters.actionEconomy.dmOverride')}
+              <input
+                type="number"
+                value={grappleDefenderOverride}
+                onChange={(e) => setGrappleDefenderOverride(e.target.value)}
+                placeholder={t('encounters.actionEconomy.autoRoll')}
+                className="w-20 rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-stone-200"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={participant.actionUsed || grappleTargetId === '' || grappleMutation.isPending}
+              onClick={() => {
+                if (grappleTargetId === '') return;
+                const overrideParsed = Number(grappleDefenderOverride);
+                grappleMutation.mutate({
+                  targetParticipantId: grappleTargetId,
+                  defenderSkill: grappleDefenderSkill,
+                  defenderRollOverride: grappleDefenderOverride !== '' && Number.isFinite(overrideParsed) ? overrideParsed : undefined,
+                });
+              }}
+              className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 px-2 py-1"
+            >
+              {t('encounters.actionEconomy.grapple')}
+            </button>
+          </div>
+          {grappleMutation.data && (
+            <div className={`rounded-md border px-2 py-1 ${grappleMutation.data.success ? 'border-green-800 text-green-400' : 'border-red-800 text-red-400'}`}>
+              <div>{grappleMutation.data.message}</div>
+              <div className="text-stone-500">
+                {t('encounters.actionEconomy.attackerRolled', { roll: grappleMutation.data.attackerRoll.result_total })}
+                {t('encounters.actionEconomy.vsSeparator')}
+                {grappleMutation.data.defenderOverridden
+                  ? t('encounters.actionEconomy.dmSetTotal', { total: grappleMutation.data.defenderTotal })
+                  : t('encounters.actionEconomy.defenderRolled', { total: grappleMutation.data.defenderTotal })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
         <span className="text-stone-500">{t('encounters.actionEconomy.jumpLabel')}</span>
         <label className="flex items-center gap-1">
@@ -352,6 +472,8 @@ export function ActionEconomyPanel({
       {spendMutation.isError && <ErrorBanner message={errorMessage(spendMutation.error)} />}
       {removeEffectMutation.isError && <ErrorBanner message={errorMessage(removeEffectMutation.error)} />}
       {shoveMutation.isError && <ErrorBanner message={errorMessage(shoveMutation.error)} />}
+      {grappleMutation.isError && <ErrorBanner message={errorMessage(grappleMutation.error)} />}
+      {applyDodgeMutation.isError && <ErrorBanner message={errorMessage(applyDodgeMutation.error)} />}
     </div>
   );
 }

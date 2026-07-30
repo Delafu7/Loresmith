@@ -20,8 +20,10 @@ import {
   upsertEncounterMapSchema,
 } from '../schemas/encounters.js';
 import { performShoveSchema } from '../schemas/shove.js';
+import { performGrappleSchema } from '../schemas/grapple.js';
 import * as encountersService from '../services/encounters.js';
 import { performShove } from '../services/shove.js';
+import { performGrapple } from '../services/grapple.js';
 import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import {
   getIo,
@@ -31,6 +33,7 @@ import {
   broadcastTurnAdvanced,
   broadcastParticipantJoined,
   broadcastParticipantLeft,
+  broadcastEffectApplied,
   broadcastEffectExpired,
   broadcastMapUpdated,
   broadcastTokenMoved,
@@ -328,5 +331,35 @@ encountersRouter.post('/:id/participants/:pid/shove', requireEncounterDm, async 
     success: shove.success,
     outcome: shove.outcome,
     message: shove.message,
+  });
+});
+
+// Grapple Check Against a Specific NPC (Phase 7 / docs/rules/actions.md's
+// Grapple section) — mirrors the Shove route exactly, including its
+// requireEncounterDm gating: same "DM triggers the contested roll on behalf
+// of whichever PC's turn it is" reasoning as Shove above.
+encountersRouter.post('/:id/participants/:pid/grapple', requireEncounterDm, async (req, res) => {
+  const input = performGrappleSchema.parse(req.body);
+  const grapple = await performGrapple(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
+  const io = getIo(req.app);
+  broadcastActionEconomyChanged(io, grapple.encounter, grapple.participant);
+  await broadcastDiceRolled(io, grapple.encounter.campaign_id, grapple.attackerRoll);
+  if (grapple.defenderRoll) {
+    await broadcastDiceRolled(io, grapple.encounter.campaign_id, grapple.defenderRoll);
+  }
+  if (grapple.appliedEffect) {
+    for (const sync of grapple.appliedEffect.encounterSyncs) {
+      broadcastEffectApplied(io, sync, grapple.appliedEffect.effect, grapple.appliedEffect.effectDefinitionName);
+    }
+  }
+  res.json({
+    participant: grapple.participant,
+    attackerRoll: grapple.attackerRoll,
+    defenderRoll: grapple.defenderRoll,
+    defenderTotal: grapple.defenderTotal,
+    defenderOverridden: grapple.defenderOverridden,
+    success: grapple.success,
+    appliedEffect: grapple.appliedEffect?.effect ?? null,
+    message: grapple.message,
   });
 });

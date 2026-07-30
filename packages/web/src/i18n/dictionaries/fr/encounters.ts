@@ -97,6 +97,8 @@ export const encounters = {
     dmOverride: 'Remplacement du MJ (total du PNJ) :',
     autoRoll: 'lancer automatique',
     shove: 'Bousculer',
+    grappleNpc: 'Agripper un PNJ :',
+    grapple: 'Agripper',
     attackerRolled: 'L’attaquant a lancé {roll}',
     vsSeparator: ' contre ',
     dmSetTotal: 'total fixé par le MJ : {total}',
@@ -133,6 +135,11 @@ export const encounters = {
         label: 'Rechercher',
         description:
           'Test arbitré par le MJ pour trouver quelque chose — Sagesse (Perception) ou Intelligence (Investigation) en 2014 ; Sagesse (Intuition, Médecine, Perception ou Survie) en 2024.',
+      },
+      study: {
+        label: 'Étudier',
+        description:
+          "Test arbitré par le MJ pour se rappeler ou déduire une information — Intelligence (Arcanes, Histoire, Investigation, Nature ou Religion).",
       },
       ready: {
         label: 'Attendre',
