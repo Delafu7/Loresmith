@@ -1,13 +1,15 @@
 import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
-import { requireMembership, requireDm, requireOwnerOrDm, type CampaignRole } from './authz.js';
+import { requireMembership, requireDm, requireOwnerOrDm, getMembership, type CampaignRole } from './authz.js';
 import { applyHpDeltaWithTempAbsorption, type HpState } from './hp.js';
 import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
 import { computeAppliedDamage } from './damage.js';
 import { rollDie } from './diceRolls.js';
+import { findUserByEmail } from './users.js';
 import type {
+  AssignCharacterOwnerInput,
   CreateCharacterInput,
   ExhaustionInput,
   HpDeltaInput,
@@ -272,6 +274,42 @@ export async function updateCharacter(
   } finally {
     client.release();
   }
+}
+
+// DM-only: assign a PC to a player by email (the counterpart to campaign
+// import — see campaignImport.ts — now creating every character unassigned,
+// and to updateCharacter's raw ownerUserId field, which takes a user_id
+// directly with no membership check). Validates the target is an existing
+// account AND already a member of this character's campaign — a gap
+// campaignImport.ts's own comment used to flag as missing before this
+// existed.
+export async function assignCharacterToPlayer(
+  pool: Pool,
+  actorId: string,
+  characterId: string,
+  input: AssignCharacterOwnerInput,
+) {
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  const role = await requireMembership(pool, character.campaign_id, actorId);
+  requireDm(role);
+
+  if (!character.is_pc) {
+    throw new AppError('VALIDATION_ERROR', 'Cannot assign an owner to an NPC');
+  }
+
+  const user = await findUserByEmail(pool, input.email);
+  if (!user) throw new AppError('NOT_FOUND', 'No user with that email exists');
+
+  const targetRole = await getMembership(pool, character.campaign_id, user.id);
+  if (!targetRole) {
+    throw new AppError('VALIDATION_ERROR', 'That user is not a member of this campaign');
+  }
+
+  const result = await pool.query<CharacterRow>(
+    `UPDATE characters SET owner_user_id = $1 WHERE id = $2 RETURNING *`,
+    [user.id, characterId],
+  );
+  return result.rows[0]!;
 }
 
 export async function deleteCharacter(pool: Pool, actorId: string, characterId: string): Promise<void> {

@@ -3,6 +3,7 @@ import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember } from '../middleware/campaign.js';
 import {
+  assignCharacterOwnerSchema,
   createCharacterSchema,
   exhaustionSchema,
   hpDeltaSchema,
@@ -102,6 +103,15 @@ charactersRouter.delete('/:id', async (req, res) => {
 charactersRouter.post('/:id/duplicate', async (req, res) => {
   const character = await charactersService.duplicateCharacter(pool, req.user!.id, (req.params.id as string));
   res.status(201).json({ character });
+});
+
+// DM-only "assign this PC to a player by email" — see
+// services/characters.ts's assignCharacterToPlayer for the membership
+// validation this does that a raw PATCH /:id ownerUserId doesn't.
+charactersRouter.patch('/:id/assign-owner', async (req, res) => {
+  const input = assignCharacterOwnerSchema.parse(req.body);
+  const character = await charactersService.assignCharacterToPlayer(pool, req.user!.id, (req.params.id as string), input);
+  res.json({ character });
 });
 
 // GET counterparts to the replace-all PUTs below — added because there was

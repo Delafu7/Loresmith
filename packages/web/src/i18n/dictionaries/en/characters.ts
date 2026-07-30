@@ -33,6 +33,10 @@ export const characters = {
     noPcs: 'No player characters yet.',
     npcsHeading: 'NPCs',
     noNpcs: 'No NPCs yet.',
+    unassigned: 'Unassigned',
+    assignEmailPlaceholder: "Player's email",
+    assignButton: 'Assign',
+    assigning: 'Assigning…',
   },
   sheet: {
     changePortrait: 'Change',

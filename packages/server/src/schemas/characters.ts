@@ -57,6 +57,14 @@ export type CreateCharacterInput = z.infer<typeof createCharacterSchema>;
 export const updateCharacterSchema = z.object(sharedCharacterShape).partial();
 export type UpdateCharacterInput = z.infer<typeof updateCharacterSchema>;
 
+// DM-only "assign this PC to a player by email" flow (services/characters.ts
+// assignCharacterToPlayer) — distinct from updateCharacterSchema's raw
+// ownerUserId field, which takes a user_id directly and does no membership
+// validation. This one resolves an email and checks the target is already a
+// campaign member.
+export const assignCharacterOwnerSchema = z.object({ email: z.string().email() });
+export type AssignCharacterOwnerInput = z.infer<typeof assignCharacterOwnerSchema>;
+
 export const hpDeltaSchema = z.object({
   delta: z.number().int().default(0),
   tempDelta: z.number().int().default(0),

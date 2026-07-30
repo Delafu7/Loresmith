@@ -254,7 +254,7 @@ export function CharactersListPage() {
         {pcs.length === 0 && <EmptyState message={t('characters.list.noPcs')} />}
         <ul className="grid sm:grid-cols-2 gap-3">
           {pcs.map((c) => (
-            <CharacterCard key={c.id} character={c} campaignId={campaignId} />
+            <CharacterCard key={c.id} character={c} campaignId={campaignId} isDm={role === 'dm'} />
           ))}
         </ul>
       </section>
@@ -265,7 +265,7 @@ export function CharactersListPage() {
           {npcs.length === 0 && <EmptyState message={t('characters.list.noNpcs')} />}
           <ul className="grid sm:grid-cols-2 gap-3">
             {npcs.map((c) => (
-              <CharacterCard key={c.id} character={c} campaignId={campaignId} />
+              <CharacterCard key={c.id} character={c} campaignId={campaignId} isDm={role === 'dm'} />
             ))}
           </ul>
         </section>
@@ -274,14 +274,11 @@ export function CharactersListPage() {
   );
 }
 
-function CharacterCard({ character, campaignId }: { character: Character; campaignId: string }) {
+function CharacterCard({ character, campaignId, isDm }: { character: Character; campaignId: string; isDm: boolean }) {
   const { t } = useLocale();
   return (
-    <li>
-      <Link
-        to={`/campaigns/${campaignId}/characters/${character.id}`}
-        className="block rounded-md bg-stone-900 shadow-sm hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
-      >
+    <li className="rounded-md bg-stone-900 shadow-sm hover:border-amber-700 hover:bg-stone-800/60 transition-colors">
+      <Link to={`/campaigns/${campaignId}/characters/${character.id}`} className="block px-4 py-3">
         <div className="flex items-center justify-between">
           <span className="font-medium text-stone-100">{character.name}</span>
           {!character.is_alive && <span className="text-xs text-red-400 font-semibold uppercase">{t('characters.common.deceased')}</span>}
@@ -294,6 +291,58 @@ function CharacterCard({ character, campaignId }: { character: Character; campai
           <span>DEX {formatModifier(abilityModifier(character.dex))}</span>
         </div>
       </Link>
+      {isDm && character.is_pc && character.owner_user_id === null && (
+        <AssignOwnerControl characterId={character.id} campaignId={campaignId} />
+      )}
     </li>
+  );
+}
+
+// DM-only "assign to player by email" for a PC that landed unassigned —
+// imported campaigns now always create PCs this way (campaignImport.ts), and
+// a DM may also create one unassigned directly. Rendered below (not inside)
+// the card's own Link, with its own click-stopping so typing/submitting
+// doesn't navigate to the character sheet underneath it.
+function AssignOwnerControl({ characterId, campaignId }: { characterId: string; campaignId: string }) {
+  const { t } = useLocale();
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState('');
+
+  const assignMutation = useMutation({
+    mutationFn: () => api.patch<{ character: Character }>(`/characters/${characterId}/assign-owner`, { email }),
+    onSuccess: () => {
+      setEmail('');
+      void queryClient.invalidateQueries({ queryKey: ['characters', campaignId] });
+    },
+  });
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    assignMutation.mutate();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex items-center gap-1.5 border-t border-stone-800 px-4 py-2">
+      <span className="text-[11px] text-amber-500 flex-shrink-0">{t('characters.list.unassigned')}</span>
+      <input
+        type="email"
+        required
+        placeholder={t('characters.list.assignEmailPlaceholder')}
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        className="min-w-0 flex-1 rounded bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
+      />
+      <button
+        type="submit"
+        disabled={assignMutation.isPending}
+        className="flex-shrink-0 rounded border border-amber-500 text-amber-500 hover:bg-amber-500/10 disabled:opacity-45 px-2 py-1 text-[11px] font-semibold"
+      >
+        {assignMutation.isPending ? t('characters.list.assigning') : t('characters.list.assignButton')}
+      </button>
+      {assignMutation.isError && (
+        <p className="w-full text-[11px] text-red-400">{errorMessage(assignMutation.error)}</p>
+      )}
+    </form>
   );
 }

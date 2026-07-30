@@ -19,6 +19,10 @@ export const characters = {
     noPcs: 'Aucun personnage joueur pour le moment.',
     npcsHeading: 'PNJ',
     noNpcs: 'Aucun PNJ pour le moment.',
+    unassigned: 'Non assigné',
+    assignEmailPlaceholder: 'E-mail du joueur',
+    assignButton: 'Assigner',
+    assigning: 'Attribution…',
   },
   sheet: {
     changePortrait: 'Changer',
