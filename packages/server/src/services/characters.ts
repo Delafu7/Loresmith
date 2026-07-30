@@ -75,6 +75,41 @@ export async function getCharacter(pool: Pool, actorId: string, characterId: str
   return character;
 }
 
+async function insertCharacterRow(
+  client: Pool | PoolClient,
+  campaignId: string,
+  isPc: boolean,
+  ownerUserId: string | null,
+  actorId: string,
+  input: CreateCharacterInput,
+) {
+  try {
+    const result = await client.query<CharacterRow>(
+      `INSERT INTO characters
+         (campaign_id, is_pc, owner_user_id, created_by_user_id, name, race_id, subrace_id, background_id,
+          alignment, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current, hp_temp,
+          hit_dice_remaining, exhaustion_level, senses, languages, notes,
+          damage_resistances, damage_vulnerabilities, damage_immunities)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+       RETURNING *`,
+      [
+        campaignId, isPc, ownerUserId, actorId, input.name, input.raceId ?? null, input.subraceId ?? null,
+        input.backgroundId ?? null, input.alignment ?? null, input.str, input.dex, input.con, input.int,
+        input.wis, input.cha, input.armorClass, input.speed, input.hpMax, input.hpCurrent ?? input.hpMax,
+        input.hpTemp, input.hitDiceRemaining ? JSON.stringify(input.hitDiceRemaining) : null,
+        input.exhaustionLevel, input.senses ?? null, input.languages ?? null, input.notes ?? null,
+        input.damageResistances, input.damageVulnerabilities, input.damageImmunities,
+      ],
+    );
+    return result.rows[0]!;
+  } catch (err) {
+    if (isCheckViolation(err)) {
+      throw new AppError('VALIDATION_ERROR', 'Character data violates a database constraint', { cause: String(err) });
+    }
+    throw err;
+  }
+}
+
 export async function createCharacter(
   pool: Pool,
   actorId: string,
@@ -95,41 +130,55 @@ export async function createCharacter(
     }
     isPc = true;
     ownerUserId = actorId;
-  } else {
-    // DM: a PC may be created unassigned (owner attached later by email) —
-    // characters_check no longer forces a non-null owner on every PC
-    // (1784269776666_relax-characters-owner-check.ts). NPCs must never have
-    // an owner, regardless of what was passed in.
-    if (!isPc) {
-      ownerUserId = null;
+
+    // Per-player character-creation permission/limit (DM-settable, see
+    // services/campaigns.ts's updateMember). Locking the caller's OWN
+    // campaign_members row serializes concurrent create requests from the
+    // same player — a second request blocks on FOR UPDATE until the first
+    // transaction commits, so its own COUNT afterward always sees the
+    // first request's new row; this is what closes the "two rapid creates
+    // both pass the count check" race, not the COUNT query alone.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const memberRes = await client.query<{ can_create_characters: boolean; max_characters: number | null }>(
+        `SELECT can_create_characters, max_characters FROM campaign_members
+         WHERE campaign_id = $1 AND user_id = $2 FOR UPDATE`,
+        [campaignId, actorId],
+      );
+      const member = memberRes.rows[0];
+      if (member && !member.can_create_characters) {
+        throw new AppError('FORBIDDEN_ROLE', 'The DM has disabled character creation for you in this campaign');
+      }
+      if (member && member.max_characters !== null) {
+        const countRes = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::int AS count FROM characters WHERE campaign_id = $1 AND owner_user_id = $2`,
+          [campaignId, actorId],
+        );
+        if (Number(countRes.rows[0]!.count) >= member.max_characters) {
+          throw new AppError('CONFLICT', `You have reached your character limit (${member.max_characters}) for this campaign`);
+        }
+      }
+      const character = await insertCharacterRow(client, campaignId, isPc, ownerUserId, actorId, input);
+      await client.query('COMMIT');
+      return character;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
   }
 
-  try {
-    const result = await pool.query(
-      `INSERT INTO characters
-         (campaign_id, is_pc, owner_user_id, created_by_user_id, name, race_id, subrace_id, background_id,
-          alignment, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current, hp_temp,
-          hit_dice_remaining, exhaustion_level, senses, languages, notes,
-          damage_resistances, damage_vulnerabilities, damage_immunities)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
-       RETURNING *`,
-      [
-        campaignId, isPc, ownerUserId, actorId, input.name, input.raceId ?? null, input.subraceId ?? null,
-        input.backgroundId ?? null, input.alignment ?? null, input.str, input.dex, input.con, input.int,
-        input.wis, input.cha, input.armorClass, input.speed, input.hpMax, input.hpCurrent ?? input.hpMax,
-        input.hpTemp, input.hitDiceRemaining ? JSON.stringify(input.hitDiceRemaining) : null,
-        input.exhaustionLevel, input.senses ?? null, input.languages ?? null, input.notes ?? null,
-        input.damageResistances, input.damageVulnerabilities, input.damageImmunities,
-      ],
-    );
-    return result.rows[0];
-  } catch (err) {
-    if (isCheckViolation(err)) {
-      throw new AppError('VALIDATION_ERROR', 'Character data violates a database constraint', { cause: String(err) });
-    }
-    throw err;
+  // DM: a PC may be created unassigned (owner attached later by email, see
+  // assignCharacterToPlayer) — characters_check no longer forces a
+  // non-null owner on every PC (1784269776666_relax-characters-owner-check.ts).
+  // NPCs must never have an owner, regardless of what was passed in. No
+  // per-player limit applies to the DM.
+  if (!isPc) {
+    ownerUserId = null;
   }
+  return insertCharacterRow(pool, campaignId, isPc, ownerUserId, actorId, input);
 }
 
 const UPDATABLE_COLUMNS: Record<string, string> = {

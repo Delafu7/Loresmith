@@ -39,10 +39,12 @@ export function CharactersListPage() {
     queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${campaignId}/characters`),
   });
 
+  // Not DM-only — GET /:id/members is open to any campaign member, and a
+  // player needs their OWN row here to know their can_create_characters/
+  // max_characters state (see myMembership/atCharacterLimit below).
   const membersQuery = useQuery({
     queryKey: ['campaignMembers', campaignId],
     queryFn: () => api.get<{ members: CampaignMember[] }>(`/campaigns/${campaignId}/members`),
-    enabled: role === 'dm',
   });
 
   // Draft-persisted per campaign+role so a half-filled "create character"
@@ -90,6 +92,19 @@ export function CharactersListPage() {
   const pcs = charactersQuery.data?.characters.filter((c) => c.is_pc) ?? [];
   const npcs = charactersQuery.data?.characters.filter((c) => !c.is_pc) ?? [];
 
+  // Per-player character-creation controls (Phase 6) — DM is never subject
+  // to these, so this only matters when role === 'player'.
+  const myMembership = membersQuery.data?.members.find((m) => m.user_id === user?.id);
+  const myOwnedPcCount = pcs.filter((c) => c.owner_user_id === user?.id).length;
+  const creationBlockedReason: 'disabled' | 'limitReached' | null =
+    role === 'player' && myMembership
+      ? !myMembership.can_create_characters
+        ? 'disabled'
+        : myMembership.max_characters !== null && myOwnedPcCount >= myMembership.max_characters
+          ? 'limitReached'
+          : null
+      : null;
+
   function handleCreate(e: FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) return;
@@ -102,12 +117,22 @@ export function CharactersListPage() {
         <h2 className="text-lg font-semibold">{t('characters.list.title')}</h2>
         <button
           type="button"
+          disabled={creationBlockedReason !== null}
           onClick={() => setShowCreate((v) => !v)}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
         >
           {showCreate ? t('common.cancel') : role === 'dm' ? t('characters.list.newCharacter') : t('characters.list.createMyPc')}
         </button>
       </div>
+
+      {creationBlockedReason === 'disabled' && (
+        <p className="text-xs text-stone-500 mb-4">{t('characters.list.creationDisabled')}</p>
+      )}
+      {creationBlockedReason === 'limitReached' && (
+        <p className="text-xs text-stone-500 mb-4">
+          {t('characters.list.creationLimitReached', { max: myMembership!.max_characters! })}
+        </p>
+      )}
 
       {role === 'dm' && (
         <label className="flex items-center gap-2 text-xs text-stone-400 mb-4">

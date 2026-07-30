@@ -37,6 +37,8 @@ export const characters = {
     assignEmailPlaceholder: "Player's email",
     assignButton: 'Assign',
     assigning: 'Assigning…',
+    creationDisabled: 'The DM has disabled character creation for you in this campaign.',
+    creationLimitReached: "You've reached your character limit ({max}) for this campaign.",
   },
   sheet: {
     changePortrait: 'Change',

@@ -23,6 +23,8 @@ export const characters = {
     assignEmailPlaceholder: 'E-mail du joueur',
     assignButton: 'Assigner',
     assigning: 'Attribution…',
+    creationDisabled: 'Le MJ a désactivé la création de personnages pour vous dans cette campagne.',
+    creationLimitReached: 'Vous avez atteint votre limite de personnages ({max}) pour cette campagne.',
   },
   sheet: {
     changePortrait: 'Changer',

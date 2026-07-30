@@ -93,7 +93,8 @@ export async function deleteCampaign(pool: Pool, campaignId: string): Promise<vo
 
 export async function listMembers(pool: Pool, campaignId: string) {
   const result = await pool.query(
-    `SELECT cm.id, cm.campaign_id, cm.user_id, cm.role, cm.joined_at, u.email, u.display_name
+    `SELECT cm.id, cm.campaign_id, cm.user_id, cm.role, cm.joined_at,
+            cm.can_create_characters, cm.max_characters, u.email, u.display_name
      FROM campaign_members cm
      JOIN users u ON u.id = cm.user_id
      WHERE cm.campaign_id = $1
@@ -130,15 +131,34 @@ export async function insertMembership(
 
   const result = await pool.query(
     `INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, $3) RETURNING *`,
-    [campaignId, user.id, input.role],
+    [campaignId, userId, role],
   );
   return result.rows[0];
 }
 
 export async function updateMember(pool: Pool, campaignId: string, targetUserId: string, input: UpdateMemberInput) {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  let i = 1;
+
+  if (input.role !== undefined) { sets.push(`role = $${i++}`); values.push(input.role); }
+  if (input.canCreateCharacters !== undefined) { sets.push(`can_create_characters = $${i++}`); values.push(input.canCreateCharacters); }
+  if (input.maxCharacters !== undefined) { sets.push(`max_characters = $${i++}`); values.push(input.maxCharacters); }
+
+  if (sets.length === 0) {
+    const existing = await pool.query(
+      `SELECT * FROM campaign_members WHERE campaign_id = $1 AND user_id = $2`,
+      [campaignId, targetUserId],
+    );
+    const row = existing.rows[0];
+    if (!row) throw notFound('Campaign member');
+    return row;
+  }
+
+  values.push(campaignId, targetUserId);
   const result = await pool.query(
-    `UPDATE campaign_members SET role = $1 WHERE campaign_id = $2 AND user_id = $3 RETURNING *`,
-    [input.role, campaignId, targetUserId],
+    `UPDATE campaign_members SET ${sets.join(', ')} WHERE campaign_id = $${i++} AND user_id = $${i} RETURNING *`,
+    values,
   );
   const row = result.rows[0];
   if (!row) throw notFound('Campaign member');

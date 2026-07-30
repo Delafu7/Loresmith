@@ -64,15 +64,40 @@ function MembersList({ campaignId }: { campaignId: string }) {
       {membersQuery.isError && <ErrorBanner message={errorMessage(membersQuery.error)} />}
       <ul className="mt-1 divide-y divide-stone-800">
         {membersQuery.data?.members.map((m) => (
-          <MemberRow key={m.id} member={m} />
+          <MemberRow key={m.id} member={m} campaignId={campaignId} />
         ))}
       </ul>
     </Card>
   );
 }
 
-function MemberRow({ member }: { member: CampaignMember }) {
+// Per-player character-creation controls (can_create_characters,
+// max_characters) — DM-only, only meaningful for role='player' rows (the DM
+// isn't subject to a character limit). Each control fires its own PATCH
+// .../members/:userId immediately (checkbox on change, number field on
+// blur — not on every keystroke) via services/campaigns.ts's updateMember.
+function MemberRow({ member, campaignId }: { member: CampaignMember; campaignId: string }) {
   const { t } = useLocale();
+  const queryClient = useQueryClient();
+  const [maxCharactersInput, setMaxCharactersInput] = useState(member.max_characters?.toString() ?? '');
+
+  const updateMutation = useMutation({
+    mutationFn: (patch: { canCreateCharacters?: boolean; maxCharacters?: number | null }) =>
+      api.patch<{ member: CampaignMember }>(`/campaigns/${campaignId}/members/${member.user_id}`, patch),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['campaign', campaignId, 'members'] }),
+  });
+
+  function commitMaxCharacters() {
+    const trimmed = maxCharactersInput.trim();
+    const value = trimmed === '' ? null : Number(trimmed);
+    if (value !== null && (!Number.isInteger(value) || value < 0)) {
+      setMaxCharactersInput(member.max_characters?.toString() ?? ''); // revert invalid input
+      return;
+    }
+    if (value === member.max_characters) return; // no-op, avoid a needless request
+    updateMutation.mutate({ maxCharacters: value });
+  }
+
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 py-2.5">
       <span className="min-w-0">
@@ -82,8 +107,37 @@ function MemberRow({ member }: { member: CampaignMember }) {
         </span>
       </span>
       <div className="flex items-center gap-3 flex-shrink-0">
+        {member.role === 'player' && (
+          <>
+            <label className="flex items-center gap-1.5 text-[11px] text-stone-400">
+              <input
+                type="checkbox"
+                checked={member.can_create_characters}
+                disabled={updateMutation.isPending}
+                onChange={(e) => updateMutation.mutate({ canCreateCharacters: e.target.checked })}
+              />
+              {t('members.canCreateCharacters')}
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] text-stone-400">
+              {t('members.maxCharactersLabel')}
+              <input
+                type="number"
+                min={0}
+                placeholder={t('members.unlimited')}
+                value={maxCharactersInput}
+                disabled={updateMutation.isPending}
+                onChange={(e) => setMaxCharactersInput(e.target.value)}
+                onBlur={commitMaxCharacters}
+                className="w-16 rounded bg-stone-800 border border-stone-700 px-1.5 py-0.5 text-stone-100"
+              />
+            </label>
+          </>
+        )}
         <Badge variant="outline">{roleLabel(t, member.role)}</Badge>
       </div>
+      {updateMutation.isError && (
+        <p className="w-full text-[11px] text-red-400">{errorMessage(updateMutation.error)}</p>
+      )}
     </li>
   );
 }

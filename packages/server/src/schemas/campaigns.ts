@@ -27,7 +27,12 @@ export const addMemberSchema = z.object({
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
 
 export const updateMemberSchema = z.object({
-  role: campaignRoleEnum,
+  role: campaignRoleEnum.optional(),
+  // Per-player character-creation controls (DM-only). Undefined = leave
+  // unchanged; explicit values overwrite. null on maxCharacters means
+  // "unlimited" (see 1784269779666_add-campaign-member-character-limits.ts).
+  canCreateCharacters: z.boolean().optional(),
+  maxCharacters: z.number().int().min(0).nullable().optional(),
 });
 export type UpdateMemberInput = z.infer<typeof updateMemberSchema>;
 

@@ -51,6 +51,10 @@ export interface CampaignMember {
   joined_at: string;
   email: string;
   display_name: string;
+  // Per-player character-creation controls (DM-settable). null on
+  // max_characters means unlimited.
+  can_create_characters: boolean;
+  max_characters: number | null;
 }
 
 export interface CampaignInvitation {
