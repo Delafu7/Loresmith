@@ -689,6 +689,14 @@ export async function applyActionEconomy(
     const current = locked.rows[0];
     if (!current) throw notFound('Participant');
 
+    // Reactions are the one legitimate off-turn spend (an opportunity attack,
+    // a readied response) — every other spend (action, bonus action, object
+    // interaction, or bare movement) must happen on the spender's own turn.
+    if (input.spend !== 'reaction') {
+      const encounter = await fetchEncounterById(client, encounterId);
+      requireCurrentTurn(encounter, current);
+    }
+
     const sets: string[] = [];
     const values: unknown[] = [];
     let i = 1;
@@ -1100,6 +1108,22 @@ export function computeNextTurn(
     return { nextIndex: 0, nextRound: currentRound + 1 };
   }
   return { nextIndex, nextRound: currentRound };
+}
+
+// docs/rules/actions.md:113 flagged this as a known gap: no endpoint that
+// spends a per-turn resource (action economy, shove) ever checked whose turn
+// it actually was — authorization only verified "own character or DM," not
+// turn order. Pure and directly testable, same precedent as computeNextTurn.
+// No-ops outside live combat (preparing/paused/completed) — turn order is
+// meaningless until a round is actually active.
+export function requireCurrentTurn(
+  encounter: Pick<EncounterRow, 'status' | 'current_turn_index'>,
+  participant: Pick<ParticipantRow, 'turn_order'>,
+): void {
+  if (encounter.status !== 'active') return;
+  if (participant.turn_order !== encounter.current_turn_index) {
+    throw new AppError('CONFLICT', "It isn't that participant's turn", { reason: 'NOT_YOUR_TURN' });
+  }
 }
 
 export async function rollInitiative(pool: Pool, encounterId: string, force: boolean) {

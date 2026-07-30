@@ -11,6 +11,7 @@
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { rollDice, type DiceRollRow } from './diceRolls.js';
+import { requireCurrentTurn } from './encounters.js';
 import type { PerformShoveInput } from '../schemas/shove.js';
 
 // Self-contained per-file pure helper — same "don't cross-import a one-line
@@ -88,9 +89,18 @@ export async function performShove(
     await client.query('BEGIN');
 
     const attackerRes = await client.query<
-      { id: string; character_id: string | null; action_used: boolean; str: number; campaign_id: string }
+      {
+        id: string;
+        character_id: string | null;
+        action_used: boolean;
+        str: number;
+        campaign_id: string;
+        turn_order: number;
+        status: 'preparing' | 'active' | 'paused' | 'completed';
+        current_turn_index: number;
+      }
     >(
-      `SELECT cp.id, cp.character_id, cp.action_used, c.str, e.campaign_id
+      `SELECT cp.id, cp.character_id, cp.action_used, cp.turn_order, c.str, e.campaign_id, e.status, e.current_turn_index
        FROM combat_participants cp
        JOIN characters c ON c.id = cp.character_id
        JOIN encounters e ON e.id = cp.encounter_id
@@ -103,6 +113,10 @@ export async function performShove(
     if (attackerRow.action_used) {
       throw new AppError('CONFLICT', "That participant's action has already been used this turn");
     }
+    requireCurrentTurn(
+      { status: attackerRow.status, current_turn_index: attackerRow.current_turn_index },
+      { turn_order: attackerRow.turn_order },
+    );
     campaignId = attackerRow.campaign_id;
     attackerStr = attackerRow.str;
     attackerCharacterId = attackerRow.character_id!;
