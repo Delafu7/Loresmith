@@ -162,14 +162,16 @@ export function CharactersListPage() {
               <label htmlFor="owner" className="block text-sm font-medium text-stone-300 mb-1">
                 {t('characters.list.owningPlayer')}
               </label>
+              {/* Not required — a DM may leave a PC unassigned and attach an
+                  owner later by email (AssignOwnerControl below), same as an
+                  imported campaign's PCs always start out (campaignImport.ts). */}
               <select
                 id="owner"
-                required
                 value={form.ownerUserId}
                 onChange={(e) => setForm((f) => ({ ...f, ownerUserId: e.target.value }))}
                 className="w-full rounded-md bg-stone-800 border border-stone-700 px-3 py-2 text-stone-100"
               >
-                <option value="">{t('characters.list.selectPlayer')}</option>
+                <option value="">{t('characters.list.leaveUnassigned')}</option>
                 {players.map((p) => (
                   <option key={p.user_id} value={p.user_id}>
                     {p.display_name} ({p.email})

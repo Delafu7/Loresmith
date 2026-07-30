@@ -94,10 +94,10 @@ export async function createCharacter(
     isPc = true;
     ownerUserId = actorId;
   } else {
-    // DM: PCs need an explicit owning player; NPCs must not have one.
-    if (isPc && ownerUserId === null) {
-      throw new AppError('VALIDATION_ERROR', 'ownerUserId is required when isPc is true');
-    }
+    // DM: a PC may be created unassigned (owner attached later by email) —
+    // characters_check no longer forces a non-null owner on every PC
+    // (1784269776666_relax-characters-owner-check.ts). NPCs must never have
+    // an owner, regardless of what was passed in.
     if (!isPc) {
       ownerUserId = null;
     }

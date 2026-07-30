@@ -253,10 +253,12 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
     expect(newCharacter.background_id).toBe(newBackground.id);
     expect(newCharacter.portrait_asset_id).toBe(newAsset.id);
     expect(newCharacter.created_by_user_id).toBe(importerUserId);
-    // PCs must have a non-null owner (characters_check); the original owner
-    // isn't a member of the new campaign, so the importing DM is the
-    // provisional owner until they reassign it to a real player.
-    expect(newCharacter.owner_user_id).toBe(importerUserId);
+    // Imported PCs land unassigned — never auto-bound to the importing DM —
+    // since the original owner isn't a member of the new campaign and must
+    // be attached later by email (assignCharacterToPlayer). This is allowed
+    // now that characters_check no longer requires a non-null owner on every
+    // PC (1784269776666_relax-characters-owner-check.ts).
+    expect(newCharacter.owner_user_id).toBeNull();
 
     const newLanguage = (await pool.query(`SELECT * FROM languages WHERE owning_campaign_id = $1`, [newCampaignId])).rows[0];
     expect(newCharacter.languages).toEqual([newLanguage.id]); // array FK remapped, not left pointing at the old language

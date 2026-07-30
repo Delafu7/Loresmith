@@ -26,7 +26,7 @@ export const characters = {
     allowReroll: 'Allow players to reroll ability scores',
     nameLabel: 'Name',
     owningPlayer: 'Owning player',
-    selectPlayer: 'Select a player…',
+    leaveUnassigned: 'Leave unassigned…',
     maxHp: 'Max HP',
     creating: 'Creating…',
     playerCharactersHeading: 'Player characters',

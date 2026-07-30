@@ -12,7 +12,7 @@ export const characters = {
     allowReroll: 'Autoriser les joueurs à relancer les scores de caractéristique',
     nameLabel: 'Nom',
     owningPlayer: 'Joueur propriétaire',
-    selectPlayer: 'Sélectionnez un joueur…',
+    leaveUnassigned: 'Laisser non assigné…',
     maxHp: 'PV max',
     creating: 'Création…',
     playerCharactersHeading: 'Personnages joueurs',

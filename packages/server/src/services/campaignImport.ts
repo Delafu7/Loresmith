@@ -190,12 +190,15 @@ export async function importCampaign(pool: Pool, actorId: string, data: Campaign
       const { classes, items, attacks, spells, savingThrowProficiencies, skillProficiencies, resourcePools, ...characterRow } =
         character;
 
-      // characters_check requires owner_user_id IS NOT NULL whenever is_pc —
-      // the original owning player isn't necessarily (and usually isn't) a
-      // member of the freshly-created campaign, so every imported PC is
-      // provisionally owned by the importing DM, who can reassign it once
-      // real players join. NPCs keep the existing no-owner invariant.
-      const ownerUserId = characterRow.is_pc ? actorId : null;
+      // Imported characters — PCs and NPCs alike — always land unassigned.
+      // The original owning player isn't necessarily (and usually isn't) a
+      // member of the freshly-created campaign, and imported PCs must never
+      // be auto-bound to the importing DM either: the DM assigns each PC to
+      // its real player by email once they've joined (services/characters.ts
+      // assignCharacterToPlayer). characters_check, which used to force a
+      // non-null owner on every PC, was dropped for exactly this case
+      // (1784269776666_relax-characters-owner-check.ts).
+      const ownerUserId = null;
       const insertedCharacter = await insertRow(client, 'characters', characterRow, {
         omit: new Set(['id', 'campaign_id', 'created_by_user_id', 'owner_user_id', 'created_at', 'updated_at']),
         overrides: { campaign_id: newCampaignId, created_by_user_id: actorId, owner_user_id: ownerUserId },
