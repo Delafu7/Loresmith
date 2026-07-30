@@ -273,11 +273,18 @@ export interface MonsterInstance {
 
 export type EncounterStatus = 'preparing' | 'active' | 'paused' | 'completed';
 
+// Exploration (free player movement, no turn/budget checks) vs. combat
+// (strict turn-order + movement-budget enforcement) — a DM toggle
+// independent of `status`. See services/encounters.ts's
+// computeValidatedMoveCost.
+export type EncounterMode = 'exploration' | 'combat';
+
 export interface Encounter {
   id: string;
   campaign_id: string;
   name: string;
   status: EncounterStatus;
+  mode: EncounterMode;
   current_round: number;
   current_turn_index: number;
   sync_seq: number;

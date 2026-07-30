@@ -5,12 +5,13 @@ import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUuid } from '../domain/ids.js';
-import { requireMembership, requireDm } from '../services/authz.js';
+import { requireMembership, requireDm, type CampaignRole } from '../services/authz.js';
 import {
   addParticipantSchema,
   applyActionEconomySchema,
   createEncounterSchema,
   rollInitiativeSchema,
+  setEncounterModeSchema,
   setInitiativeSchema,
   setParticipantFactionSchema,
   setParticipantPositionSchema,
@@ -33,6 +34,7 @@ import {
   broadcastEffectExpired,
   broadcastMapUpdated,
   broadcastTokenMoved,
+  broadcastModeChanged,
   broadcastParticipantFactionChanged,
   broadcastActionEconomyChanged,
   broadcastDiceRolled,
@@ -90,22 +92,37 @@ async function requireEncounterDm(req: Request, _res: Response, next: NextFuncti
   next();
 }
 
-// Player-or-DM gate for /participants/:pid/action-economy ONLY (battle mode,
-// REVISION-PLAN.md §10.2) — every other route in this file stays
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      // Resolved by requireOwnParticipantOrDm — the position route needs the
+      // actual role (not just "allowed or not") to know whether combat-mode
+      // turn/budget validation applies (DM stays unconditional; a player is
+      // additionally required to be on their own turn — see
+      // services/encounters.ts's computeValidatedMoveCost).
+      participantActionRole?: CampaignRole;
+    }
+  }
+}
+
+// Player-or-DM gate for /participants/:pid/action-economy AND
+// /participants/:pid/position (battle mode, REVISION-PLAN.md §10.2 +
+// exploration/combat modes) — every other route in this file stays
 // requireEncounterDm-gated exactly as before. A player needs to spend their
-// OWN character's action-economy slots during their turn; the DM still needs
-// to be able to act on any participant (e.g. running an NPC's turn). The
-// resolve-participant + membership + owner-or-DM check itself lives in
-// services/encounters.ts's authorizeParticipantAction so it's testable
-// without Express, matching requireEncounterDm's own "thin wrapper around a
-// services/authz.ts call" shape just above.
+// OWN character's action-economy slots during their turn, and move their OWN
+// token; the DM still needs to be able to act on any participant (e.g.
+// running an NPC's turn). The resolve-participant + membership + owner-or-DM
+// check itself lives in services/encounters.ts's authorizeParticipantAction
+// so it's testable without Express, matching requireEncounterDm's own "thin
+// wrapper around a services/authz.ts call" shape just above.
 async function requireOwnParticipantOrDm(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const encounterId = (req.params.id as string);
   const participantId = (req.params.pid as string);
   if (!isUuid(encounterId) || !isUuid(participantId)) {
     throw new AppError('VALIDATION_ERROR', 'Invalid encounter or participant id');
   }
-  await encountersService.authorizeParticipantAction(pool, req.user!.id, encounterId, participantId);
+  req.participantActionRole = await encountersService.authorizeParticipantAction(pool, req.user!.id, encounterId, participantId);
   next();
 }
 
@@ -199,13 +216,27 @@ encountersRouter.put('/:id/map', requireEncounterDm, async (req, res) => {
   res.json({ map: encountersService.formatMapForWire(map) });
 });
 
-encountersRouter.patch('/:id/participants/:pid/position', requireEncounterDm, async (req, res) => {
+// DM-or-owning-player (exploration/combat modes) — was requireEncounterDm
+// (DM-only) until players could move their own token at all. Authorization
+// (own participant or DM) is requireOwnParticipantOrDm's job; whether the
+// move is actually PERMITTED right now (mode, turn order, movement budget)
+// is services/encounters.ts's computeValidatedMoveCost's job, driven by the
+// resolved role stashed on the request.
+encountersRouter.patch('/:id/participants/:pid/position', requireOwnParticipantOrDm, async (req, res) => {
   const input = setParticipantPositionSchema.parse(req.body);
   const { encounter, participant } = await encountersService.setParticipantPosition(
-    pool, (req.params.id as string), (req.params.pid as string), input,
+    pool, (req.params.id as string), (req.params.pid as string), input, req.participantActionRole!,
   );
   broadcastTokenMoved(getIo(req.app), encounter, participant);
   res.json({ participant });
+});
+
+// Exploration vs. combat mode toggle — DM-only, independent of status.
+encountersRouter.patch('/:id/mode', requireEncounterDm, async (req, res) => {
+  const input = setEncounterModeSchema.parse(req.body);
+  const encounter = await encountersService.setEncounterMode(pool, (req.params.id as string), input);
+  broadcastModeChanged(getIo(req.app), encounter);
+  res.json({ encounter });
 });
 
 // REFACTOR-PLAN.md §4: "selecting a character highlights reachable cells."

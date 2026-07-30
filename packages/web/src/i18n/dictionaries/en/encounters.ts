@@ -59,6 +59,13 @@ export const encounters = {
     hideFromPlayers: 'Hide {label} from players',
     revealToPlayers: 'Reveal {label} to players',
   },
+  battleMode: {
+    modeToggleTitle: 'Switch between exploration (free movement) and combat (turn-based) mode',
+    mode: {
+      exploration: 'Exploration',
+      combat: 'Combat',
+    },
+  },
   playerPanel: {
     actionsTitle: 'Actions',
     notYourTurnHint: 'Not your turn — actions are disabled until it is.',

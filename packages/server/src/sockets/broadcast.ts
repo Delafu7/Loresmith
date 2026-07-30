@@ -229,6 +229,18 @@ export function broadcastTokenMoved(
   });
 }
 
+// Exploration/combat mode toggle — the one genuinely new realtime event this
+// feature needs; token moves themselves keep reusing TOKEN_MOVED/
+// FULL_STATE_SYNC unchanged, just carrying `mode` in their encounter
+// envelope now (see buildFullStateSyncPayload below). No visibility split,
+// same reasoning as MAP_UPDATED/TOKEN_MOVED — mode isn't sensitive info.
+export function broadcastModeChanged(io: Server, encounter: EncounterLike & { mode: 'exploration' | 'combat' }): void {
+  io.to(encounterRoom(encounter.id)).emit('MODE_CHANGED', {
+    ...envelope(encounter),
+    mode: encounter.mode,
+  });
+}
+
 // REFACTOR-PLAN.md §3 — same no-visibility-split shape as TOKEN_MOVED above
 // (faction isn't HP-sensitive info).
 export function broadcastParticipantFactionChanged(
@@ -564,6 +576,7 @@ export async function buildFullStateSyncPayload(
     serverTimestamp: Date.now(),
     encounter: {
       status: encounter.status,
+      mode: encounter.mode,
       currentRound: encounter.current_round,
       currentTurnIndex: encounter.current_turn_index,
     },

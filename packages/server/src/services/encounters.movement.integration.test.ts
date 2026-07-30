@@ -10,6 +10,7 @@ import { pool } from '../db/pool.js';
 import {
   addParticipant,
   createEncounter,
+  setEncounterMode,
   setParticipantPosition,
   startEncounter,
   upsertEncounterMap,
@@ -59,7 +60,12 @@ describe('setParticipantPosition movement enforcement (integration, live DB, thr
     // Initial placement (from null,null) is always free, regardless of
     // encounter status — this is the "unplaced -> drop at a starting cell"
     // path, not a validated move.
-    await setParticipantPosition(pool, encounterId, participantId, { x: 0, y: 0 });
+    await setParticipantPosition(pool, encounterId, participantId, { x: 0, y: 0 }, 'dm');
+    // This file is specifically about budget/path enforcement, which now
+    // only applies in combat mode (new encounters default to 'exploration',
+    // 1784269777666_add-encounter-mode.ts) — exploration mode's own free-move
+    // behavior is covered separately in encounters.movementMode.integration.test.ts.
+    await setEncounterMode(pool, encounterId, { mode: 'combat' });
     await startEncounter(pool, encounterId);
   });
 
@@ -72,7 +78,7 @@ describe('setParticipantPosition movement enforcement (integration, live DB, thr
   it('rejects a move exceeding remaining speed, with a machine-readable reason, and does not move the token', async () => {
     // 7 cells * 5 ft = 35 ft > 30 ft budget.
     await expect(
-      setParticipantPosition(pool, encounterId, participantId, { x: 7, y: 0 }),
+      setParticipantPosition(pool, encounterId, participantId, { x: 7, y: 0 }, 'dm'),
     ).rejects.toMatchObject({ code: 'CONFLICT', details: { reason: 'INSUFFICIENT_MOVEMENT' } });
 
     const row = await pool.query<{ pos_x: number; pos_y: number; movement_used_ft: number }>(
@@ -84,7 +90,7 @@ describe('setParticipantPosition movement enforcement (integration, live DB, thr
 
   it('accepts a move exactly at the budget boundary and spends movement_used_ft accordingly', async () => {
     // 6 cells * 5 ft = 30 ft, exactly the budget.
-    const { participant } = await setParticipantPosition(pool, encounterId, participantId, { x: 6, y: 0 });
+    const { participant } = await setParticipantPosition(pool, encounterId, participantId, { x: 6, y: 0 }, 'dm');
     expect(participant.pos_x).toBe(6);
     expect(participant.pos_y).toBe(0);
     expect(participant.movement_used_ft).toBe(30);
@@ -92,7 +98,7 @@ describe('setParticipantPosition movement enforcement (integration, live DB, thr
 
   it('a second move in the same turn is rejected once the budget is exhausted', async () => {
     await expect(
-      setParticipantPosition(pool, encounterId, participantId, { x: 7, y: 0 }),
+      setParticipantPosition(pool, encounterId, participantId, { x: 7, y: 0 }, 'dm'),
     ).rejects.toMatchObject({ code: 'CONFLICT', details: { reason: 'INSUFFICIENT_MOVEMENT' } });
   });
 });

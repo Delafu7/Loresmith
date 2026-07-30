@@ -69,7 +69,9 @@ export function BattleMode({
             map={live.map}
             participants={live.participants}
             activeParticipantId={live.activeParticipantId}
+            encounter={live.encounter}
             isDm={isDm}
+            myCharacterIds={myCharacterIds}
             showRoster={false}
           />
         </div>

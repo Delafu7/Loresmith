@@ -7,7 +7,9 @@
 // anything on its own.
 
 import type { Dispatch, SetStateAction } from 'react';
-import type { Character, MonsterCatalogEntry, MonsterInstance } from '../lib/types';
+import { useMutation } from '@tanstack/react-query';
+import { api } from '../lib/api';
+import type { Character, EncounterMode, MonsterCatalogEntry, MonsterInstance } from '../lib/types';
 import type { EncounterLiveState } from './useEncounterLive';
 import { HPBar } from '../components/HPBar';
 import { EmptyState } from '../components/Feedback';
@@ -21,6 +23,29 @@ import {
   ParticipantWeaknessReveal,
   ResetRevealsButton,
 } from './CombatTracker';
+
+// Exploration/combat mode toggle — self-contained, same "own mutation, no
+// cache write on success" pattern as ResetRevealsButton just below:
+// MODE_CHANGED arriving over the socket (useEncounterLive.ts) is the single
+// source of truth, including for the DM's own change.
+function ModeToggle({ encounterId, mode }: { encounterId: string; mode: EncounterMode }) {
+  const { t } = useLocale();
+  const mutation = useMutation({
+    mutationFn: (nextMode: EncounterMode) => api.patch<void>(`/encounters/${encounterId}/mode`, { mode: nextMode }),
+  });
+  const other: EncounterMode = mode === 'exploration' ? 'combat' : 'exploration';
+  return (
+    <button
+      type="button"
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate(other)}
+      title={t('encounters.battleMode.modeToggleTitle')}
+      className="min-h-11 rounded-md bg-stone-800 hover:bg-stone-700 px-2.5 text-[10px] uppercase tracking-wide text-stone-300 disabled:opacity-60"
+    >
+      {t(`encounters.battleMode.mode.${mode}`)}
+    </button>
+  );
+}
 
 // Structural (not TanStack's own UseMutationResult<...>) on purpose — this
 // panel only ever calls `.mutate(...)`/reads `.isPending` on whichever
@@ -73,7 +98,10 @@ export function BattleModeDmPanel({
   return (
     <div className="space-y-4">
       <div className="rounded-md bg-stone-900 shadow-sm p-3">
-        <p className="text-xs uppercase text-stone-500">{t('encounters.tracker.round', { round: live.encounter.currentRound })}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs uppercase text-stone-500">{t('encounters.tracker.round', { round: live.encounter.currentRound })}</p>
+          <ModeToggle encounterId={encounterId} mode={live.encounter.mode} />
+        </div>
         <div className="flex items-center gap-1.5 mt-1">
           <TurnTorch size={18} className="text-amber-500 flex-shrink-0" />
           <span className="font-semibold text-stone-100 truncate">

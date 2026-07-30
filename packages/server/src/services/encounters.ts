@@ -25,6 +25,7 @@ import type {
   AddParticipantInput,
   ApplyActionEconomyInput,
   CreateEncounterInput,
+  SetEncounterModeInput,
   SetInitiativeInput,
   SetParticipantFactionInput,
   SetParticipantPositionInput,
@@ -41,6 +42,7 @@ interface EncounterRow {
   id: string;
   campaign_id: string;
   status: 'preparing' | 'active' | 'paused' | 'completed';
+  mode: 'exploration' | 'combat';
   current_round: number;
   current_turn_index: number;
   sync_seq: number;
@@ -485,19 +487,27 @@ async function loadMovementContext(
 // (from null,null), not removal (to null,null), and not while the encounter
 // is 'preparing'/'paused'/'completed' (DM setup/rearrangement stays
 // unconditional, matching that doc's explicit recommendation to avoid
-// blocking ordinary token-placement drag-and-drop outside a live turn).
-// Returns null (no validation performed, move is free) when any of those
-// apply, or when loadMovementContext can't build a usable context — this
-// function never blocks a move it can't actually reason about.
+// blocking ordinary token-placement drag-and-drop outside a live turn), and
+// not while the encounter is in 'exploration' mode (free player-driven
+// roaming, no turn order, no movement limit — the whole point of that mode).
+// A non-DM actor is additionally required to be moving on their own current
+// turn once combat validation does apply (requireCurrentTurn) — the DM
+// keeps its original unconditional access in every mode/status. Returns
+// null (no validation performed, move is free) when any of those apply, or
+// when loadMovementContext can't build a usable context — this function
+// never blocks a move it can't actually reason about.
 async function computeValidatedMoveCost(
   client: PoolClient,
   encounter: EncounterRow,
   participant: ParticipantRow,
   to: { x: number | null; y: number | null },
+  actorRole: CampaignRole,
 ): Promise<{ costFt: number } | null> {
   if (to.x === null || to.y === null) return null; // removal from the map
   if (participant.pos_x === null || participant.pos_y === null) return null; // initial placement
+  if (encounter.mode === 'exploration') return null; // free roam, DM or player
   if (encounter.status !== 'active') return null;
+  if (actorRole !== 'dm') requireCurrentTurn(encounter, participant);
 
   const ctx = await loadMovementContext(client, encounter, participant);
   if (!ctx) return null;
@@ -537,7 +547,14 @@ export async function getParticipantReachableCells(
   );
   const participant = participantRes.rows[0];
   if (!participant) throw notFound('Participant');
-  if (participant.pos_x === null || participant.pos_y === null || encounter.status !== 'active') {
+  // Exploration mode has no budget concept — nothing to highlight (mirrors
+  // computeValidatedMoveCost's own mode gate just below in this file).
+  if (
+    participant.pos_x === null ||
+    participant.pos_y === null ||
+    encounter.mode !== 'combat' ||
+    encounter.status !== 'active'
+  ) {
     return { cells: [], remainingFt: 0 };
   }
 
@@ -553,6 +570,7 @@ export async function setParticipantPosition(
   encounterId: string,
   participantId: string,
   input: SetParticipantPositionInput,
+  actorRole: CampaignRole,
 ): Promise<ParticipantMutationResult> {
   const client = await pool.connect();
   try {
@@ -570,7 +588,7 @@ export async function setParticipantPosition(
     if (!locked) throw notFound('Participant');
 
     const encounter = await fetchEncounterById(client, encounterId);
-    const validated = await computeValidatedMoveCost(client, encounter, locked, input);
+    const validated = await computeValidatedMoveCost(client, encounter, locked, input, actorRole);
 
     const updated = await client.query<ParticipantRow>(
       `UPDATE combat_participants
@@ -956,6 +974,20 @@ export async function endEncounter(pool: Pool, encounterId: string) {
     [encounterId],
   );
   return result.rows[0];
+}
+
+// Exploration/combat mode is a DM toggle fully independent of status/start/
+// end — no transition restrictions, callable in any status, so a DM can
+// e.g. allow free-roam movement mid-"active" encounter for out-of-initiative
+// narrative movement without ending combat first.
+export async function setEncounterMode(pool: Pool, encounterId: string, input: SetEncounterModeInput): Promise<EncounterRow> {
+  const result = await pool.query<EncounterRow>(
+    `UPDATE encounters SET mode = $1, sync_seq = sync_seq + 1 WHERE id = $2 RETURNING *`,
+    [input.mode, encounterId],
+  );
+  const row = result.rows[0];
+  if (!row) throw notFound('Encounter');
+  return row;
 }
 
 // ---- Participants (flat /encounters/:id/participants — campaign derived from the row) ----

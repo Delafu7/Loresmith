@@ -8,6 +8,7 @@ import type {
   DiceRollKeep,
   DiceRollType,
   EffectDurationType,
+  EncounterMode,
   EncounterStatus,
 } from './types';
 
@@ -86,6 +87,7 @@ export interface MapConfig {
 export interface FullStateSyncEvent extends Envelope {
   encounter: {
     status: EncounterStatus;
+    mode: EncounterMode;
     currentRound: number;
     currentTurnIndex: number;
   };
@@ -131,6 +133,13 @@ export interface TokenMovedEvent extends Envelope {
   participantId: string;
   x: number | null;
   y: number | null;
+}
+
+// Exploration/combat mode toggle — the one genuinely new event this feature
+// needs (see sockets/broadcast.ts's broadcastModeChanged). No visibility
+// split, same as MAP_UPDATED/TOKEN_MOVED.
+export interface ModeChangedEvent extends Envelope {
+  mode: EncounterMode;
 }
 
 // Phase 3.5 — fires only for CHARACTER participants (never monster
@@ -235,6 +244,7 @@ export interface ServerToClientEvents {
   FULL_STATE_SYNC: (payload: FullStateSyncEvent) => void;
   MAP_UPDATED: (payload: MapUpdatedEvent) => void;
   TOKEN_MOVED: (payload: TokenMovedEvent) => void;
+  MODE_CHANGED: (payload: ModeChangedEvent) => void;
   PARTICIPANT_AC_CHANGED: (payload: ParticipantAcChangedEvent) => void;
   PARTICIPANT_FACTION_CHANGED: (payload: ParticipantFactionChangedEvent) => void;
   ACTION_ECONOMY_CHANGED: (payload: ActionEconomyChangedEvent) => void;

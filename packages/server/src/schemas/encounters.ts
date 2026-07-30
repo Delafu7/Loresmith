@@ -15,6 +15,14 @@ export type UpdateEncounterInput = z.infer<typeof updateEncounterSchema>;
 // REFACTOR-PLAN.md §3: board-readability faction.
 export const participantFactionEnum = z.enum(['player', 'ally', 'enemy', 'neutral']);
 
+// Exploration (free player movement, no turn/budget checks) vs. combat
+// (today's strict turn-order + movement-budget enforcement) — independent of
+// `status`, a separate DM toggle. See services/encounters.ts's
+// computeValidatedMoveCost and 1784269777666_add-encounter-mode.ts.
+export const encounterModeEnum = z.enum(['exploration', 'combat']);
+export const setEncounterModeSchema = z.object({ mode: encounterModeEnum });
+export type SetEncounterModeInput = z.infer<typeof setEncounterModeSchema>;
+
 export const addParticipantSchema = z
   .object({
     characterId: z.string().uuid().optional(),

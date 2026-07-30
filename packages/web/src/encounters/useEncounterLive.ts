@@ -19,6 +19,7 @@ import type {
   InitiativeRolledEvent,
   MapConfig,
   MapUpdatedEvent,
+  ModeChangedEvent,
   ParticipantAcChangedEvent,
   ParticipantFactionChangedEvent,
   ParticipantJoinedEvent,
@@ -26,12 +27,13 @@ import type {
   TokenMovedEvent,
   TurnAdvancedEvent,
 } from '../lib/socketTypes';
-import type { EncounterStatus, ParticipantHp, SnapshotParticipant } from '../lib/types';
+import type { EncounterMode, EncounterStatus, ParticipantHp, SnapshotParticipant } from '../lib/types';
 
 export interface EncounterLiveState {
   seq: number;
   encounter: {
     status: EncounterStatus;
+    mode: EncounterMode;
     currentRound: number;
     currentTurnIndex: number;
   };
@@ -312,6 +314,13 @@ export function useEncounterLive(encounterId: string | undefined) {
       });
     }
 
+    function onModeChanged(payload: ModeChangedEvent) {
+      if (payload.encounterId !== encounterId) return;
+      withSeqCheck(payload.seq, () => {
+        patch((prev) => ({ ...prev, seq: payload.seq, encounter: { ...prev.encounter, mode: payload.mode } }));
+      });
+    }
+
     function onParticipantFactionChanged(payload: ParticipantFactionChangedEvent) {
       if (payload.encounterId !== encounterId) return;
       withSeqCheck(payload.seq, () => {
@@ -351,6 +360,7 @@ export function useEncounterLive(encounterId: string | undefined) {
     socket.on('EFFECT_EXPIRED', onEffectExpired);
     socket.on('MAP_UPDATED', onMapUpdated);
     socket.on('TOKEN_MOVED', onTokenMoved);
+    socket.on('MODE_CHANGED', onModeChanged);
     socket.on('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
     socket.on('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
     socket.on('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);
@@ -371,6 +381,7 @@ export function useEncounterLive(encounterId: string | undefined) {
       socket.off('EFFECT_EXPIRED', onEffectExpired);
       socket.off('MAP_UPDATED', onMapUpdated);
       socket.off('TOKEN_MOVED', onTokenMoved);
+      socket.off('MODE_CHANGED', onModeChanged);
       socket.off('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
       socket.off('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
       socket.off('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);

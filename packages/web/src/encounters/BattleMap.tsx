@@ -12,14 +12,17 @@
 // server-validated movement cost: selecting a participant highlights the
 // server-computed reachable set (never a client-side re-derivation of the
 // cost math — see docs/rules/movement.md), and a DM "paint terrain" tool
-// for authoring map_cell_overrides. Movement is still DM-only end to end
-// today (the position PATCH route stays requireEncounterDm-gated), so the
-// reachable/paint UI below only activates for the DM.
+// for authoring map_cell_overrides. The DM can always move any token,
+// unconditionally; a player may now also drag/tap-move their OWN character's
+// token (canMoveToken.ts mirrors the server's mode/turn decision purely for
+// enable/disable — the server, via requireOwnParticipantOrDm +
+// computeValidatedMoveCost, remains the sole source of truth and re-validates
+// every move). Terrain painting stays DM-only.
 
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { CampaignAsset, SnapshotParticipant } from '../lib/types';
+import type { EncounterMode, EncounterStatus, CampaignAsset, SnapshotParticipant } from '../lib/types';
 import type { MapConfig } from '../lib/socketTypes';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
@@ -27,6 +30,7 @@ import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Field, Input } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { useLocale } from '../i18n/LocaleContext';
+import { canMoveToken } from './canMoveToken';
 import { Token } from './Token';
 
 const GRID_MIN = 5;
@@ -91,7 +95,9 @@ export function BattleMap({
   map,
   participants,
   activeParticipantId,
+  encounter,
   isDm,
+  myCharacterIds = new Set(),
   showRoster = true,
 }: {
   encounterId: string;
@@ -99,7 +105,14 @@ export function BattleMap({
   map: MapConfig | null;
   participants: SnapshotParticipant[];
   activeParticipantId: string | null;
+  /** mode/status/currentTurnIndex — enough for canMoveToken.ts's client-side
+   * enable/disable mirror of the server's move-validation decision. */
+  encounter: { mode: EncounterMode; status: EncounterStatus; currentTurnIndex: number };
   isDm: boolean;
+  /** Character ids owned by the current user (empty for the DM, who doesn't
+   * need it — isDm alone already grants unconditional control). Used to
+   * decide which tokens a non-DM viewer may drag/tap-move/self-place. */
+  myCharacterIds?: Set<string>;
   /** BattleMode.tsx already renders its own DM/player side panel (HP,
    * effects, dice — action-oriented tools) alongside this component, so it
    * turns this off to avoid two participant lists competing for the same
@@ -206,18 +219,29 @@ export function BattleMap({
     paintMutation.mutate({ x, y, costType: next });
   }
 
+  function isOwnToken(p: SnapshotParticipant): boolean {
+    return p.characterId != null && myCharacterIds.has(p.characterId);
+  }
+  function canControl(p: SnapshotParticipant): boolean {
+    return canMoveToken(encounter, { turnOrder: p.turnOrder }, isOwnToken(p), isDm);
+  }
+
   // REFACTOR-PLAN.md §4: "selecting a character highlights reachable cells
   // based on remaining speed, computed with pathfinding over actual terrain
   // cost." Server-computed (never re-derived client-side) — see
-  // docs/rules/movement.md.
+  // docs/rules/movement.md. Enabled for the DM or for a player who selected
+  // their OWN token (matches requireOwnParticipantOrDm's server-side gate on
+  // the /reachable route itself — this is just when the client bothers to
+  // ask).
+  const selectedParticipant = participants.find((p) => p.participantId === selectedId) ?? null;
+  const canControlSelected = selectedParticipant != null && (isDm || isOwnToken(selectedParticipant));
   const reachableQuery = useQuery({
     queryKey: ['encounter', encounterId, 'reachable', selectedId],
     queryFn: () => api.get<{ cells: string[]; remainingFt: number }>(`/encounters/${encounterId}/participants/${selectedId}/reachable`),
-    enabled: isDm && selectedId != null,
+    enabled: canControlSelected,
   });
   const reachableCells = new Set(reachableQuery.data?.cells ?? []);
-  const moveTargetMode = isDm && !paintMode && selectedId != null;
-  const selectedParticipant = participants.find((p) => p.participantId === selectedId) ?? null;
+  const moveTargetMode = !paintMode && selectedParticipant != null && canControl(selectedParticipant);
   const pendingMoveIsReachable = pendingMove != null && (reachableCells.size === 0 || reachableCells.has(`${pendingMove.x},${pendingMove.y}`));
 
   // REFACTOR-PLAN.md §1: "on map load, spawn the creature instances assigned
@@ -227,6 +251,7 @@ export function BattleMap({
   const spawnable = participants.filter((p) => p.monsterInstanceStatus === null || p.monsterInstanceStatus === 'alive');
   const placed = spawnable.filter((p) => p.posX != null && p.posY != null);
   const unplaced = spawnable.filter((p) => p.posX == null || p.posY == null);
+  const unplacedControllable = unplaced.filter((p) => isDm || isOwnToken(p));
 
   function selectParticipant(id: string | null) {
     setSelectedId(id);
@@ -306,7 +331,7 @@ export function BattleMap({
           >
             {t('encounters.battleMap.centerOnActive')}
           </button>
-          {isDm && selectedId != null && reachableQuery.data && (
+          {canControlSelected && reachableQuery.data && (
             <span className="text-xs text-stone-400 ml-2">
               {t('encounters.battleMap.remainingMovementLabel')}{' '}
               <span className="text-amber-400 font-medium">{t('encounters.tracker.feetValue', { value: reachableQuery.data.remainingFt })}</span>
@@ -493,7 +518,7 @@ export function BattleMap({
                       gridRows={map.gridRows}
                       zoom={zoom}
                       isActive={p.participantId === activeParticipantId}
-                      isDraggable={isDm}
+                      isDraggable={canControl(p)}
                       isSelected={p.participantId === selectedId}
                       onMove={(x, y) => positionMutation.mutate({ participantId: p.participantId, x, y })}
                       onSelect={() => selectParticipant(selectedId === p.participantId ? null : p.participantId)}
@@ -556,11 +581,15 @@ export function BattleMap({
         </div>
       )}
 
-      {isDm && unplaced.length > 0 && (
+      {/* Initial placement (from null,null) is always a free move server-side
+          regardless of mode/turn (computeValidatedMoveCost), so the gate
+          here is plain ownership — DM places anyone, a player places their
+          own unplaced character. */}
+      {unplacedControllable.length > 0 && (
         <div className="rounded-md bg-stone-900 shadow-sm p-3">
           <p className="text-xs text-stone-500 mb-2">{t('encounters.battleMap.unplacedHint')}</p>
           <div className="flex flex-wrap gap-2">
-            {unplaced.map((p) => (
+            {unplacedControllable.map((p) => (
               <button
                 key={p.participantId}
                 type="button"

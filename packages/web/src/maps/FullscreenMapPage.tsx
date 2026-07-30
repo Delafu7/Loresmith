@@ -8,6 +8,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { useAuth } from '../auth/AuthContext';
+import type { Character } from '../lib/types';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { useEncounterLive } from '../encounters/useEncounterLive';
 import { BattleMap } from '../encounters/BattleMap';
@@ -24,6 +26,7 @@ interface FlatEncounter {
 
 export function FullscreenMapPage() {
   const { t } = useLocale();
+  const { user } = useAuth();
   const params = useParams<{ mapId: string }>();
   const encounterId = params.mapId ?? '';
 
@@ -35,6 +38,17 @@ export function FullscreenMapPage() {
 
   const live = useEncounterLive(isUuid(encounterId) ? encounterId : undefined);
   const encounter = encounterQuery.data?.encounter;
+
+  // Not DM-only — a player needs this to know which token on the board is
+  // their own (BattleMap's myCharacterIds, same pattern as CombatTracker.tsx).
+  const charactersQuery = useQuery({
+    queryKey: ['characters', encounter?.campaign_id],
+    queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${encounter!.campaign_id}/characters`),
+    enabled: encounter != null,
+  });
+  const myCharacterIds = new Set(
+    charactersQuery.data?.characters.filter((c) => c.owner_user_id === user?.id).map((c) => c.id) ?? [],
+  );
 
   return (
     <div className="h-dvh bg-stone-950 text-stone-100 flex flex-col overflow-hidden">
@@ -67,7 +81,9 @@ export function FullscreenMapPage() {
             map={live?.map ?? null}
             participants={live?.participants ?? []}
             activeParticipantId={live?.activeParticipantId ?? null}
+            encounter={live?.encounter ?? { mode: 'exploration', status: 'preparing', currentTurnIndex: 0 }}
             isDm={encounter.myRole === 'dm'}
+            myCharacterIds={myCharacterIds}
           />
         )}
       </main>
