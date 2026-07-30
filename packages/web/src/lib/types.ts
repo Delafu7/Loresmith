@@ -53,6 +53,19 @@ export interface CampaignMember {
   display_name: string;
 }
 
+export interface CampaignInvitation {
+  id: string;
+  campaign_id: string;
+  invited_email: string;
+  invited_by_user_id: string;
+  role: CampaignRole;
+  status: 'pending' | 'accepted' | 'revoked';
+  created_at: string;
+  responded_at: string | null;
+  // Present only on GET /me/invitations (joined in for display there).
+  campaign_name?: string;
+}
+
 export interface Character {
   id: string;
   campaign_id: string;

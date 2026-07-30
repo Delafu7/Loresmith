@@ -22,9 +22,10 @@ import { statBlock } from './statBlock.js';
 import { catalog } from './catalog.js';
 import { encounters } from './encounters.js';
 import { maps } from './maps.js';
+import { members } from './members.js';
 
 export const es = {
   common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust, upload,
   campaigns, notes, sessionLog, assets, dice, landing, characters,
-  monsters, bestiary, statBlock, catalog, encounters, maps,
+  monsters, bestiary, statBlock, catalog, encounters, maps, members,
 } satisfies typeof en;

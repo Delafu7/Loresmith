@@ -20,4 +20,8 @@ export const dashboard = {
   allNotesLink: 'All notes →',
   campaignActivity: 'Campaign activity',
   noCampaignNotes: 'No notes in your campaigns yet.',
+  pendingInvitationsTitle: 'Pending invitations',
+  pendingInvitationLine: '{campaign} — as {role}',
+  acceptInvitation: 'Accept',
+  accepting: 'Accepting…',
 };

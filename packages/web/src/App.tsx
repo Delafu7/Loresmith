@@ -29,6 +29,7 @@ import { FullscreenMapPage } from './maps/FullscreenMapPage';
 import { NotesIndexPage } from './notes/NotesIndexPage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
 import { CatalogEditorPage } from './catalog/CatalogEditorPage';
+import { CampaignMembersPage } from './campaigns/CampaignMembersPage';
 import { AssetsPage } from './assets/AssetsPage';
 
 function App() {
@@ -144,6 +145,7 @@ function App() {
                 <Route path="dice-rolls" element={<DiceRollHistoryPage />} />
                 <Route path="assets" element={<AssetsPage />} />
                 <Route path="catalog" element={<CatalogEditorPage />} />
+                <Route path="members" element={<CampaignMembersPage />} />
               </Route>
 
               <Route path="*" element={<Navigate to="/" replace />} />

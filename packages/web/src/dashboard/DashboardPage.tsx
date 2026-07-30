@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { DashboardCharacter, DashboardResponse } from '../lib/types';
+import type { CampaignInvitation, DashboardCharacter, DashboardResponse } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
@@ -107,6 +107,8 @@ export function DashboardPage() {
               </nav>
             </div>
 
+            <PendingInvitations />
+
             <section>
               <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-stone-500">{t('dashboard.yourCharacters')}</h2>
               {dashboardQuery.data.characters.length === 0 ? (
@@ -173,6 +175,56 @@ export function DashboardPage() {
         )}
       </main>
     </div>
+  );
+}
+
+// Campaign invitations addressed to the logged-in user's own email (see
+// services/campaignInvitations.ts's listInvitationsForUser) — renders
+// nothing when there are none, so a user with no pending invites sees no
+// change to this page at all.
+function PendingInvitations() {
+  const { t } = useLocale();
+  const queryClient = useQueryClient();
+
+  const invitationsQuery = useQuery({
+    queryKey: ['me', 'invitations'],
+    queryFn: () => api.get<{ invitations: CampaignInvitation[] }>('/me/invitations'),
+  });
+
+  const acceptMutation = useMutation({
+    mutationFn: (invitationId: string) => api.post(`/me/invitations/${invitationId}/accept`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['me', 'invitations'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+    },
+  });
+
+  const invitations = invitationsQuery.data?.invitations ?? [];
+  if (invitations.length === 0) return null;
+
+  return (
+    <Card>
+      <CardKicker>{t('dashboard.pendingInvitationsTitle')}</CardKicker>
+      {acceptMutation.isError && <ErrorBanner message={errorMessage(acceptMutation.error)} />}
+      <ul className="mt-1 divide-y divide-stone-800">
+        {invitations.map((inv) => (
+          <li key={inv.id} className="flex items-center justify-between gap-2 py-2.5">
+            <span className="min-w-0 truncate text-sm text-stone-100">
+              {t('dashboard.pendingInvitationLine', { campaign: inv.campaign_name ?? '', role: inv.role })}
+            </span>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={acceptMutation.isPending}
+              onClick={() => acceptMutation.mutate(inv.id)}
+            >
+              {acceptMutation.isPending ? t('dashboard.accepting') : t('dashboard.acceptInvitation')}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

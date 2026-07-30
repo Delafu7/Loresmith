@@ -122,6 +122,7 @@ export function CampaignShell() {
             <NavItem to="dice-rolls">{t('nav.diceRolls')}</NavItem>
             <NavItem to="assets">{t('nav.assets')}</NavItem>
             {isDm && <NavItem to="catalog">{t('nav.catalog')}</NavItem>}
+            {isDm && <NavItem to="members">{t('nav.members')}</NavItem>}
           </NavItemList>
           <div className="mt-auto flex flex-col gap-3 max-md:flex-row max-md:flex-wrap max-md:items-center">
             {isDm && <ExportCampaignButton campaignId={campaignId} campaignName={campaignQuery.data.campaign.name} />}

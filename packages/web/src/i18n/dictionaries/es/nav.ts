@@ -10,6 +10,7 @@ export const nav = {
   diceRolls: 'Tiradas de dados',
   assets: 'Recursos',
   catalog: 'Catálogo',
+  members: 'Miembros',
   exportCampaign: 'Exportar campaña (JSON)',
   exporting: 'Exportando…',
 };

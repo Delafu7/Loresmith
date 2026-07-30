@@ -10,6 +10,7 @@ export const nav = {
   diceRolls: 'Lancers de dés',
   assets: 'Ressources',
   catalog: 'Catalogue',
+  members: 'Membres',
   exportCampaign: 'Exporter la campagne (JSON)',
   exporting: 'Exportation…',
 };

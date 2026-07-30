@@ -1,6 +1,7 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
+import { findUserByEmail } from './users.js';
 import type {
   AddMemberInput,
   CreateCampaignInput,
@@ -103,13 +104,25 @@ export async function listMembers(pool: Pool, campaignId: string) {
 }
 
 export async function addMember(pool: Pool, campaignId: string, input: AddMemberInput) {
-  const userRes = await pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [input.email]);
-  const user = userRes.rows[0];
+  const user = await findUserByEmail(pool, input.email);
   if (!user) throw new AppError('NOT_FOUND', 'No user with that email exists');
+  return insertMembership(pool, campaignId, user.id, input.role);
+}
 
+// Shared by addMember above and services/campaignInvitations.ts's
+// acceptInvitation — both need "create a campaign_members row for this exact
+// (already-resolved) user, erroring if they're already a member" with no
+// user-lookup step of their own. Takes a PoolClient too so acceptInvitation
+// can call this inside its own transaction.
+export async function insertMembership(
+  pool: Pool | PoolClient,
+  campaignId: string,
+  userId: string,
+  role: 'dm' | 'player',
+) {
   const existing = await pool.query(
     `SELECT id FROM campaign_members WHERE campaign_id = $1 AND user_id = $2`,
-    [campaignId, user.id],
+    [campaignId, userId],
   );
   if (existing.rows.length > 0) {
     throw new AppError('CONFLICT', 'That user is already a member of this campaign');

@@ -10,7 +10,9 @@ import {
   updateMemberSchema,
   updateSessionLogSchema,
 } from '../schemas/campaigns.js';
+import { createInvitationSchema } from '../schemas/campaignInvitations.js';
 import * as campaignsService from '../services/campaigns.js';
+import * as campaignInvitationsService from '../services/campaignInvitations.js';
 import { rollAbilityScores } from '../services/abilityScoreRoll.js';
 import { exportCampaign } from '../services/campaignExport.js';
 import { importCampaign } from '../services/campaignImport.js';
@@ -99,6 +101,26 @@ campaignsRouter.patch('/:id/members/:userId', requireCampaignMember(), requireRo
 campaignsRouter.delete('/:id/members/:userId', requireCampaignMember(), requireRole('dm'), async (req, res) => {
   await campaignsService.removeMember(pool, req.campaignId!, (req.params.userId as string));
   res.status(204).send();
+});
+
+// ---- Invitations (pending/accepted; see addMember above for the older
+// "invitee must already have an account, joins immediately" path this
+// complements rather than replaces) ----
+
+campaignsRouter.post('/:id/invitations', requireCampaignMember(), requireRole('dm'), async (req, res) => {
+  const input = createInvitationSchema.parse(req.body);
+  const invitation = await campaignInvitationsService.createInvitation(pool, req.campaignId!, req.user!.id, input);
+  res.status(201).json({ invitation });
+});
+
+campaignsRouter.get('/:id/invitations', requireCampaignMember(), requireRole('dm'), async (req, res) => {
+  const invitations = await campaignInvitationsService.listInvitationsForCampaign(pool, req.campaignId!);
+  res.json({ invitations });
+});
+
+campaignsRouter.delete('/:id/invitations/:invitationId', requireCampaignMember(), requireRole('dm'), async (req, res) => {
+  const invitation = await campaignInvitationsService.revokeInvitation(pool, req.campaignId!, (req.params.invitationId as string));
+  res.json({ invitation });
 });
 
 // ---- Session log (game-night log; NOT the HTTP auth session) ----
