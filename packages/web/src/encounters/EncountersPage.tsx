@@ -6,6 +6,7 @@ import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { useLocale } from '../i18n/LocaleContext';
 import { CombatTracker } from './CombatTracker';
+import { useBreadcrumb } from '../components/layout/BreadcrumbContext';
 
 const STATUS_ORDER: Record<Encounter['status'], number> = { active: 0, paused: 1, preparing: 2, completed: 3 };
 
@@ -64,6 +65,8 @@ export function EncountersPage() {
   }, [sorted]);
 
   const encountersById = new Map(sorted.map((e) => [e.id, e]));
+  const activeEncounter = activeTabId ? encountersById.get(activeTabId) : undefined;
+  useBreadcrumb(2, activeEncounter ? [{ label: activeEncounter.name }] : []);
 
   function handleCreate(e: FormEvent) {
     e.preventDefault();

@@ -7,7 +7,6 @@ export const dashboard = {
   welcome: 'Welcome back, {name}',
   navCampaigns: 'All campaigns',
   navBestiary: 'Bestiary',
-  navMaps: 'Maps',
   navNotes: 'Notes',
   yourCharacters: 'Your characters',
   noCharacters: "You don't own any characters yet.",

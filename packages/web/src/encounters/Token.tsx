@@ -4,13 +4,11 @@
 // FINAL cell once, on pointer-up, never on every move tick (see
 // BattleMap.tsx's header comment for why: no write/broadcast storm).
 //
-// Scope boundary: SnapshotParticipant (lib/types.ts) carries no portrait/art
-// URL today (that data — characters.portrait_asset_id / monsters.art_asset_id
-// — never flows into the combat snapshot), so this always renders Portrait's
-// placeholder-initial fallback rather than a real image. Wiring a real image
-// through would mean widening the FULL_STATE_SYNC/snapshot payload server-side,
-// which is out of scope here — named explicitly rather than guessing at a URL
-// that isn't in the payload.
+// Token art: participant.imageUrl is resolved server-side (getEncounterCombatSnapshot
+// in services/encounters.ts) from the character's portrait or the monster's
+// homebrew art upload / catalog image_url — Portrait already falls back to an
+// initials/silhouette placeholder whenever it's null, so a missing image never
+// renders a gap or a broken-image icon.
 
 import { useRef, useState } from 'react';
 import { Portrait, type PortraitSize } from '../components/Portrait';
@@ -213,7 +211,7 @@ export function Token({
             } ${isSelected ? 'outline outline-2 outline-offset-2 outline-amber-300' : ''}`}
             style={{ width: portraitPx, height: portraitPx }}
           >
-            <Portrait fileUrl={null} alt={participant.name} shape="circle" size={size} placeholderLabel={participant.name} />
+            <Portrait fileUrl={participant.imageUrl} alt={participant.name} shape="circle" size={size} placeholderLabel={participant.name} />
             <TokenHpIndicator hp={participant.hp} />
           </div>
         </>

@@ -8,7 +8,7 @@
 
 import type { Server, Socket } from 'socket.io';
 import { pool } from '../db/pool.js';
-import { requireMembership } from '../services/authz.js';
+import { requireMembership, type CampaignRole } from '../services/authz.js';
 import { AppError } from '../middleware/errors.js';
 import { isUuid } from '../domain/ids.js';
 import { buildFullStateSyncPayload } from './broadcast.js';
@@ -30,25 +30,41 @@ function userIdOf(socket: Socket): string {
   return (socket.data as SocketData).userId;
 }
 
-async function encounterCampaignId(encounterId: string): Promise<string> {
-  const result = await pool.query<{ campaign_id: string }>(
-    `SELECT campaign_id FROM encounters WHERE id = $1`,
+async function encounterContext(encounterId: string): Promise<{ campaignId: string; status: string }> {
+  const result = await pool.query<{ campaign_id: string; status: string }>(
+    `SELECT campaign_id, status FROM encounters WHERE id = $1`,
     [encounterId],
   );
   const row = result.rows[0];
   if (!row) throw new AppError('NOT_FOUND', 'Encounter not found');
-  return row.campaign_id;
+  return { campaignId: row.campaign_id, status: row.status };
 }
 
 /**
- * A player may join an encounter room only if they own a character that is a
- * live combat_participants row in that encounter. The DM may always join any
+ * A player may join an encounter room only if the encounter is past
+ * 'preparing' (nav point 1 — a still-configuring encounter is DM-only, full
+ * stop, not just inert) AND they own a character that is a live
+ * combat_participants row in that encounter. The DM may always join any
  * encounter in a campaign they DM. This is re-derived from the DB on every
- * join call — never cached, never trusted from a prior connection.
+ * join call — never cached, never trusted from a prior connection. Returns
+ * the resolved role so callers don't need a second requireMembership call.
+ * Exported for direct testing — this codebase has no socket-level test
+ * harness (see damageAuthz.integration.test.ts's own note on that), but this
+ * function itself has no socket/Express dependency, so it's testable as a
+ * plain async function.
  */
-async function assertCanJoinEncounter(encounterId: string, campaignId: string, userId: string): Promise<void> {
+export async function assertCanJoinEncounter(
+  encounterId: string,
+  campaignId: string,
+  status: string,
+  userId: string,
+): Promise<CampaignRole> {
   const role = await requireMembership(pool, campaignId, userId);
-  if (role === 'dm') return;
+  if (role === 'dm') return role;
+
+  if (status === 'preparing') {
+    throw new AppError('FORBIDDEN_NOT_OWNER', 'This encounter is still being prepared by the DM');
+  }
 
   const result = await pool.query(
     `SELECT 1
@@ -61,6 +77,7 @@ async function assertCanJoinEncounter(encounterId: string, campaignId: string, u
   if (result.rowCount === 0) {
     throw new AppError('FORBIDDEN_NOT_OWNER', 'You have no character in this encounter');
   }
+  return role;
 }
 
 export function registerRoomHandlers(io: Server, socket: Socket): void {
@@ -84,8 +101,8 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
       if (!isUuid(encounterId)) {
         throw new AppError('VALIDATION_ERROR', 'encounterId must be a valid id');
       }
-      const campaignId = await encounterCampaignId(encounterId);
-      await assertCanJoinEncounter(encounterId, campaignId, userIdOf(socket));
+      const { campaignId, status } = await encounterContext(encounterId);
+      const role = await assertCanJoinEncounter(encounterId, campaignId, status, userIdOf(socket));
 
       await socket.join(encounterRoom(encounterId));
       ack?.({ ok: true });
@@ -94,8 +111,7 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
       // join:encounter" — push it immediately so the client doesn't need a
       // second round-trip, without skipping the explicit request:sync path
       // below (used for later on-demand resyncs, e.g. after a seq gap).
-      await requireMembership(pool, campaignId, userIdOf(socket));
-      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId);
+      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, role);
       socket.emit('FULL_STATE_SYNC', syncPayload);
     } catch (err) {
       ack?.(errAck(err));
@@ -113,9 +129,9 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
       if (!socket.rooms.has(encounterRoom(encounterId))) {
         throw new AppError('FORBIDDEN_ROLE', 'Not joined to this encounter room');
       }
-      const campaignId = await encounterCampaignId(encounterId);
-      await requireMembership(pool, campaignId, userIdOf(socket));
-      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId);
+      const { campaignId } = await encounterContext(encounterId);
+      const role = await requireMembership(pool, campaignId, userIdOf(socket));
+      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, role);
       socket.emit('FULL_STATE_SYNC', syncPayload);
       ack?.({ ok: true });
     } catch (err) {

@@ -13,13 +13,14 @@
 // math itself, only displays the breakdown the server returns (always shown,
 // per REFACTOR-PLAN.md §6: "never just a final number").
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { DiceRoller, keptDieIndex } from '../components/DiceRoller';
 import { parseDiceExpression } from '../components/QuickDiceRoller';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
 import { useLocale } from '../i18n/LocaleContext';
+import { useDamageTypesCatalog } from '../lib/useCatalog';
 import type { DiceRoll } from '../lib/types';
 
 export interface NormalizedAttack {
@@ -30,6 +31,10 @@ export interface NormalizedAttack {
   damageType?: string | null;
   saveDc?: number | null;
   saveAbilityIndex?: string | null;
+  /** character_attacks.id, when this attack comes from a PC's structured attack
+   * list — lets the combat log reference the real catalog row, not just free
+   * text. Absent for monster catalog actions (no such row exists for those). */
+  characterAttackId?: string | null;
 }
 
 export interface AttackTarget {
@@ -58,6 +63,7 @@ export function AttackRoller({
   encounterId,
   rollerParticipantId,
   targets,
+  initialTargetParticipantId,
 }: {
   attacks: NormalizedAttack[];
   rollerCharacterId?: string | null;
@@ -71,6 +77,10 @@ export function AttackRoller({
   /** Every other live participant this roller could plausibly hit — the DM
    * picks which one actually takes the damage. */
   targets: AttackTarget[];
+  /** Pre-selects the target dropdown — ParticipantSheetPanel's "take action
+   * against this target" entry point. Purely a UI convenience: the target
+   * can still be changed, and this has no effect if the id isn't in `targets`. */
+  initialTargetParticipantId?: string;
 }) {
   const rollable = attacks.filter((a) => a.attackBonus != null || a.damageDice != null || a.saveDc != null);
   if (rollable.length === 0) return null;
@@ -86,6 +96,7 @@ export function AttackRoller({
           targets={targets}
           rollerCharacterId={rollerCharacterId}
           rollerMonsterInstanceId={rollerMonsterInstanceId}
+          initialTargetParticipantId={initialTargetParticipantId}
         />
       ))}
     </div>
@@ -99,6 +110,7 @@ function AttackRow({
   targets,
   rollerCharacterId,
   rollerMonsterInstanceId,
+  initialTargetParticipantId,
 }: {
   attack: NormalizedAttack;
   encounterId: string;
@@ -106,10 +118,20 @@ function AttackRow({
   targets: AttackTarget[];
   rollerCharacterId?: string | null;
   rollerMonsterInstanceId?: string | null;
+  initialTargetParticipantId?: string;
 }) {
   const { t } = useLocale();
+  const damageTypesQuery = useDamageTypesCatalog();
   const [lastAttackRoll, setLastAttackRoll] = useState<DiceRoll | null>(null);
-  const [targetId, setTargetId] = useState<number | ''>('');
+  // Bug fix: this used to be `useState<number | ''>('')` with `Number(e.target.value)`
+  // on change — participantId is a UUID string (post uuid-primary-keys
+  // migration), so `Number(uuid)` is always NaN and `target` below could
+  // never match, silently disabling "Apply damage" for every attack. Left
+  // over from before that migration; caught while wiring the pre-fill prop.
+  const [targetId, setTargetId] = useState<string>(initialTargetParticipantId ?? '');
+  useEffect(() => {
+    if (initialTargetParticipantId) setTargetId(initialTargetParticipantId);
+  }, [initialTargetParticipantId]);
   const parsedDamage = attack.damageDice ? parseDiceExpression(attack.damageDice) : null;
   const isSaveBased = attack.saveDc != null;
 
@@ -135,6 +157,36 @@ function AttackRow({
 
   const target = targets.find((t) => t.participantId === targetId);
 
+  // Combat log (nav point 2) — recorded once damage actually lands, not on
+  // the attack roll alone, since that's the point every field (result,
+  // damage) is finally known. Best-effort: swallowed on error, same as the
+  // action-economy spend above — a logging failure must never look like the
+  // attack itself failed, and the damage has already been applied server-side
+  // by the time this fires.
+  const recordActionMutation = useMutation({
+    mutationFn: (vars: { appliedDamage: number }) => {
+      if (!rollerParticipantId || !target) return Promise.resolve();
+      const damageTypeId = damageTypesQuery.data?.damageTypes.find((dt) => dt.index_key === attack.damageType)?.id;
+      return api.post(`/encounters/${encounterId}/actions`, {
+        actorParticipantId: rollerParticipantId,
+        targetParticipantIds: [target.participantId],
+        // No ranged/melee distinction is tracked anywhere in this app's
+        // attack data today (character_attacks/monster actions have no
+        // range field) — attack-roll-based defaults to melee, save-based to
+        // spell, the closest reasonable default per 5e convention rather
+        // than a guess with no basis.
+        actionType: isSaveBased ? 'spell' : 'melee_attack',
+        meansCharacterAttackId: attack.characterAttackId ?? undefined,
+        meansLabel: attack.name,
+        diceRollId: !isSaveBased ? (lastAttackRoll?.id ?? undefined) : undefined,
+        resultKind: isSaveBased ? 'save_fail' : 'hit',
+        damageAmount: vars.appliedDamage,
+        damageTypeId,
+      });
+    },
+    onError: () => {},
+  });
+
   const applyDamageMutation = useMutation({
     mutationFn: () => {
       if (!target || !parsedDamage) throw new Error('No target selected');
@@ -152,6 +204,7 @@ function AttackRow({
         encounterId,
       });
     },
+    onSuccess: (data) => recordActionMutation.mutate({ appliedDamage: data.appliedDamage }),
   });
 
   return (
@@ -192,7 +245,7 @@ function AttackRow({
           <>
             <select
               value={targetId}
-              onChange={(e) => setTargetId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => setTargetId(e.target.value)}
               className="rounded-md border border-stone-700 bg-stone-800 px-1.5 py-1 text-[10px] text-stone-200"
             >
               <option value="">{t('encounters.attackRoller.targetPlaceholder')}</option>

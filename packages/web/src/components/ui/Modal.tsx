@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useLocale } from '../../i18n/LocaleContext';
+import { useHistoryDismiss } from '../../lib/useHistoryDismiss';
 
 export type ModalSize = 'sm' | 'lg';
 
@@ -41,6 +42,10 @@ export function Modal({
     if (open && !el.open) el.showModal();
     if (!open && el.open) el.close();
   }, [open]);
+
+  // Nav point 7: browser-back / mobile swipe-back must close an open modal
+  // instead of leaving the app (a <dialog> has no history entry of its own).
+  useHistoryDismiss(open, onClose);
 
   return (
     <dialog

@@ -1,27 +1,36 @@
-// DM side panel for battle mode (REVISION-PLAN.md §10.2) — everything the DM
-// needs while an encounter is 'active' without leaving the map view: whose
-// turn it is, a compact roster (HP/AC/stat-lookup, same building blocks the
-// prep-mode roster already uses), turn controls, the dice roller, and the
-// add-participant form. Every mutation/query here is owned by CombatTracker
-// and threaded through as props — this file never fetches or mutates
-// anything on its own.
+// DM side panel (nav point 3 merge) — the single roster/control panel used
+// at EVERY encounter status now, not just 'active'. Folds in everything the
+// old separate "prep-mode roster" in CombatTracker.tsx had that this panel
+// didn't yet (HP adjustment, effects, the visibility toggle, remove-
+// participant, and the active participant's ActionEconomyPanel) so there's
+// one DM panel, not two drifting implementations for prep vs. combat. Every
+// mutation/query here is owned by CombatTracker and threaded through as
+// props — this file never fetches or mutates anything on its own.
 
 import type { Dispatch, SetStateAction } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Character, EncounterMode, MonsterCatalogEntry, MonsterInstance } from '../lib/types';
+import type { Character, EncounterMode, EncounterStatus, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
+import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 import type { EncounterLiveState } from './useEncounterLive';
 import { HPBar } from '../components/HPBar';
+import { HpAdjustForm } from '../components/HpAdjustForm';
+import { EffectBadge } from '../components/EffectBadge';
+import { EffectApplyDialog } from '../components/EffectApplyDialog';
 import { EmptyState } from '../components/Feedback';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { TurnTorch } from '../components/TurnTorch';
 import { useLocale } from '../i18n/LocaleContext';
+import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
+import { useCampaignShell } from '../campaigns/CampaignShell';
+import { ActionEconomyPanel } from './ActionEconomyPanel';
 import {
   ActionButton,
   AddParticipantForm,
   ParticipantStatLookup,
   ParticipantWeaknessReveal,
   ResetRevealsButton,
+  resolveAbilityScores,
 } from './CombatTracker';
 
 // Exploration/combat mode toggle — self-contained, same "own mutation, no
@@ -59,6 +68,7 @@ export interface MutationLike<TVariables = void> {
 
 export interface BattleModeDmPanelProps {
   encounterId: string;
+  status: EncounterStatus;
   live: EncounterLiveState;
   characters: Character[] | undefined;
   monsterInstances: MonsterInstance[] | undefined;
@@ -67,16 +77,23 @@ export interface BattleModeDmPanelProps {
   setExpandedParticipantId: Dispatch<SetStateAction<string | null>>;
   showDiceRoller: boolean;
   setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
+  startMutation: MutationLike<void>;
   endMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
   addParticipantMutation: MutationLike<{ characterId?: string; monsterInstanceId?: string }>;
+  removeParticipantMutation: MutationLike<string>;
+  visibilityMutation: MutationLike<{ participantId: string; visible: boolean }>;
+  hpMutation: MutationLike<{ target: 'character' | 'monster'; id: string; delta: number; tempDelta: number }>;
+  applyEffectMutation: MutationLike<{ participant: SnapshotParticipant; input: ApplyEffectFormInput }>;
+  removeEffectMutation: MutationLike<string>;
   availableCharacters: Character[];
   availableMonsterInstances: MonsterInstance[];
 }
 
 export function BattleModeDmPanel({
   encounterId,
+  status,
   live,
   characters,
   monsterInstances,
@@ -85,21 +102,31 @@ export function BattleModeDmPanel({
   setExpandedParticipantId,
   showDiceRoller,
   setShowDiceRoller,
+  startMutation,
   endMutation,
   rollInitiativeMutation,
   advanceTurnMutation,
   addParticipantMutation,
+  removeParticipantMutation,
+  visibilityMutation,
+  hpMutation,
+  applyEffectMutation,
+  removeEffectMutation,
   availableCharacters,
   availableMonsterInstances,
 }: BattleModeDmPanelProps) {
   const { t } = useLocale();
+  const { campaign } = useCampaignShell();
+  const effectDefinitionsQuery = useEffectDefinitionsCatalog(campaign.id);
   const activeParticipant = live.participants.find((p) => p.participantId === live.activeParticipantId);
 
   return (
     <div className="space-y-4">
       <div className="rounded-md bg-stone-900 shadow-sm p-3">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs uppercase text-stone-500">{t('encounters.tracker.round', { round: live.encounter.currentRound })}</p>
+          <p className="text-xs uppercase text-stone-500">
+            {status === 'preparing' ? t(`encounters.status.${status}`) : t('encounters.tracker.round', { round: live.encounter.currentRound })}
+          </p>
           <ModeToggle encounterId={encounterId} mode={live.encounter.mode} />
         </div>
         <div className="flex items-center gap-1.5 mt-1">
@@ -125,11 +152,31 @@ export function BattleModeDmPanel({
                   {isActive && <TurnTorch size={14} className="text-amber-500 flex-shrink-0" />}
                   <span className="font-medium text-stone-100 truncate">{p.name}</span>
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <span className="text-stone-500 border border-stone-700 rounded px-1" title={t('encounters.tracker.armorClass')}>
                     AC {p.armorClass}
                   </span>
                   {p.monsterInstanceId != null && <ParticipantWeaknessReveal monsterInstanceId={p.monsterInstanceId} />}
+                  <button
+                    type="button"
+                    onClick={() => visibilityMutation.mutate({ participantId: p.participantId, visible: !p.visibleToPlayers })}
+                    disabled={visibilityMutation.isPending}
+                    aria-label={
+                      p.visibleToPlayers
+                        ? t('encounters.tracker.hideFromPlayers', { name: p.name })
+                        : t('encounters.tracker.revealToPlayers', { name: p.name })
+                    }
+                    title={
+                      p.visibleToPlayers
+                        ? t('encounters.tracker.hideFromPlayers', { name: p.name })
+                        : t('encounters.tracker.revealToPlayers', { name: p.name })
+                    }
+                    className={`inline-flex h-6 w-6 items-center justify-center disabled:opacity-50 ${
+                      p.visibleToPlayers ? 'text-stone-400 hover:text-stone-200' : 'text-amber-500 hover:text-amber-400'
+                    }`}
+                  >
+                    {p.visibleToPlayers ? '👁' : '🙈'}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setExpandedParticipantId((id) => (id === p.participantId ? null : p.participantId))}
@@ -144,19 +191,66 @@ export function BattleModeDmPanel({
                   >
                     {expandedParticipantId === p.participantId ? '▾' : '▸'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => removeParticipantMutation.mutate(p.participantId)}
+                    className="inline-flex h-6 w-6 items-center justify-center text-red-400 hover:text-red-300"
+                    aria-label={t('encounters.tracker.removeParticipant', { name: p.name })}
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
               <div className="mt-1.5">
                 <HPBar current={p.hp.hpCurrent} max={p.hp.hpMax} temp={p.hp.hpTemp} />
               </div>
               {expandedParticipantId === p.participantId && (
-                <ParticipantStatLookup
-                  participant={p}
-                  characters={characters}
-                  monsterInstances={monsterInstances}
-                  monsters={monsters}
+                <>
+                  <ParticipantStatLookup
+                    participant={p}
+                    characters={characters}
+                    monsterInstances={monsterInstances}
+                    monsters={monsters}
+                    encounterId={encounterId}
+                    allParticipants={live.participants}
+                  />
+                  <div className="mt-2">
+                    <HpAdjustForm
+                      compact
+                      disabled={hpMutation.isPending}
+                      onApply={(delta, tempDelta) =>
+                        hpMutation.mutate({
+                          target: p.characterId != null ? 'character' : 'monster',
+                          id: (p.characterId ?? p.monsterInstanceId)!,
+                          delta,
+                          tempDelta,
+                        })
+                      }
+                    />
+                  </div>
+                </>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                {p.effects.map((effect) => (
+                  <EffectBadge
+                    key={effect.effectId}
+                    effect={effect}
+                    removable
+                    onRemove={() => removeEffectMutation.mutate(effect.effectId)}
+                  />
+                ))}
+                <EffectApplyDialog
+                  effectDefinitions={effectDefinitionsQuery.data?.effectDefinitions ?? []}
+                  pending={applyEffectMutation.isPending}
+                  onApply={(input) => applyEffectMutation.mutate({ participant: p, input })}
+                />
+              </div>
+              {isActive && (
+                <ActionEconomyPanel
                   encounterId={encounterId}
-                  allParticipants={live.participants}
+                  participant={p}
+                  abilityScores={resolveAbilityScores(p, characters, monsterInstances, monsters)}
+                  otherParticipants={live.participants.filter((other) => other.participantId !== p.participantId)}
                 />
               )}
             </li>
@@ -166,15 +260,24 @@ export function BattleModeDmPanel({
       </ol>
 
       <div className="flex flex-wrap gap-2">
+        {status === 'preparing' && (
+          <ActionButton onClick={() => startMutation.mutate()} pending={startMutation.isPending}>
+            {t('encounters.tracker.startEncounter')}
+          </ActionButton>
+        )}
         <ActionButton onClick={() => rollInitiativeMutation.mutate(false)} pending={rollInitiativeMutation.isPending} variant="secondary">
           {t('encounters.tracker.rollInitiative')}
         </ActionButton>
-        <ActionButton onClick={() => advanceTurnMutation.mutate()} pending={advanceTurnMutation.isPending}>
-          {t('encounters.tracker.advanceTurn')}
-        </ActionButton>
-        <ActionButton onClick={() => endMutation.mutate()} pending={endMutation.isPending} variant="danger">
-          {t('encounters.tracker.endEncounter')}
-        </ActionButton>
+        {status === 'active' && (
+          <ActionButton onClick={() => advanceTurnMutation.mutate()} pending={advanceTurnMutation.isPending}>
+            {t('encounters.tracker.advanceTurn')}
+          </ActionButton>
+        )}
+        {status !== 'preparing' && (
+          <ActionButton onClick={() => endMutation.mutate()} pending={endMutation.isPending} variant="danger">
+            {t('encounters.tracker.endEncounter')}
+          </ActionButton>
+        )}
       </div>
 
       <div className="flex gap-2 items-center justify-between">

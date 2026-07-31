@@ -3,7 +3,6 @@ export const dashboard = {
   welcome: 'Bienvenido de nuevo, {name}',
   navCampaigns: 'Todas las campañas',
   navBestiary: 'Bestiario',
-  navMaps: 'Mapas',
   navNotes: 'Notas',
   yourCharacters: 'Tus personajes',
   noCharacters: 'Aún no tienes ningún personaje.',

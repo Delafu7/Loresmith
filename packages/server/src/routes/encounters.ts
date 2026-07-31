@@ -15,16 +15,19 @@ import {
   setInitiativeSchema,
   setParticipantFactionSchema,
   setParticipantPositionSchema,
+  setParticipantVisibilitySchema,
   updateEncounterSchema,
   upsertCellOverrideSchema,
   upsertEncounterMapSchema,
 } from '../schemas/encounters.js';
 import { performShoveSchema } from '../schemas/shove.js';
 import { performGrappleSchema } from '../schemas/grapple.js';
+import { recordActionSchema } from '../schemas/combatActions.js';
 import * as encountersService from '../services/encounters.js';
 import { performShove } from '../services/shove.js';
 import { performGrapple } from '../services/grapple.js';
 import * as entityFieldRevealService from '../services/entityFieldReveal.js';
+import * as combatActionsService from '../services/combatActions.js';
 import {
   getIo,
   broadcastCombatStarted,
@@ -42,6 +45,7 @@ import {
   broadcastActionEconomyChanged,
   broadcastDiceRolled,
   broadcastFullStateResync,
+  broadcastActionRecorded,
   pushEncounterRoomJoinForOwner,
 } from '../sockets/broadcast.js';
 
@@ -52,7 +56,7 @@ export const campaignEncountersRouter = Router({ mergeParams: true });
 campaignEncountersRouter.use(requireAuth, requireCampaignMember());
 
 campaignEncountersRouter.get('/', async (req, res) => {
-  const encounters = await encountersService.listEncounters(pool, req.campaignId!);
+  const encounters = await encountersService.listEncounters(pool, req.campaignId!, req.campaignRole!);
   res.json({ encounters });
 });
 
@@ -63,7 +67,9 @@ campaignEncountersRouter.post('/', requireRole('dm'), async (req, res) => {
 });
 
 campaignEncountersRouter.get('/:encounterId', async (req, res) => {
-  const encounter = await encountersService.getEncounter(pool, req.campaignId!, (req.params.encounterId as string));
+  const encounter = await encountersService.getEncounter(
+    pool, req.campaignId!, (req.params.encounterId as string), req.campaignRole!,
+  );
   res.json({ encounter });
 });
 
@@ -290,6 +296,47 @@ encountersRouter.patch('/:id/participants/:pid/faction', requireEncounterDm, asy
   res.json({ participant });
 });
 
+// Encounter visibility by state (nav point 1) — DM-only, e.g. revealing an
+// ambush monster mid-fight. Broadcasts a role-split resync (not a dedicated
+// event) since this genuinely changes what a player can see, not just a
+// display detail.
+encountersRouter.patch('/:id/participants/:pid/visibility', requireEncounterDm, async (req, res) => {
+  const input = setParticipantVisibilitySchema.parse(req.body);
+  const { encounter, participant } = await encountersService.setParticipantVisibility(
+    pool, (req.params.id as string), (req.params.pid as string), input,
+  );
+  await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
+  res.json({ participant });
+});
+
+// Action recording / combat log (nav point 2). Not requireEncounterDm —
+// authorization is per-actor (DM, or the actor participant's owning player),
+// resolved inside combatActionsService.recordAction via the same
+// authorizeParticipantAction gate the action-economy route below uses.
+encountersRouter.post('/:id/actions', async (req, res) => {
+  const input = recordActionSchema.parse(req.body);
+  const encounterId = req.params.id as string;
+  const action = await combatActionsService.recordAction(pool, req.user!.id, encounterId, input);
+  const encounterRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
+  const campaignId = encounterRes.rows[0]?.campaign_id;
+  if (campaignId) await broadcastActionRecorded(getIo(req.app), pool, action, campaignId);
+  res.status(201).json({ action });
+});
+
+// Membership-gated (any campaign role), not DM-only — players read the log
+// too, filtered to what's visible to them (nav point 1).
+encountersRouter.get('/:id/actions', async (req, res) => {
+  const encounterId = req.params.id as string;
+  const encounterRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
+  const row = encounterRes.rows[0];
+  if (!row) throw notFound('Encounter');
+  const role = await requireMembership(pool, row.campaign_id, req.user!.id);
+  const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? '50'), 10) || 50, 1), 200);
+  const offset = Math.max(Number.parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
+  const actions = await combatActionsService.listActionsForEncounter(pool, encounterId, role, { limit, offset });
+  res.json({ actions });
+});
+
 encountersRouter.patch('/:id/participants/:pid/action-economy', requireOwnParticipantOrDm, async (req, res) => {
   const input = applyActionEconomySchema.parse(req.body);
   const { encounter, participant } = await encountersService.applyActionEconomy(
@@ -322,6 +369,24 @@ encountersRouter.post('/:id/participants/:pid/shove', requireEncounterDm, async 
   if (shove.defenderRoll) {
     await broadcastDiceRolled(io, shove.encounter.campaign_id, shove.defenderRoll);
   }
+  // Combat log (nav point 2) — recorded from the route, not from inside
+  // performShove itself, so services/shove.ts doesn't gain a dependency on
+  // services/combatActions.ts; the route already orchestrates every other
+  // side effect (broadcasts) the same way.
+  const shoveAction = await combatActionsService.recordAction(pool, req.user!.id, (req.params.id as string), {
+    actorParticipantId: (req.params.pid as string),
+    targetParticipantIds: [input.targetParticipantId],
+    actionType: 'ability',
+    meansLabel: 'Shove',
+    diceRollId: shove.attackerRoll.id,
+    resultKind: shove.success ? 'effect' : 'miss',
+    effectDescription: shove.success
+      ? shove.outcome === 'push_5ft'
+        ? 'Pushed 5 feet away'
+        : 'Knocked prone'
+      : undefined,
+  });
+  await broadcastActionRecorded(io, pool, shoveAction, shove.encounter.campaign_id);
   res.json({
     participant: shove.participant,
     attackerRoll: shove.attackerRoll,
@@ -352,6 +417,16 @@ encountersRouter.post('/:id/participants/:pid/grapple', requireEncounterDm, asyn
       broadcastEffectApplied(io, sync, grapple.appliedEffect.effect, grapple.appliedEffect.effectDefinitionName);
     }
   }
+  const grappleAction = await combatActionsService.recordAction(pool, req.user!.id, (req.params.id as string), {
+    actorParticipantId: (req.params.pid as string),
+    targetParticipantIds: [input.targetParticipantId],
+    actionType: 'ability',
+    meansLabel: 'Grapple',
+    diceRollId: grapple.attackerRoll.id,
+    resultKind: grapple.success ? 'effect' : 'miss',
+    effectDescription: grapple.success ? 'Grappled' : undefined,
+  });
+  await broadcastActionRecorded(io, pool, grappleAction, grapple.encounter.campaign_id);
   res.json({
     participant: grapple.participant,
     attackerRoll: grapple.attackerRoll,

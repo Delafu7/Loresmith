@@ -29,6 +29,7 @@ import type {
   SetInitiativeInput,
   SetParticipantFactionInput,
   SetParticipantPositionInput,
+  SetParticipantVisibilityInput,
   UpdateEncounterInput,
   UpsertEncounterMapInput,
 } from '../schemas/encounters.js';
@@ -67,6 +68,7 @@ interface ParticipantRow {
   movement_used_ft: number;
   object_interaction_used: boolean;
   last_action_economy_snapshot: ActionEconomySnapshot | null;
+  visible_to_players: boolean;
   [key: string]: unknown;
 }
 
@@ -120,17 +122,35 @@ async function fetchParticipants(client: Pool | PoolClient, encounterId: string)
 
 // ---- CRUD (nested under /campaigns/:id/encounters, DM-gated at the route) ----
 
-export async function listEncounters(pool: Pool, campaignId: string) {
+// Encounter visibility by state (nav point 1): while an encounter is
+// 'preparing' (the DM still configuring it), it must not appear in a
+// non-DM's list at all — not just be inert/greyed-out. The DM always sees
+// everything, matching the "DM sees the full list regardless of state"
+// column-filtering pattern used below in getEncounter/fetchParticipants.
+export async function listEncounters(pool: Pool, campaignId: string, viewerRole: CampaignRole) {
   const result = await pool.query(
-    `SELECT * FROM encounters WHERE campaign_id = $1 ORDER BY created_at DESC`,
+    viewerRole === 'dm'
+      ? `SELECT * FROM encounters WHERE campaign_id = $1 ORDER BY created_at DESC`
+      : `SELECT * FROM encounters WHERE campaign_id = $1 AND status != 'preparing' ORDER BY created_at DESC`,
     [campaignId],
   );
   return result.rows;
 }
 
-export async function getEncounter(pool: Pool, campaignId: string, encounterId: string) {
+// Drops participant rows a non-DM viewer shouldn't see at all (visible_to_players
+// = false — e.g. an ambush the DM hasn't revealed yet). DM always gets every row.
+function filterParticipantsForViewer(participants: ParticipantRow[], viewerRole: CampaignRole): ParticipantRow[] {
+  if (viewerRole === 'dm') return participants;
+  return participants.filter((p) => p.visible_to_players !== false);
+}
+
+export async function getEncounter(pool: Pool, campaignId: string, encounterId: string, viewerRole: CampaignRole) {
   const encounter = await fetchEncounterScoped(pool, campaignId, encounterId);
-  const participants = await fetchParticipants(pool, encounterId);
+  // 404, not 403, so a non-DM probing a known encounter id can't distinguish
+  // "still preparing" from "doesn't exist" — same reasoning as every other
+  // existence-hiding check in this codebase (see notFound()'s call sites).
+  if (viewerRole !== 'dm' && encounter.status === 'preparing') throw notFound('Encounter');
+  const participants = filterParticipantsForViewer(await fetchParticipants(pool, encounterId), viewerRole);
   const map = await getEncounterMap(pool, encounterId);
   return { ...encounter, participants, map: formatMapForWire(map) };
 }
@@ -144,7 +164,7 @@ export async function getEncounter(pool: Pool, campaignId: string, encounterId: 
 export async function getEncounterFlat(pool: Pool, userId: string, encounterId: string) {
   const encounter = await fetchEncounterById(pool, encounterId);
   const role = await requireMembership(pool, encounter.campaign_id, userId);
-  const full = await getEncounter(pool, encounter.campaign_id, encounterId);
+  const full = await getEncounter(pool, encounter.campaign_id, encounterId, role);
   return { ...full, myRole: role };
 }
 
@@ -649,6 +669,44 @@ export async function setParticipantFaction(
   }
 }
 
+// Encounter visibility by state (nav point 1) — DM-only toggle for an
+// individual participant (e.g. revealing an ambush mid-fight). Same
+// bump-sync_seq-and-broadcast-a-resync shape as setParticipantFaction, except
+// the route broadcasts via broadcastFullStateResync (role-split) rather than
+// a dedicated event, since this genuinely changes what a player sees, not
+// just a display detail like faction.
+export async function setParticipantVisibility(
+  pool: Pool,
+  encounterId: string,
+  participantId: string,
+  input: SetParticipantVisibilityInput,
+): Promise<ParticipantMutationResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET visible_to_players = $1 WHERE id = $2 AND encounter_id = $3 RETURNING *`,
+      [input.visible, participantId, encounterId],
+    );
+    const participant = updated.rows[0];
+    if (!participant) throw notFound('Participant');
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participant };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Authorization for PATCH /encounters/:id/participants/:pid/action-economy
 // (battle mode, REVISION-PLAN.md §10.2): unlike every other combat_participants
 // mutation in this app (DM-only via requireEncounterDm in routes/encounters.ts),
@@ -885,6 +943,17 @@ export interface CombatSnapshotParticipant {
   // like "30 ft." (the original seeded bestiary, never force-migrated) — the
   // regexp strips non-digits so either shape resolves to a usable int.
   speed_ft: number | null;
+  // Battle map token art (nav point 4 bug fix): a character's uploaded
+  // portrait, or a monster's homebrew art upload / catalog image_url,
+  // resolved to a displayable URL here (not just the bare FK) since this is
+  // the one query FULL_STATE_SYNC's token rendering actually reads from —
+  // see Token.tsx's former "no image in the payload at all" note.
+  image_url: string | null;
+  // Encounter visibility by state (nav point 1) — filtering by this happens
+  // one layer up, in buildFullStateSyncPayload, not here: this snapshot stays
+  // the full/authoritative internal read (turn order, movement validation,
+  // and action-economy logic all need every participant, hidden or not).
+  visible_to_players: boolean;
 }
 
 export interface CombatSnapshot {
@@ -909,11 +978,15 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             mi.status AS monster_instance_status,
             COALESCE(m.size, 'Medium') AS size,
             cp.faction,
-            COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft
+            COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft,
+            COALESCE(ca_char.file_url, ca_monster.file_url, m.image_url) AS image_url,
+            cp.visible_to_players
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id
+     LEFT JOIN campaign_assets ca_char ON ca_char.id = c.portrait_asset_id
      LEFT JOIN monster_instances mi ON mi.id = cp.monster_instance_id
      LEFT JOIN monsters m ON m.id = mi.monster_id
+     LEFT JOIN campaign_assets ca_monster ON ca_monster.id = m.art_asset_id
      WHERE cp.encounter_id = $1
      ORDER BY cp.turn_order ASC`,
     [encounterId],

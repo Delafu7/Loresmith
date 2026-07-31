@@ -23,6 +23,7 @@ import type { SocketData } from './types.js';
 import { getEncounterCombatSnapshot, getEncounterMap, formatMapForWire } from '../services/encounters.js';
 import type { EncounterMapRow } from '../services/encounters.js';
 import type { CampaignRole } from '../services/authz.js';
+import { isActionVisibleToPlayers, type CombatActionView } from '../services/combatActions.js';
 
 export function getIo(app: Application): Server {
   const io = app.get('io') as Server | undefined;
@@ -179,7 +180,9 @@ export async function pushEncounterRoomJoinForOwner(
   if (targets.length === 0) return;
 
   await Promise.all(targets.map((s) => s.join(room)));
-  const syncPayload = await buildFullStateSyncPayload(pool_, encounterId, campaignId);
+  // Always a player: this function only ever auto-joins the OWNING player's
+  // sockets for their own new PC (see this function's own header comment).
+  const syncPayload = await buildFullStateSyncPayload(pool_, encounterId, campaignId, 'player');
   for (const s of targets) s.emit('FULL_STATE_SYNC', syncPayload);
 }
 
@@ -506,14 +509,18 @@ function formatEffectForWire(e: ActiveEffectRow) {
   };
 }
 
-// No DM/player split anymore — HP, armor class, and effect visibility are
-// all always-visible now that hide/reveal was removed (the one remaining
-// redaction, monster-instance weaknesses, isn't part of this payload shape;
-// it's read via GET /monster-instances/:id, which still redacts).
+// HP/armor class/effect *fields* are still always-visible for any row a
+// viewer can see at all (hide/reveal for those was removed; the one
+// remaining redaction, monster-instance weaknesses, isn't part of this
+// payload — it's read via GET /monster-instances/:id, which still redacts).
+// What DOES split by role now (nav point 1): whether a participant ROW is
+// present at all — a non-DM viewer never receives a hidden (visible_to_players
+// = false) participant, full stop, not even a redacted stub.
 export async function buildFullStateSyncPayload(
   poolOrClient: Pool | PoolClient,
   encounterId: string,
   campaignId: string,
+  viewerRole: CampaignRole,
 ): Promise<Record<string, unknown>> {
   const snapshot = await getEncounterCombatSnapshot(poolOrClient, encounterId);
   const { encounter, participants } = snapshot;
@@ -560,10 +567,20 @@ export async function buildFullStateSyncPayload(
     monsterInstanceStatus: p.monster_instance_status,
     size: p.size,
     faction: p.faction,
+    imageUrl: p.image_url,
     armorClass: p.armor_class,
     hp: { hpCurrent: p.hp_current, hpMax: p.hp_max, hpTemp: p.hp_temp },
     effects: (effectsByTarget.get(effectTargetKey(p.character_id, p.monster_instance_id)) ?? []).map(formatEffectForWire),
+    visibleToPlayers: p.visible_to_players,
   }));
+
+  // DM always gets every row; a non-DM viewer never receives one with
+  // visible_to_players = false. activeParticipantId is left pointing at the
+  // true active participant even if that one happens to be hidden — a
+  // player's client just won't find a matching row to highlight, which
+  // degrades gracefully (no highlight) without leaking who it actually is.
+  const visibleParticipantsOut =
+    viewerRole === 'dm' ? participantsOut : participantsOut.filter((p) => p.visibleToPlayers !== false);
 
   // No DM/player split for map config — same as the MAP_UPDATED/TOKEN_MOVED
   // broadcasts, this isn't sensitive info.
@@ -581,18 +598,30 @@ export async function buildFullStateSyncPayload(
       currentTurnIndex: encounter.current_turn_index,
     },
     activeParticipantId: active?.participant_id ?? null,
-    participants: participantsOut,
+    participants: visibleParticipantsOut,
     map: formatMapForWire(map),
   };
 }
 
 // Pushes a fresh FULL_STATE_SYNC to every currently-connected socket in an
-// encounter room — used after an encounter-wide weakness-reveal reset, where
-// several fields changed at once and a pile of individual REVEAL_CHANGED
-// events would be noisier than just resyncing.
+// encounter room — used after an encounter-wide weakness-reveal reset, and
+// after a participant-visibility toggle (nav point 1), where a single
+// shared payload would either leak a hidden participant to players or hide
+// it from the DM too. Two payloads, computed once each and fanned out to
+// the matching socket ids, same "compute per-role server-side, never a
+// client-side redaction flag" rule as splitSocketsByRole's own header.
 export async function broadcastFullStateResync(io: Server, encounterId: string, campaignId: string): Promise<void> {
-  const payload = await buildFullStateSyncPayload(pool, encounterId, campaignId);
-  io.to(encounterRoom(encounterId)).emit('FULL_STATE_SYNC', payload);
+  const room = encounterRoom(encounterId);
+  const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, campaignId, room);
+
+  if (dmSocketIds.length > 0) {
+    const dmPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'dm');
+    io.to(dmSocketIds).emit('FULL_STATE_SYNC', dmPayload);
+  }
+  if (playerSocketIds.length > 0) {
+    const playerPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player');
+    io.to(playerSocketIds).emit('FULL_STATE_SYNC', playerPayload);
+  }
 }
 
 // ---- DICE_ROLLED (Phase 3.4) ----
@@ -660,4 +689,31 @@ export function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRo
   };
 
   io.to(campaignRoom(campaignId)).emit('DICE_ROLLED', payload);
+}
+
+// ---- ACTION_RECORDED (nav point 2 — combat log) ----
+//
+// No sync_seq bump / resync discipline here, unlike FULL_STATE_SYNC: a
+// missed event just leaves the combat log panel one line behind until its
+// next paginated fetch, much lower-stakes than missing an HP/position
+// change. Role-split for the same reason as FULL_STATE_SYNC (nav point 1) —
+// an action touching a currently-hidden participant must never reach a
+// player's socket at all.
+export async function broadcastActionRecorded(
+  io: Server,
+  poolOrClient: Pool,
+  action: CombatActionView,
+  campaignId: string,
+): Promise<void> {
+  const room = encounterRoom(action.encounterId);
+  const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, campaignId, room);
+  const payload = { encounterId: action.encounterId, campaignId, serverTimestamp: Date.now(), action };
+
+  if (dmSocketIds.length > 0) {
+    io.to(dmSocketIds).emit('ACTION_RECORDED', payload);
+  }
+  if (playerSocketIds.length > 0) {
+    const visibleToPlayers = await isActionVisibleToPlayers(poolOrClient, action.encounterId, action);
+    if (visibleToPlayers) io.to(playerSocketIds).emit('ACTION_RECORDED', payload);
+  }
 }

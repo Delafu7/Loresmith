@@ -10,6 +10,8 @@ export type UiTheme = 'crimson' | 'amber' | 'ember';
 
 export type Locale = 'en' | 'es' | 'fr';
 
+export type TextSize = 'normal' | 'large';
+
 export interface User {
   id: string;
   email: string;
@@ -21,6 +23,11 @@ export interface User {
   // Interface language (i18n first pass) — same personal-preference shape
   // as uiTheme; see i18n/LocaleContext.tsx for how this is applied.
   locale: Locale;
+  // My Profile (nav point 6) — avatar follows the user across every
+  // campaign (not a campaign_assets FK); textSize is the one accessibility
+  // preference backed by a real effect (root font-size override, index.css).
+  avatarUrl: string | null;
+  textSize: TextSize;
 }
 
 export interface Membership {
@@ -377,6 +384,14 @@ export interface SnapshotParticipant {
   // using as a lookup key (see encounters/creatureSize.ts).
   size: string;
   faction: 'player' | 'ally' | 'enemy' | 'neutral';
+  // Nav point 4 bug fix — resolved by the server (character portrait, or
+  // monster homebrew art / catalog image_url); null renders Portrait's
+  // existing initials/silhouette fallback, never a broken-image icon.
+  imageUrl: string | null;
+  // Encounter visibility by state (nav point 1) — always true for a player's
+  // own payload (a hidden row is omitted entirely, never sent redacted); only
+  // meaningful to read for the DM view, to render the reveal/hide toggle.
+  visibleToPlayers: boolean;
 }
 
 // ---- Phase 2: spells/items/resources/effects (packages/server/src/routes/
@@ -456,6 +471,8 @@ export interface ItemCatalogEntry {
   properties: Record<string, unknown> | null;
   description: string | null;
   source: string | null;
+  is_homebrew: boolean;
+  owning_campaign_id: string | null;
 }
 
 // PATCH /characters/:id/items/:itemId body shape (schemas/characterItems.ts's
@@ -473,6 +490,10 @@ export interface CharacterItem {
   id: string;
   character_id: string | null;
   monster_instance_id: string | null;
+  // Campaign-owned stash instance (nav point 5) — set when neither
+  // character_id nor monster_instance_id is (see the add-campaign-item-
+  // stash migration's "exactly one of the three" invariant).
+  campaign_id: string | null;
   item_id: string;
   quantity: number;
   is_equipped: boolean;

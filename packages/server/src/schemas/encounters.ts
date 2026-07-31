@@ -52,6 +52,13 @@ export const setParticipantFactionSchema = z.object({
 });
 export type SetParticipantFactionInput = z.infer<typeof setParticipantFactionSchema>;
 
+// Encounter visibility by state (nav point 1) — DM-only toggle for whether a
+// participant row exists at all in a non-DM viewer's roster/snapshot.
+export const setParticipantVisibilitySchema = z.object({
+  visible: z.boolean(),
+});
+export type SetParticipantVisibilityInput = z.infer<typeof setParticipantVisibilitySchema>;
+
 // REFACTOR-PLAN.md §4 / docs/rules/movement.md §2.1 — 'normal' is
 // deliberately not a valid value here; a normal cell is the absence of a
 // row (see map_cell_overrides' own "sparse table" comment), so removing an

@@ -115,6 +115,8 @@ export interface FullStateSyncEvent extends Envelope {
     monsterInstanceStatus: 'alive' | 'dead' | 'fled' | 'captured' | null;
     size: string;
     faction: 'player' | 'ally' | 'enemy' | 'neutral';
+    imageUrl: string | null;
+    visibleToPlayers: boolean;
   }>;
   map: MapConfig | null;
 }
@@ -230,6 +232,43 @@ export interface DiceRolledEvent {
   createdAt: string;
 }
 
+// ACTION_RECORDED (nav point 2 — combat log). Same "not part of turn-
+// sequencing, no seq" shape as DICE_ROLLED just above: a missed event only
+// leaves the combat log panel one line behind until its next paginated
+// fetch. No visibleToPlayers field for the same reason as DICE_ROLLED —
+// server-side role-split (broadcastActionRecorded) already ensures this only
+// reaches a socket allowed to see it.
+export interface CombatActionTargetWire {
+  characterId: string | null;
+  monsterInstanceId: string | null;
+  name: string;
+}
+
+export interface CombatActionWire {
+  id: string;
+  encounterId: string;
+  actorCharacterId: string | null;
+  actorMonsterInstanceId: string | null;
+  actorName: string;
+  actionType: string;
+  meansName: string | null;
+  diceRollId: string | null;
+  diceRollTotal: number | null;
+  resultKind: string;
+  damageAmount: number | null;
+  damageTypeName: string | null;
+  effectDescription: string | null;
+  createdAt: string;
+  targets: CombatActionTargetWire[];
+}
+
+export interface ActionRecordedEvent {
+  encounterId: string;
+  campaignId: string;
+  serverTimestamp: number;
+  action: CombatActionWire;
+}
+
 export interface ServerToClientEvents {
   COMBAT_STARTED: (payload: CombatStartedEvent) => void;
   COMBAT_ENDED: (payload: CombatEndedEvent) => void;
@@ -249,6 +288,7 @@ export interface ServerToClientEvents {
   PARTICIPANT_FACTION_CHANGED: (payload: ParticipantFactionChangedEvent) => void;
   ACTION_ECONOMY_CHANGED: (payload: ActionEconomyChangedEvent) => void;
   DICE_ROLLED: (payload: DiceRolledEvent) => void;
+  ACTION_RECORDED: (payload: ActionRecordedEvent) => void;
 }
 
 export interface AckOk {

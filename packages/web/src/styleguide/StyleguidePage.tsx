@@ -96,6 +96,8 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     monsterInstanceStatus: null,
     size: 'Medium',
     faction: 'player',
+    imageUrl: null,
+    visibleToPlayers: true,
   },
   {
     participantId: '2',
@@ -120,6 +122,8 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     monsterInstanceStatus: 'alive',
     size: 'Large',
     faction: 'enemy',
+    imageUrl: null,
+    visibleToPlayers: true,
   },
   {
     participantId: '3',
@@ -144,6 +148,8 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     monsterInstanceStatus: 'alive',
     size: 'Small',
     faction: 'enemy',
+    imageUrl: null,
+    visibleToPlayers: true,
   },
 ];
 
@@ -357,7 +363,7 @@ export function StyleguidePage() {
 
         <Section
           title="Sample board"
-          description="Tokens at full size, and below the 30px legibility threshold where Token.tsx swaps to a simplified faction-colored dot with initials (Phase 3 mobile pass). Turn-order strip is the same InitiativeStrip BattleMode.tsx uses."
+          description="Tokens at full size, and below the 30px legibility threshold where Token.tsx swaps to a simplified faction-colored dot with initials (Phase 3 mobile pass). Turn-order strip is the same InitiativeStrip SessionScreen.tsx uses."
         >
           <InitiativeStrip participants={SAMPLE_PARTICIPANTS} activeParticipantId="1" />
           <div className="relative overflow-visible rounded-md bg-stone-950 shadow-sm p-6 flex items-center gap-8">

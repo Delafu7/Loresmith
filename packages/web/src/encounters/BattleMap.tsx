@@ -82,13 +82,6 @@ function cellLabel(x: number, y: number): string {
   return `${columnLabel(x)}${y + 1}`;
 }
 
-const FACTION_OPTIONS: Array<{ value: SnapshotParticipant['faction']; labelKey: 'player' | 'ally' | 'enemy' | 'neutral' }> = [
-  { value: 'player', labelKey: 'player' },
-  { value: 'ally', labelKey: 'ally' },
-  { value: 'enemy', labelKey: 'enemy' },
-  { value: 'neutral', labelKey: 'neutral' },
-];
-
 export function BattleMap({
   encounterId,
   campaignId,
@@ -98,7 +91,7 @@ export function BattleMap({
   encounter,
   isDm,
   myCharacterIds = new Set(),
-  showRoster = true,
+  onOpenSheet,
 }: {
   encounterId: string;
   campaignId: string;
@@ -113,14 +106,14 @@ export function BattleMap({
    * need it — isDm alone already grants unconditional control). Used to
    * decide which tokens a non-DM viewer may drag/tap-move/self-place. */
   myCharacterIds?: Set<string>;
-  /** BattleMode.tsx already renders its own DM/player side panel (HP,
-   * effects, dice — action-oriented tools) alongside this component, so it
-   * turns this off to avoid two participant lists competing for the same
-   * strip of screen; the standalone /maps/:mapId route (which has no other
-   * side panel) leaves it on. Known gap either way: BattleMode's own panels
-   * don't show coordinates or two-way hover-sync with the map — only this
-   * panel does. */
-  showRoster?: boolean;
+  /** Nav point 3 — fires whenever a token is newly selected (never on
+   * deselect), opening ParticipantSheetPanel in SessionScreen's floating
+   * overlay (the map-first redesign's only participant-detail surface —
+   * there's no more side-by-side roster list here; per-participant faction/
+   * visibility/HP controls live in the sheet and the DM "Manage" overlay
+   * instead). Purely additive: selection itself still drives move-targeting
+   * exactly as before whether or not this is supplied. */
+  onOpenSheet?: (participantId: string) => void;
 }) {
   const { t } = useLocale();
   const [showSetup, setShowSetup] = useState(false);
@@ -184,11 +177,6 @@ export function BattleMap({
     // of truth for token position, same discipline as CombatTracker's
     // hpMutation/applyEffectMutation.
     onSuccess: () => setPendingMove(null),
-  });
-
-  const factionMutation = useMutation({
-    mutationFn: ({ participantId, faction }: { participantId: string; faction: SnapshotParticipant['faction'] }) =>
-      api.patch(`/encounters/${encounterId}/participants/${participantId}/faction`, { faction }),
   });
 
   // REFACTOR-PLAN.md §4: terrain overlay + the DM's paint tool. DM-only read
@@ -274,7 +262,7 @@ export function BattleMap({
 
   if (!map) {
     return (
-      <div className="space-y-4">
+      <div className="flex h-full flex-col gap-4">
         {isDm ? (
           <>
             <EmptyState message={t('encounters.battleMap.noMapConfigured')} />
@@ -291,11 +279,10 @@ export function BattleMap({
   const mapHeightPx = map.gridRows * map.cellSizePx;
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full flex-col gap-4">
       {positionMutation.isError && <ErrorBanner message={errorMessage(positionMutation.error)} />}
-      {factionMutation.isError && <ErrorBanner message={errorMessage(factionMutation.error)} />}
 
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="flex flex-shrink-0 items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1 flex-wrap">
           <button
             type="button"
@@ -369,43 +356,15 @@ export function BattleMap({
         <MapSetupPanel campaignId={campaignId} encounterId={encounterId} map={map} onDone={() => setShowSetup(false)} />
       )}
 
-      {/* Mobile: the roster becomes a collapsible drawer ABOVE the map (not
-          a column squeezed below it — Phase 3: "side panels become bottom
-          sheets or a tab bar, not squeezed columns") so it's reachable
-          without scrolling past the board. lg+: unchanged inline side
-          column, rendered separately below. */}
-      {showRoster && (
-        <details className="lg:hidden rounded-md bg-stone-900 shadow-sm">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 text-xs uppercase text-stone-500">
-            {t('encounters.battleMap.rosterCount', { count: placed.length })}
-            <span aria-hidden="true">▾</span>
-          </summary>
-          <div className="px-3 pb-3">
-            <RosterPanel
-              participants={placed}
-              activeParticipantId={activeParticipantId}
-              selectedId={selectedId}
-              onSelect={selectParticipant}
-              isDm={isDm}
-              onChangeFaction={
-                isDm ? (participantId, faction) => factionMutation.mutate({ participantId, faction }) : undefined
-              }
-              bare
-            />
-          </div>
-        </details>
-      )}
-
-      <div className="flex flex-col lg:flex-row gap-4">
-        <div
-          ref={scrollRef}
-          onPointerDown={handleMapPointerDown}
-          onPointerMove={handleMapPointerMove}
-          onPointerUp={handleMapPointerUp}
-          onPointerCancel={handleMapPointerUp}
-          style={{ touchAction: 'pan-x pan-y' }}
-          className="flex-1 min-w-0 overflow-auto bg-stone-950 shadow-sm p-1.5 sm:rounded-md sm:p-3 overscroll-contain max-h-[70dvh] lg:max-h-none"
-        >
+      <div
+        ref={scrollRef}
+        onPointerDown={handleMapPointerDown}
+        onPointerMove={handleMapPointerMove}
+        onPointerUp={handleMapPointerUp}
+        onPointerCancel={handleMapPointerUp}
+        style={{ touchAction: 'pan-x pan-y' }}
+        className="min-h-0 min-w-0 flex-1 overflow-auto bg-stone-950 shadow-sm p-1.5 sm:rounded-md sm:p-3 overscroll-contain"
+      >
           <div style={{ width: mapWidthPx * zoom, height: mapHeightPx * zoom }}>
             <div className="flex" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
               {/* Row-number column */}
@@ -521,7 +480,13 @@ export function BattleMap({
                       isDraggable={canControl(p)}
                       isSelected={p.participantId === selectedId}
                       onMove={(x, y) => positionMutation.mutate({ participantId: p.participantId, x, y })}
-                      onSelect={() => selectParticipant(selectedId === p.participantId ? null : p.participantId)}
+                      onSelect={() => {
+                        const next = selectedId === p.participantId ? null : p.participantId;
+                        selectParticipant(next);
+                        // Nav point 3 — opens the floating participant
+                        // sheet (SessionScreen's SessionOverlayPanel).
+                        if (next !== null) onOpenSheet?.(next);
+                      }}
                     />
                   ))}
                 </div>
@@ -530,28 +495,12 @@ export function BattleMap({
           </div>
         </div>
 
-        {showRoster && (
-          <div className="max-lg:hidden lg:contents">
-            <RosterPanel
-              participants={placed}
-              activeParticipantId={activeParticipantId}
-              selectedId={selectedId}
-              onSelect={selectParticipant}
-              isDm={isDm}
-              onChangeFaction={
-                isDm ? (participantId, faction) => factionMutation.mutate({ participantId, faction }) : undefined
-              }
-            />
-          </div>
-        )}
-      </div>
-
       {/* Tap-to-move confirm bar (docs/design-tokens.md mobile pass) — a
           sticky bottom bar rather than inline, so it stays reachable without
           scrolling back up on a tall mobile layout, with an equally-obvious
           Cancel next to Confirm. */}
       {pendingMove && selectedParticipant && (
-        <div className="sticky bottom-0 z-40 flex flex-wrap items-center justify-between gap-3 rounded-md bg-stone-900 p-3 shadow-lg pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="sticky bottom-0 z-40 flex flex-shrink-0 flex-wrap items-center justify-between gap-3 rounded-md bg-stone-900 p-3 shadow-lg pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="text-sm">
             <span className="text-stone-100 font-medium">{selectedParticipant.name}</span>
             <span className="text-stone-400"> → {cellLabel(pendingMove.x, pendingMove.y)}</span>
@@ -586,7 +535,7 @@ export function BattleMap({
           here is plain ownership — DM places anyone, a player places their
           own unplaced character. */}
       {unplacedControllable.length > 0 && (
-        <div className="rounded-md bg-stone-900 shadow-sm p-3">
+        <div className="flex-shrink-0 rounded-md bg-stone-900 shadow-sm p-3">
           <p className="text-xs text-stone-500 mb-2">{t('encounters.battleMap.unplacedHint')}</p>
           <div className="flex flex-wrap gap-2">
             {unplacedControllable.map((p) => (
@@ -610,88 +559,6 @@ export function BattleMap({
 function clamp10(n: number): number {
   // Avoids float drift (0.1 + 0.2 !== 0.3) from repeated +/- ZOOM_STEP clicks.
   return Math.round(clamp(Math.round(n * 100), ZOOM_MIN * 100, ZOOM_MAX * 100)) / 100;
-}
-
-// REFACTOR-PLAN.md §3: "side panel listing every participant with their
-// current coordinate, two-way synced with the board: hovering or selecting
-// in the list highlights the token and vice versa." Only lists PLACED
-// participants — an unplaced one has no coordinate to show, and already has
-// its own affordance below.
-function RosterPanel({
-  participants,
-  activeParticipantId,
-  selectedId,
-  onSelect,
-  isDm,
-  onChangeFaction,
-  bare = false,
-}: {
-  participants: SnapshotParticipant[];
-  activeParticipantId: string | null;
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
-  isDm: boolean;
-  onChangeFaction?: (participantId: string, faction: SnapshotParticipant['faction']) => void;
-  /** Skips the card shell + "On the board" heading — for embedding inside
-   * the mobile collapsible drawer, whose <summary> already labels it. */
-  bare?: boolean;
-}) {
-  const { t } = useLocale();
-  const Wrapper = bare ? 'div' : 'aside';
-  return (
-    <Wrapper className={bare ? '' : 'lg:w-64 flex-shrink-0 rounded-md bg-stone-900 shadow-sm p-3'}>
-      {!bare && <h3 className="text-xs uppercase text-stone-500 mb-2">{t('encounters.battleMap.onTheBoard')}</h3>}
-      {participants.length === 0 && <EmptyState message={t('encounters.battleMap.noOnePlaced')} />}
-      <ul className="space-y-1">
-        {participants.map((p) => {
-          const isActive = p.participantId === activeParticipantId;
-          const isSelected = p.participantId === selectedId;
-          return (
-            <li
-              key={p.participantId}
-              onMouseEnter={() => onSelect(p.participantId)}
-              onMouseLeave={() => onSelect(null)}
-              onClick={() => onSelect(isSelected ? null : p.participantId)}
-              className={`min-h-11 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${
-                isSelected ? 'bg-amber-950/40 outline outline-1 outline-amber-700' : 'hover:bg-stone-800'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className={`truncate ${isActive ? 'text-amber-400 font-semibold' : 'text-stone-200'}`}>
-                  {isActive && '▶ '}
-                  {p.name}
-                </span>
-                <span className="text-[10px] text-stone-500 flex-shrink-0">
-                  {p.posX != null && p.posY != null ? cellLabel(p.posX, p.posY) : '—'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2 mt-0.5">
-                <span className="text-[10px] text-stone-500">
-                  {t('encounters.battleMap.hpFraction', { current: p.hp.hpCurrent, max: p.hp.hpMax })}
-                </span>
-                {isDm && onChangeFaction ? (
-                  <select
-                    value={p.faction}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => onChangeFaction(p.participantId, e.target.value as SnapshotParticipant['faction'])}
-                    className="min-h-8 rounded border border-stone-700 bg-stone-800 text-stone-300 text-[10px] px-1"
-                  >
-                    {FACTION_OPTIONS.map((f) => (
-                      <option key={f.value} value={f.value}>
-                        {t(`encounters.battleMap.faction.${f.labelKey}`)}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="text-[10px] text-stone-500 capitalize">{t(`encounters.battleMap.faction.${p.faction}`)}</span>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </Wrapper>
-  );
 }
 
 // DM-only grid/background configuration. Inline panel (not a modal/route) so

@@ -77,6 +77,25 @@ export function ActionEconomyPanel({
     },
   });
 
+  // Combat log (nav point 2) — a minimal, target-less row for a named
+  // registry action (Dash/Dodge/Help/Hide/...). The backend only ever knows
+  // about the four generic slots (see actionEconomy.ts's own header
+  // comment), never named actions, so this can't be inferred server-side —
+  // the client fires it alongside spendMutation since it's the one place
+  // that actually knows which named action was just spent. Best-effort,
+  // same as every other secondary mutation in this panel.
+  const recordRegistryActionMutation = useMutation({
+    mutationFn: (vars: { label: string; isDash?: boolean }) =>
+      api.post(`/encounters/${encounterId}/actions`, {
+        actorParticipantId: participant.participantId,
+        targetParticipantIds: [],
+        actionType: vars.isDash ? 'movement' : 'ability',
+        meansLabel: vars.label,
+        resultKind: 'n/a',
+      }),
+    onError: () => {},
+  });
+
   // Dodge (docs/rules/actions.md's Dodge section) actually grants its
   // mechanical benefit — not just a slot-spend label — by applying the
   // seeded "Dodge" effect_definition to whichever participant takes it,
@@ -212,6 +231,7 @@ export function ActionEconomyPanel({
                 disabled={used || spendMutation.isPending}
                 onClick={() => {
                   spendMutation.mutate({ spend: action.slot, dash: action.isDash });
+                  recordRegistryActionMutation.mutate({ label: actionLabel(t, action.key), isDash: action.isDash });
                   if (action.key === 'dodge' && dodgeEffectDefinitionId) {
                     applyDodgeMutation.mutate(dodgeEffectDefinitionId);
                   }
