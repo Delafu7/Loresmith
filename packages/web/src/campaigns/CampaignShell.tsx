@@ -1,16 +1,32 @@
 import { createContext, useContext, useState } from 'react';
-import { NavLink, Outlet, useParams } from 'react-router-dom';
+import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Campaign, CampaignRole } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
-import { useLocale } from '../i18n/LocaleContext';
+import { useLocale, type TranslationKey } from '../i18n/LocaleContext';
 import { useJoinCampaign } from '../lib/useJoinCampaign';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
-import { ThemePicker } from '../components/ThemePicker';
-import { LocalePicker } from '../components/LocalePicker';
 import { Sidebar, NavItemList, NavItem } from '../components/ui/Nav';
 import { isUuid } from '../lib/ids';
+import { useBreadcrumb } from '../components/layout/BreadcrumbContext';
+import { useHeaderBadge } from '../components/layout/HeaderBadgeContext';
+
+// Maps a campaign-nested route's leading path segment to its nav label, so
+// the breadcrumb trail's second segment ("Home › Campaign › Session") is
+// derived once here instead of every nested page registering it itself.
+const SECTION_LABEL_KEYS: Record<string, TranslationKey> = {
+  characters: 'nav.characters',
+  monsters: 'nav.bestiary',
+  items: 'nav.items',
+  session: 'nav.session',
+  'session-log': 'nav.sessionLog',
+  notes: 'nav.notes',
+  'dice-rolls': 'nav.diceRolls',
+  assets: 'nav.assets',
+  catalog: 'nav.catalog',
+  members: 'nav.members',
+};
 
 interface CampaignShellContextValue {
   campaignId: string;
@@ -77,6 +93,7 @@ export function CampaignShell() {
   const campaignId = params.campaignId ?? '';
   const { roleForCampaign } = useAuth();
   const { t } = useLocale();
+  const location = useLocation();
 
   useJoinCampaign(campaignId);
 
@@ -86,49 +103,61 @@ export function CampaignShell() {
     enabled: isUuid(campaignId),
   });
 
+  // Second breadcrumb segment ("Home › Campaign › Session › …") derived
+  // from the current nested route so every section under CampaignShell gets
+  // one automatically, without each page registering it itself.
+  const section = location.pathname.split('/')[3];
+  const sectionLabelKey = section ? SECTION_LABEL_KEYS[section] : undefined;
+  useBreadcrumb(
+    1,
+    campaignQuery.data
+      ? [
+          { label: campaignQuery.data.campaign.name, to: `/campaigns/${campaignId}` },
+          ...(sectionLabelKey ? [{ label: t(sectionLabelKey), to: `/campaigns/${campaignId}/${section}` }] : []),
+        ]
+      : [],
+  );
+
+  const role = roleForCampaign(campaignId) ?? campaignQuery.data?.myRole ?? null;
+  // "Who am I here" now lives on the right of the persistent header, next to
+  // the avatar (see AppHeader/HeaderBadgeContext) — not in the left sidebar
+  // under the campaign name, so every identity indicator is consistently on
+  // one side across the whole app.
+  useHeaderBadge(role);
+
   if (campaignQuery.isLoading) return <Loading label="Loading campaign…" />;
   if (campaignQuery.isError) return <ErrorBanner message={errorMessage(campaignQuery.error)} />;
   if (!campaignQuery.data) return null;
 
-  const role = roleForCampaign(campaignId) ?? campaignQuery.data.myRole;
   const isDm = role === 'dm';
 
   return (
-    <CampaignShellContext.Provider value={{ campaignId, campaign: campaignQuery.data.campaign, role }}>
+    <CampaignShellContext.Provider value={{ campaignId, campaign: campaignQuery.data.campaign, role: role! }}>
       <div className="min-h-dvh bg-stone-950 text-stone-100 flex flex-col md:flex-row">
-        <Sidebar className="pt-[max(1rem,env(safe-area-inset-top))]">
+        <Sidebar>
           <div>
-            <div className="flex flex-wrap gap-x-2 text-xs text-stone-500">
-              <NavLink to="/home" className="hover:text-stone-300">
-                {t('nav.home')}
-              </NavLink>
-              <NavLink to="/campaigns" className="hover:text-stone-300">
-                {t('nav.allCampaigns')}
-              </NavLink>
-            </div>
-            <h1 className="font-display text-lg font-medium mt-1 truncate">{campaignQuery.data.campaign.name}</h1>
-            <span className="text-xs uppercase tracking-wide text-amber-500">{role}</span>
+            <h1 className="font-display text-lg font-medium truncate">{campaignQuery.data.campaign.name}</h1>
           </div>
           <NavItemList>
             <NavItem to="characters">{t('nav.characters')}</NavItem>
             {isDm && <NavItem to="monsters">{t('nav.bestiary')}</NavItem>}
+            {isDm && <NavItem to="items">{t('nav.items')}</NavItem>}
             <NavItem to="session">{t('nav.session')}</NavItem>
             {/* "Session Log" — the DM's per-session recap (SessionLogPage), NOT
                 the live combat view above. Not DM-gated: any member can read the
                 recap log; only the write actions inside the page are DM-only. */}
             <NavItem to="session-log">{t('nav.sessionLog')}</NavItem>
-            <NavItem to="maps">{t('nav.maps')}</NavItem>
             <NavItem to="notes">{t('nav.notes')}</NavItem>
             <NavItem to="dice-rolls">{t('nav.diceRolls')}</NavItem>
             <NavItem to="assets">{t('nav.assets')}</NavItem>
             {isDm && <NavItem to="catalog">{t('nav.catalog')}</NavItem>}
             {isDm && <NavItem to="members">{t('nav.members')}</NavItem>}
           </NavItemList>
-          <div className="mt-auto flex flex-col gap-3 max-md:flex-row max-md:flex-wrap max-md:items-center">
-            {isDm && <ExportCampaignButton campaignId={campaignId} campaignName={campaignQuery.data.campaign.name} />}
-            <LocalePicker />
-            <ThemePicker />
-          </div>
+          {isDm && (
+            <div className="mt-auto">
+              <ExportCampaignButton campaignId={campaignId} campaignName={campaignQuery.data.campaign.name} />
+            </div>
+          )}
         </Sidebar>
         <main className="flex-1 min-w-0">
           <Outlet />

@@ -1,0 +1,48 @@
+// ItemRepositoryPage.tsx (campaign item repository tab: browse catalog,
+// import into the campaign stash, give stash items to characters) — DM-only
+// campaign-scoped item management, mirrors monsters.ts's structure.
+export const items = {
+  dmOnly: 'The item repository is only available to the DM.',
+  type: {
+    weapon: 'Weapon',
+    armor: 'Armor',
+    shield: 'Shield',
+    tool: 'Tool',
+    adventuring_gear: 'Adventuring gear',
+    magic_item: 'Magic item',
+    consumable: 'Consumable',
+    mount: 'Mount',
+    vehicle: 'Vehicle',
+  },
+  rarity: {
+    mundane: 'Mundane',
+    common: 'Common',
+    uncommon: 'Uncommon',
+    rare: 'Rare',
+    very_rare: 'Very rare',
+    legendary: 'Legendary',
+    artifact: 'Artifact',
+  },
+  list: {
+    heading: 'Item catalog',
+    manageCatalogLink: 'Create / duplicate item entries →',
+    searchPlaceholder: 'Search items…',
+    allTypes: 'All types',
+    allRarities: 'All rarities',
+    colName: 'Name',
+    colType: 'Type',
+    colRarity: 'Rarity',
+    colQty: 'Qty',
+    homebrewBadge: 'Homebrew',
+    importToStash: 'Import to stash',
+    noMatches: 'No items match this filter.',
+  },
+  stash: {
+    heading: 'Campaign stash',
+    empty: 'No items in the stash yet — import one from the catalog above.',
+    removeAria: 'Remove from stash',
+    selectCharacter: 'Select a character…',
+    giveButton: 'Give',
+    itemFallback: 'Item #{id}',
+  },
+};

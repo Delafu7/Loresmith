@@ -25,6 +25,7 @@ import {
   monsterInstancesRouter,
 } from './routes/monsters.js';
 import { campaignEncountersRouter, encountersRouter } from './routes/encounters.js';
+import { campaignItemStashRouter } from './routes/campaignItems.js';
 import { encounterEffectsRouter, effectsRouter } from './routes/effects.js';
 import { campaignRestsRouter } from './routes/rests.js';
 import { notesRouter } from './routes/notes.js';
@@ -107,6 +108,7 @@ async function main(): Promise<void> {
   app.use('/campaigns/:id/rests', campaignRestsRouter);
   app.use('/campaigns/:id/assets', campaignAssetsRouter);
   app.use('/campaigns/:id/catalog', campaignCatalogRouter);
+  app.use('/campaigns/:id/item-stash', campaignItemStashRouter);
   app.use('/campaigns', campaignsRouter); // handles /, /:id, /:id/members, /:id/sessions itself
 
   // Flat resource-id-keyed routers. encounterEffectsRouter is mounted

@@ -4,7 +4,7 @@ import { queryClient } from './lib/queryClient';
 import { AuthProvider } from './auth/AuthContext';
 import { LocaleProvider } from './i18n/LocaleContext';
 import { SocketProvider } from './lib/SocketContext';
-import { RequireAuth } from './auth/RequireAuth';
+import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage } from './auth/LoginPage';
 import { RegisterPage } from './auth/RegisterPage';
 import { LandingPage } from './landing/LandingPage';
@@ -15,8 +15,8 @@ import { CharactersListPage } from './characters/CharactersListPage';
 import { CharacterSheetPage } from './characters/CharacterSheetPage';
 import { MonstersPage } from './monsters/MonstersPage';
 import { CreatureEditorPage } from './monsters/CreatureEditorPage';
+import { ItemRepositoryPage } from './items/ItemRepositoryPage';
 import { EncountersPage } from './encounters/EncountersPage';
-import { MapsPage } from './encounters/MapsPage';
 import { NotesPage } from './notes/NotesPage';
 import { SessionLogPage } from './sessions/SessionLogPage';
 import { DiceRollHistoryPage } from './dice/DiceRollHistoryPage';
@@ -24,13 +24,12 @@ import { BestiaryLayout } from './bestiary/BestiaryLayout';
 import { BestiaryBasicPage } from './bestiary/BestiaryBasicPage';
 import { BestiaryCampaignPage, BestiaryCampaignPickerPage } from './bestiary/BestiaryCampaignPage';
 import { CreatureSheetPage } from './bestiary/CreatureSheetPage';
-import { MapsIndexPage } from './maps/MapsIndexPage';
-import { FullscreenMapPage } from './maps/FullscreenMapPage';
 import { NotesIndexPage } from './notes/NotesIndexPage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
 import { CatalogEditorPage } from './catalog/CatalogEditorPage';
 import { CampaignMembersPage } from './campaigns/CampaignMembersPage';
 import { AssetsPage } from './assets/AssetsPage';
+import { ProfilePage } from './profile/ProfilePage';
 
 function App() {
   return (
@@ -48,104 +47,49 @@ function App() {
                   RequireAuth. */}
               <Route path="/styleguide" element={<StyleguidePage />} />
 
-              <Route
-                path="/home"
-                element={
-                  <RequireAuth>
-                    <DashboardPage />
-                  </RequireAuth>
-                }
-              />
+              {/* Every authenticated route shares one persistent header/breadcrumb
+                  shell (AppLayout) instead of each page wrapping itself in its
+                  own <RequireAuth> and building its own ad hoc header. */}
+              <Route element={<AppLayout />}>
+                <Route path="/home" element={<DashboardPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
 
-              <Route
-                path="/campaigns"
-                element={
-                  <RequireAuth>
-                    <CampaignListPage />
-                  </RequireAuth>
-                }
-              />
+                <Route path="/campaigns" element={<CampaignListPage />} />
 
-              {/* Global bestiary (REFACTOR-PLAN.md §1) — cross-campaign, distinct
-                  from the per-campaign Bestiary tab inside CampaignShell below. */}
-              <Route
-                path="/bestiary"
-                element={
-                  <RequireAuth>
-                    <BestiaryLayout />
-                  </RequireAuth>
-                }
-              >
-                <Route index element={<Navigate to="basic" replace />} />
-                <Route path="basic" element={<BestiaryBasicPage />} />
-                <Route path="campaign" element={<BestiaryCampaignPickerPage />} />
-                <Route path="campaign/:id" element={<BestiaryCampaignPage />} />
-              </Route>
-              <Route
-                path="/creature/:id"
-                element={
-                  <RequireAuth>
-                    <CreatureSheetPage />
-                  </RequireAuth>
-                }
-              />
+                {/* Global bestiary (REFACTOR-PLAN.md §1) — cross-campaign, distinct
+                    from the per-campaign Bestiary tab inside CampaignShell below. */}
+                <Route path="/bestiary" element={<BestiaryLayout />}>
+                  <Route index element={<Navigate to="basic" replace />} />
+                  <Route path="basic" element={<BestiaryBasicPage />} />
+                  <Route path="campaign" element={<BestiaryCampaignPickerPage />} />
+                  <Route path="campaign/:id" element={<BestiaryCampaignPage />} />
+                </Route>
+                <Route path="/creature/:id" element={<CreatureSheetPage />} />
 
-              {/* Cross-campaign maps index + standalone full-screen map view
-                  (REFACTOR-PLAN.md §1/§3). */}
-              <Route
-                path="/maps"
-                element={
-                  <RequireAuth>
-                    <MapsIndexPage />
-                  </RequireAuth>
-                }
-              />
-              <Route
-                path="/maps/:mapId"
-                element={
-                  <RequireAuth>
-                    <FullscreenMapPage />
-                  </RequireAuth>
-                }
-              />
+                <Route path="/notes" element={<NotesIndexPage />} />
 
-              <Route
-                path="/notes"
-                element={
-                  <RequireAuth>
-                    <NotesIndexPage />
-                  </RequireAuth>
-                }
-              />
-
-              <Route
-                path="/campaigns/:campaignId"
-                element={
-                  <RequireAuth>
-                    <CampaignShell />
-                  </RequireAuth>
-                }
-              >
-                <Route index element={<Navigate to="characters" replace />} />
-                <Route path="characters" element={<CharactersListPage />} />
-                <Route path="characters/:characterId" element={<CharacterSheetPage />} />
-                <Route path="monsters" element={<MonstersPage />} />
-                <Route path="monsters/new" element={<CreatureEditorPage />} />
-                <Route path="monsters/:monsterId/edit" element={<CreatureEditorPage />} />
-                {/* "session" per REFACTOR-PLAN.md §1 (renamed from "turns") — this
-                    is the live-session view; it becomes battle mode automatically
-                    once an encounter goes active (see EncountersPage/BattleMode). */}
-                <Route path="session" element={<EncountersPage />} />
-                {/* "session-log" — the DM's per-session recap (number, title, date
-                    played, recap text). Distinct from "session" above (the live
-                    combat view); see CampaignShell.tsx's nav item comment. */}
-                <Route path="session-log" element={<SessionLogPage />} />
-                <Route path="maps" element={<MapsPage />} />
-                <Route path="notes" element={<NotesPage />} />
-                <Route path="dice-rolls" element={<DiceRollHistoryPage />} />
-                <Route path="assets" element={<AssetsPage />} />
-                <Route path="catalog" element={<CatalogEditorPage />} />
-                <Route path="members" element={<CampaignMembersPage />} />
+                <Route path="/campaigns/:campaignId" element={<CampaignShell />}>
+                  <Route index element={<Navigate to="characters" replace />} />
+                  <Route path="characters" element={<CharactersListPage />} />
+                  <Route path="characters/:characterId" element={<CharacterSheetPage />} />
+                  <Route path="monsters" element={<MonstersPage />} />
+                  <Route path="monsters/new" element={<CreatureEditorPage />} />
+                  <Route path="monsters/:monsterId/edit" element={<CreatureEditorPage />} />
+                  <Route path="items" element={<ItemRepositoryPage />} />
+                  {/* "session" per REFACTOR-PLAN.md §1 (renamed from "turns") — this
+                      is the live-session view; it becomes battle mode automatically
+                      once an encounter goes active (see EncountersPage/BattleMode). */}
+                  <Route path="session" element={<EncountersPage />} />
+                  {/* "session-log" — the DM's per-session recap (number, title, date
+                      played, recap text). Distinct from "session" above (the live
+                      combat view); see CampaignShell.tsx's nav item comment. */}
+                  <Route path="session-log" element={<SessionLogPage />} />
+                  <Route path="notes" element={<NotesPage />} />
+                  <Route path="dice-rolls" element={<DiceRollHistoryPage />} />
+                  <Route path="assets" element={<AssetsPage />} />
+                  <Route path="catalog" element={<CatalogEditorPage />} />
+                  <Route path="members" element={<CampaignMembersPage />} />
+                </Route>
               </Route>
 
               <Route path="*" element={<Navigate to="/" replace />} />

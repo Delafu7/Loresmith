@@ -2,7 +2,7 @@ import { Fragment, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { MonsterCatalogEntry, MonsterInstance, StatBlockEntry } from '../lib/types';
+import type { Encounter, MonsterCatalogEntry, MonsterInstance, StatBlockEntry } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useDamageTypesCatalog } from '../lib/useCatalog';
 import { useLocale } from '../i18n/LocaleContext';
@@ -19,20 +19,33 @@ export function MonstersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [creatureTypeFilter, setCreatureTypeFilter] = useState('');
+  const [crMinFilter, setCrMinFilter] = useState('');
+  const [crMaxFilter, setCrMaxFilter] = useState('');
   const [expandedMonsterId, setExpandedMonsterId] = useState<string | null>(null);
+  // Nav point 5 — multi-select import straight into an encounter (not just
+  // the campaign pool below): a per-row quantity plus a single target-
+  // encounter picker, rather than the old one-at-a-time "spawn, then go add
+  // it to the encounter separately" flow.
+  const [importQuantities, setImportQuantities] = useState<Record<string, number>>({});
+  const [importEncounterId, setImportEncounterId] = useState('');
 
-  const bestiaryQueryKey = ['catalog', 'monsters', campaign.srd_edition, campaignId];
+  const bestiaryParams = new URLSearchParams({ edition: campaign.srd_edition, campaignId });
+  if (crMinFilter) bestiaryParams.set('crMin', crMinFilter);
+  if (crMaxFilter) bestiaryParams.set('crMax', crMaxFilter);
+  const bestiaryQueryKey = ['catalog', 'monsters', campaign.srd_edition, campaignId, crMinFilter, crMaxFilter];
   const bestiaryQuery = useQuery({
     queryKey: bestiaryQueryKey,
-    queryFn: () =>
-      api.get<{ monsters: MonsterCatalogEntry[] }>(
-        `/catalog/monsters?edition=${campaign.srd_edition}&campaignId=${campaignId}`,
-      ),
+    queryFn: () => api.get<{ monsters: MonsterCatalogEntry[] }>(`/catalog/monsters?${bestiaryParams.toString()}`),
   });
 
   const instancesQuery = useQuery({
     queryKey: ['monsterInstances', campaignId],
     queryFn: () => api.get<{ monsterInstances: MonsterInstance[] }>(`/campaigns/${campaignId}/monster-instances`),
+  });
+
+  const encountersQuery = useQuery({
+    queryKey: ['encounters', campaignId],
+    queryFn: () => api.get<{ encounters: Encounter[] }>(`/campaigns/${campaignId}/encounters`),
   });
 
   const spawnMutation = useMutation({
@@ -45,6 +58,36 @@ export function MonstersPage() {
       void queryClient.invalidateQueries({ queryKey: ['monsterInstances', campaignId] });
     },
   });
+
+  // Spawns `quantity` instances of each selected monster (createMonsterInstance
+  // auto-numbers them — "Goblin 1, Goblin 2..." — so no client-side naming
+  // logic is needed here) and adds every one straight to importEncounterId,
+  // sequentially: each step depends on the previous instance actually
+  // existing before it can be added as a participant, so this can't be
+  // parallelized with Promise.all without risking a half-finished import on
+  // a mid-batch failure being harder to reason about.
+  const importToEncounterMutation = useMutation({
+    mutationFn: async () => {
+      const entries = Object.entries(importQuantities).filter(([, qty]) => qty > 0);
+      for (const [monsterId, qty] of entries) {
+        const monster = bestiaryQuery.data?.monsters.find((m) => m.id === monsterId);
+        if (!monster) continue;
+        for (let i = 0; i < qty; i++) {
+          const { monsterInstance } = await api.post<{ monsterInstance: MonsterInstance }>(
+            `/campaigns/${campaignId}/monster-instances`,
+            { monsterId: monster.id, hpCurrent: monster.hit_point_average },
+          );
+          await api.post(`/encounters/${importEncounterId}/participants`, { monsterInstanceId: monsterInstance.id });
+        }
+      }
+    },
+    onSuccess: () => {
+      setImportQuantities({});
+      void queryClient.invalidateQueries({ queryKey: ['monsterInstances', campaignId] });
+    },
+  });
+
+  const totalImportQuantity = Object.values(importQuantities).reduce((sum, qty) => sum + qty, 0);
 
   const hpMutation = useMutation({
     mutationFn: ({ id, delta, tempDelta }: { id: string; delta: number; tempDelta: number }) =>
@@ -124,6 +167,22 @@ export function MonstersPage() {
                 </option>
               ))}
             </select>
+            <input
+              type="number"
+              min={0}
+              placeholder={t('monsters.list.crMin')}
+              value={crMinFilter}
+              onChange={(e) => setCrMinFilter(e.target.value)}
+              className="w-20 rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+            />
+            <input
+              type="number"
+              min={0}
+              placeholder={t('monsters.list.crMax')}
+              value={crMaxFilter}
+              onChange={(e) => setCrMaxFilter(e.target.value)}
+              className="w-20 rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+            />
             <button
               type="button"
               onClick={() => navigate(`/campaigns/${campaignId}/monsters/new`)}
@@ -139,6 +198,33 @@ export function MonstersPage() {
         {deleteMonsterMutation.isError && <ErrorBanner message={errorMessage(deleteMonsterMutation.error)} />}
         {duplicateMonsterMutation.isError && <ErrorBanner message={errorMessage(duplicateMonsterMutation.error)} />}
         {spawnMutation.isError && <ErrorBanner message={errorMessage(spawnMutation.error)} />}
+        {importToEncounterMutation.isError && <ErrorBanner message={errorMessage(importToEncounterMutation.error)} />}
+
+        <div className="flex flex-wrap items-center gap-2 rounded-md bg-stone-900 shadow-sm px-3 py-2">
+          <span className="text-xs text-stone-500">{t('monsters.list.importToEncounterLabel')}</span>
+          <select
+            value={importEncounterId}
+            onChange={(e) => setImportEncounterId(e.target.value)}
+            className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+          >
+            <option value="">{t('monsters.list.selectEncounter')}</option>
+            {encountersQuery.data?.encounters.map((enc) => (
+              <option key={enc.id} value={enc.id}>
+                {enc.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={totalImportQuantity === 0 || !importEncounterId || importToEncounterMutation.isPending}
+            onClick={() => importToEncounterMutation.mutate()}
+            className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
+          >
+            {importToEncounterMutation.isPending
+              ? t('monsters.list.importing')
+              : t('monsters.list.importToEncounterButton', { count: totalImportQuantity })}
+          </button>
+        </div>
 
         <div className="overflow-x-auto rounded-lg border border-stone-800">
           <table className="w-full text-sm">
@@ -149,6 +235,7 @@ export function MonstersPage() {
                 <th className="text-left px-3 py-2">{t('monsters.list.colCr')}</th>
                 <th className="text-left px-3 py-2">{t('monsters.list.colAc')}</th>
                 <th className="text-left px-3 py-2">{t('monsters.list.colHp')}</th>
+                <th className="text-left px-3 py-2">{t('monsters.list.colQty')}</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -179,6 +266,37 @@ export function MonstersPage() {
                     <td className="px-3 py-2 text-stone-400">{m.challenge_rating}</td>
                     <td className="px-3 py-2 text-stone-400">{m.armor_class}</td>
                     <td className="px-3 py-2 text-stone-400">{m.hit_point_average}</td>
+                    <td className="px-3 py-2">
+                      {(() => {
+                        const alreadySpawned =
+                          m.is_unique &&
+                          (instancesQuery.data?.monsterInstances.some((mi) => mi.monster_id === m.id) ?? false);
+                        const max = m.is_unique ? 1 : 20;
+                        return (
+                          <input
+                            type="number"
+                            min={0}
+                            max={max}
+                            disabled={alreadySpawned}
+                            title={alreadySpawned ? t('monsters.list.uniqueAlreadySpawnedTitle') : undefined}
+                            value={importQuantities[m.id] ?? ''}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              setImportQuantities((prev) => {
+                                const next = { ...prev };
+                                if (raw === '') {
+                                  delete next[m.id];
+                                } else {
+                                  next[m.id] = Math.max(0, Math.min(max, Number(raw)));
+                                }
+                                return next;
+                              });
+                            }}
+                            className="w-14 rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-sm text-stone-100 disabled:opacity-40"
+                          />
+                        );
+                      })()}
+                    </td>
                     <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
                       <button
                         type="button"
@@ -239,7 +357,7 @@ export function MonstersPage() {
                   </tr>
                   {expandedMonsterId === m.id && (
                     <tr className="border-t border-stone-800">
-                      <td colSpan={6} className="px-3 py-3 bg-stone-950/40">
+                      <td colSpan={7} className="px-3 py-3 bg-stone-950/40">
                         <StatBlock monster={m} />
                       </td>
                     </tr>
@@ -248,7 +366,7 @@ export function MonstersPage() {
               ))}
               {filteredMonsters.length === 0 && !bestiaryQuery.isLoading && (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={7}>
                     <EmptyState message={t('monsters.list.noMatches')} />
                   </td>
                 </tr>
