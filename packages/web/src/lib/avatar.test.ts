@@ -1,10 +1,8 @@
-// Unit tests for the home-screen redesign's two pure helpers — everything
-// else in DashboardPage.tsx is JSX layout with no independent branching
-// worth a render test (query loading/error/empty states all reuse
-// components already covered elsewhere).
+// Unit tests for the app's two pure avatar helpers, shared by DashboardPage's
+// character cards and the app header's UserMenu (components/layout/UserMenu.tsx).
 
 import { describe, expect, it } from 'vitest';
-import { avatarColor, initials, AVATAR_COLORS } from './DashboardPage';
+import { avatarColor, initials, AVATAR_COLORS } from './avatar';
 
 describe('avatarColor', () => {
   it('always returns one of the fixed theme-slot classes', () => {
