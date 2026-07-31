@@ -1,11 +1,9 @@
 export const nav = {
-  home: '← Accueil',
-  allCampaigns: 'Toutes les campagnes',
   characters: 'Personnages',
   bestiary: 'Bestiaire',
+  items: 'Objets',
   session: 'Session',
   sessionLog: 'Journal de session',
-  maps: 'Cartes',
   notes: 'Notes',
   diceRolls: 'Lancers de dés',
   assets: 'Ressources',
@@ -13,4 +11,7 @@ export const nav = {
   members: 'Membres',
   exportCampaign: 'Exporter la campagne (JSON)',
   exporting: 'Exportation…',
+  logoAria: 'Loresmith — aller à l’accueil',
+  userMenuAria: '{name} — menu du compte',
+  myProfile: 'Mon profil',
 };

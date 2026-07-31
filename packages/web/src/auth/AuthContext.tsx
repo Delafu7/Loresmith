@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Locale, Membership, UiTheme, User } from '../lib/types';
+import type { Locale, Membership, TextSize, UiTheme, User } from '../lib/types';
 import { getSocket } from '../lib/socket';
 
-interface MeResponse {
+export interface MeResponse {
   user: User;
   memberships: Membership[];
 }
@@ -24,6 +24,8 @@ interface AuthContextValue {
   themePending: boolean;
   setLocale: (locale: Locale) => void;
   localePending: boolean;
+  setTextSize: (textSize: TextSize) => void;
+  textSizePending: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -79,6 +81,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const textSizeMutation = useMutation({
+    mutationFn: (textSize: TextSize) => api.patch<{ user: User }>('/auth/me/text-size', { textSize }),
+    onSuccess: (data) => {
+      queryClient.setQueryData<MeResponse>(['me'], (prev) => (prev ? { ...prev, user: data.user } : prev));
+    },
+  });
+
   // Applied as soon as the logged-in user's theme is known (including right
   // after login/register/refresh) — every `amber-*`/`stone-*` Tailwind class
   // anywhere in the app re-colors via index.css's [data-theme] overrides, no
@@ -89,6 +98,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       document.documentElement.dataset.theme = meQuery.data.user.uiTheme;
     }
   }, [meQuery.data?.user?.uiTheme]);
+
+  // Same shape as the theme effect above — index.css's [data-text-size="large"]
+  // scales the root font-size, so every existing rem-based Tailwind text-*
+  // class scales with it, no per-component change needed.
+  useEffect(() => {
+    if (meQuery.data?.user) {
+      document.documentElement.dataset.textSize = meQuery.data.user.textSize;
+    }
+  }, [meQuery.data?.user?.textSize]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -113,8 +131,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       themePending: themeMutation.isPending,
       setLocale: (locale: Locale) => localeMutation.mutate(locale),
       localePending: localeMutation.isPending,
+      setTextSize: (textSize: TextSize) => textSizeMutation.mutate(textSize),
+      textSizePending: textSizeMutation.isPending,
     }),
-    [meQuery.data, meQuery.isLoading, loginMutation, registerMutation, logoutMutation, themeMutation, localeMutation],
+    [
+      meQuery.data,
+      meQuery.isLoading,
+      loginMutation,
+      registerMutation,
+      logoutMutation,
+      themeMutation,
+      localeMutation,
+      textSizeMutation,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

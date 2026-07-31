@@ -13,6 +13,8 @@ export interface AuthedUser {
   displayName: string;
   uiTheme: 'crimson' | 'amber' | 'ember';
   locale: 'en' | 'es' | 'fr';
+  avatarUrl: string | null;
+  textSize: 'normal' | 'large';
 }
 
 declare global {
@@ -36,8 +38,10 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     display_name: string;
     ui_theme: 'crimson' | 'amber' | 'ember';
     locale: 'en' | 'es' | 'fr';
+    avatar_url: string | null;
+    text_size: 'normal' | 'large';
   }>(
-    `SELECT id, email, display_name, ui_theme, locale FROM users WHERE id = $1`,
+    `SELECT id, email, display_name, ui_theme, locale, avatar_url, text_size FROM users WHERE id = $1`,
     [userId],
   );
   const row = result.rows[0];
@@ -47,6 +51,14 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     throw new AppError('UNAUTHENTICATED', 'Session is no longer valid');
   }
 
-  req.user = { id: row.id, email: row.email, displayName: row.display_name, uiTheme: row.ui_theme, locale: row.locale };
+  req.user = {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    uiTheme: row.ui_theme,
+    locale: row.locale,
+    avatarUrl: row.avatar_url,
+    textSize: row.text_size,
+  };
   next();
 }

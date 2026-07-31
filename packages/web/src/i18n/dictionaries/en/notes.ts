@@ -17,7 +17,6 @@ export const notes = {
   editModalTitle: 'Edit note',
   saveChanges: 'Save changes',
   // NotesIndexPage.tsx — cross-campaign notes index.
-  indexBackHome: '← Home',
   indexYourNotes: 'Your notes',
   indexCampaignNotes: 'Campaign notes',
   indexEmpty: 'Nothing here yet.',

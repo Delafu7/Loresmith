@@ -11,4 +11,5 @@ export const common = {
   delete: 'Delete',
   edit: 'Edit',
   create: 'Create',
+  back: '← Back',
 };

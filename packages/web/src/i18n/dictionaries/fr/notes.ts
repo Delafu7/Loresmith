@@ -13,7 +13,6 @@ export const notes = {
   createdUpdated: 'Créée le {created} · Mise à jour le {updated}',
   editModalTitle: 'Modifier la note',
   saveChanges: 'Enregistrer les modifications',
-  indexBackHome: '← Accueil',
   indexYourNotes: 'Vos notes',
   indexCampaignNotes: 'Notes de la campagne',
   indexEmpty: 'Rien ici pour le moment.',

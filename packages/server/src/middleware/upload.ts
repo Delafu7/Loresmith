@@ -91,3 +91,52 @@ export function handleAssetUpload(req: Request, res: Response, next: NextFunctio
     next(new AppError('VALIDATION_ERROR', err instanceof Error ? err.message : 'Upload failed'));
   });
 }
+
+// My Profile avatar upload (nav point 6) — a user's avatar isn't scoped to
+// any single campaign (unlike campaign_assets), so this is a sibling multer
+// config, not a reuse of assetUpload: same mime allowlist/size limit/
+// randomUUID-filename discipline, but keyed by req.user.id (set by
+// requireAuth upstream) instead of req.params.id, and stored under a
+// separate uploads/users/ subtree.
+const avatarStorage = multer.diskStorage({
+  destination(req, _file, cb) {
+    const userId = req.user!.id;
+    const dir = path.join(UPLOAD_ROOT, 'users', String(userId));
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename(_req, file, cb) {
+    const ext = MIME_EXTENSIONS[file.mimetype];
+    cb(null, `${crypto.randomUUID()}.${ext}`);
+  },
+});
+
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter(_req, file, cb) {
+    if (!MIME_EXTENSIONS[file.mimetype]) {
+      cb(new AppError('VALIDATION_ERROR', `Unsupported file type: ${file.mimetype}`));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+export function handleAvatarUpload(req: Request, res: Response, next: NextFunction): void {
+  avatarUpload.single('file')(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof AppError) {
+      next(err);
+      return;
+    }
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      next(new AppError('VALIDATION_ERROR', `File exceeds the ${MAX_UPLOAD_BYTES} byte upload limit`));
+      return;
+    }
+    next(new AppError('VALIDATION_ERROR', err instanceof Error ? err.message : 'Upload failed'));
+  });
+}

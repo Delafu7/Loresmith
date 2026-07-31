@@ -1,6 +1,5 @@
 export const campaigns = {
   title: 'Campañas',
-  logOut: 'Cerrar sesión',
   importButton: 'Importar campaña (JSON)',
   importing: 'Importando…',
   invalidJsonFile: 'Ese archivo no es JSON válido.',

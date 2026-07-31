@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Campaign } from '../lib/types';
-import { useAuth } from '../auth/AuthContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { useLocale } from '../i18n/LocaleContext';
+import { useBreadcrumb } from '../components/layout/BreadcrumbContext';
 
 // Phase 4: JSON campaign import — always creates a brand-new campaign owned
 // by the current user (services/campaignImport.ts never overwrites/merges
@@ -57,10 +57,11 @@ function ImportCampaignButton({ onImported }: { onImported: (campaignId: string)
 
 export function CampaignListPage() {
   const { t } = useLocale();
-  const { user, logout } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
+
+  useBreadcrumb(1, [{ label: t('campaigns.title') }]);
 
   const campaignsQuery = useQuery({
     queryKey: ['campaigns'],
@@ -94,20 +95,6 @@ export function CampaignListPage() {
 
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{t('campaigns.title')}</h1>
-        <div className="flex items-center gap-4 text-sm text-stone-400">
-          <span>{user?.displayName}</span>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            className="rounded-md border border-stone-700 px-3 py-1.5 hover:bg-stone-800"
-          >
-            {t('campaigns.logOut')}
-          </button>
-        </div>
-      </header>
-
       <main className="max-w-3xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <h2 className="text-lg font-medium">{t('campaigns.yourCampaigns')}</h2>

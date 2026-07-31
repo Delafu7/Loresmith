@@ -9,6 +9,7 @@ import { api } from '../lib/api';
 import type { DashboardResponse } from '../lib/types';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { useLocale } from '../i18n/LocaleContext';
+import { useBreadcrumb } from '../components/layout/BreadcrumbContext';
 
 function relativeTime(iso: string, t: ReturnType<typeof useLocale>['t']): string {
   const diffSec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -23,6 +24,8 @@ function relativeTime(iso: string, t: ReturnType<typeof useLocale>['t']): string
 
 export function NotesIndexPage() {
   const { t } = useLocale();
+  useBreadcrumb(1, [{ label: t('notes.title') }]);
+
   const dashboardQuery = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.get<DashboardResponse>('/me/dashboard'),
@@ -30,10 +33,7 @@ export function NotesIndexPage() {
 
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] flex items-center gap-4 sm:px-6">
-        <Link to="/home" className="text-xs text-stone-500 hover:text-stone-300">
-          {t('notes.indexBackHome')}
-        </Link>
+      <header className="border-b border-stone-800 px-4 py-4 flex items-center gap-4 sm:px-6">
         <h1 className="font-display text-xl font-medium">{t('notes.title')}</h1>
       </header>
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-8 sm:py-8">

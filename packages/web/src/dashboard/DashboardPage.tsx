@@ -6,12 +6,11 @@ import type { CampaignInvitation, DashboardCharacter, DashboardResponse } from '
 import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
-import { ThemePicker } from '../components/ThemePicker';
-import { LocalePicker } from '../components/LocalePicker';
 import { Card, CardKicker } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button, ButtonLink } from '../components/ui/Button';
 import { HPBar } from '../components/HPBar';
+import { avatarColor, initials } from '../lib/avatar';
 
 function relativeTime(iso: string): string {
   const diffSec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -22,26 +21,6 @@ function relativeTime(iso: string): string {
   if (diffHour < 24) return `${diffHour}h ago`;
   const diffDay = Math.round(diffHour / 24);
   return `${diffDay}d ago`;
-}
-
-// Deterministic per-character avatar tint — same character always gets the
-// same color across a session/reload, cycling through the app's existing
-// amber/stone theme slots (design-tokens.md: "amber-500/600/700 = avatar
-// fill variety") rather than inventing new hardcoded hex colors, so this
-// still repaints correctly under every theme (ember/crimson/amber) and dark
-// mode alike.
-export const AVATAR_COLORS = ['bg-amber-600', 'bg-amber-500', 'bg-amber-700', 'bg-stone-600', 'bg-stone-500'];
-export function avatarColor(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length]!;
-}
-
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] ?? '';
-  const last = parts.length > 1 ? parts[parts.length - 1]![0] : '';
-  return (first + last).toUpperCase();
 }
 
 /**
@@ -58,7 +37,7 @@ export function initials(name: string): string {
  * "World calendar" card pattern (divided rows + a ghost "see all" link).
  */
 export function DashboardPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { t } = useLocale();
 
   const dashboardQuery = useQuery({
@@ -68,17 +47,6 @@ export function DashboardPage() {
 
   return (
     <div className="min-h-dvh bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <LocalePicker />
-          <ThemePicker />
-          <span className="hidden text-sm text-stone-400 sm:inline">{user?.displayName}</span>
-          <Button variant="secondary" size="sm" onClick={() => void logout()}>
-            {t('common.logOut')}
-          </Button>
-        </div>
-      </header>
-
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-6 sm:py-8">
         {dashboardQuery.isLoading && <Loading />}
         {dashboardQuery.isError && <ErrorBanner message={errorMessage(dashboardQuery.error)} />}
@@ -102,7 +70,6 @@ export function DashboardPage() {
               <nav className="flex flex-wrap gap-1 text-sm" aria-label="Sections">
                 <HubNavLink to="/campaigns">{t('dashboard.navCampaigns')}</HubNavLink>
                 <HubNavLink to="/bestiary">{t('dashboard.navBestiary')}</HubNavLink>
-                <HubNavLink to="/maps">{t('dashboard.navMaps')}</HubNavLink>
                 <HubNavLink to="/notes">{t('dashboard.navNotes')}</HubNavLink>
               </nav>
             </div>

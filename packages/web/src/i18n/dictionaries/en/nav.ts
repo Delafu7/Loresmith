@@ -1,11 +1,9 @@
 export const nav = {
-  home: '← Home',
-  allCampaigns: 'All campaigns',
   characters: 'Characters',
   bestiary: 'Bestiary',
+  items: 'Items',
   session: 'Session',
   sessionLog: 'Session Log',
-  maps: 'Maps',
   notes: 'Notes',
   diceRolls: 'Dice Rolls',
   assets: 'Assets',
@@ -13,4 +11,7 @@ export const nav = {
   members: 'Members',
   exportCampaign: 'Export campaign (JSON)',
   exporting: 'Exporting…',
+  logoAria: 'Loresmith — go to home',
+  userMenuAria: '{name} — account menu',
+  myProfile: 'My Profile',
 };

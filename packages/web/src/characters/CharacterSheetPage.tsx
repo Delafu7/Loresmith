@@ -40,6 +40,8 @@ import type { ProficiencyLevel } from '../components/ProficiencyToggle';
 import { isUuid } from '../lib/ids';
 import { formatTimestamp } from '../lib/dates';
 import { useLocale } from '../i18n/LocaleContext';
+import { useBreadcrumb } from '../components/layout/BreadcrumbContext';
+import { BackButton } from '../components/layout/BackButton';
 
 export function CharacterSheetPage() {
   const params = useParams<{ characterId: string }>();
@@ -96,6 +98,7 @@ export function CharacterSheetPage() {
   const subclassesCatalog = useSubclassesCatalog(campaign.srd_edition);
 
   const character = characterQuery.data?.character;
+  useBreadcrumb(2, character ? [{ label: character.name }] : []);
   const editMode = useCharacterEditMode(character, role, user?.id);
   const editable = editMode !== 'read';
 
@@ -238,6 +241,7 @@ export function CharacterSheetPage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto space-y-6">
+      <BackButton to={`/campaigns/${campaignId}/characters`} label={t('nav.characters')} />
       <header className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex items-start gap-4">
