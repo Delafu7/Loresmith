@@ -46,6 +46,7 @@ import {
   broadcastDiceRolled,
   broadcastFullStateResync,
   broadcastActionRecorded,
+  broadcastEncounterOpened,
   pushEncounterRoomJoinForOwner,
 } from '../sockets/broadcast.js';
 
@@ -64,6 +65,16 @@ campaignEncountersRouter.post('/', requireRole('dm'), async (req, res) => {
   const input = createEncounterSchema.parse(req.body);
   const encounter = await encountersService.createEncounter(pool, req.campaignId!, input);
   res.status(201).json({ encounter });
+});
+
+// Map-first encounter system: "on reload/reconnect, land directly in the
+// current fullscreen map." Registered before the /:encounterId route below
+// so Express matches this literal path first — /:encounterId would otherwise
+// swallow "my-live" as an encounter id and hit a Postgres uuid-cast error
+// instead of a clean route match.
+campaignEncountersRouter.get('/my-live', async (req, res) => {
+  const encounter = await encountersService.getMyLiveEncounter(pool, req.campaignId!, req.user!.id, req.campaignRole!);
+  res.json({ encounter });
 });
 
 campaignEncountersRouter.get('/:encounterId', async (req, res) => {
@@ -146,9 +157,18 @@ encountersRouter.get('/:id', async (req, res) => {
   res.json({ encounter });
 });
 
+// Map-first encounter system: 'preparing' -> 'active' is the moment a
+// non-DM socket is first allowed to join this encounter's room at all
+// (assertCanJoinEncounter, sockets/rooms.ts) — i.e. this IS "the GM opens
+// the map." broadcastEncounterOpened pushes every relevant player straight
+// into the fullscreen live map with zero clicks, on top of the existing
+// broadcastCombatStarted (which only reaches sockets already in the
+// encounter room).
 encountersRouter.post('/:id/start', requireEncounterDm, async (req, res) => {
   const encounter = await encountersService.startEncounter(pool, (req.params.id as string));
-  broadcastCombatStarted(getIo(req.app), encounter);
+  const io = getIo(req.app);
+  broadcastCombatStarted(io, encounter);
+  await broadcastEncounterOpened(io, pool, encounter, encounter.name as string, false);
   res.json({ encounter });
 });
 
@@ -156,6 +176,39 @@ encountersRouter.post('/:id/end', requireEncounterDm, async (req, res) => {
   const encounter = await encountersService.endEncounter(pool, (req.params.id as string));
   broadcastCombatEnded(getIo(req.app), encounter);
   res.json({ encounter });
+});
+
+// The atomic "Start combat" action (map-first encounter system): rolls
+// initiative for everyone and sets the active-participant pointer in one
+// step — see services/encounters.ts's startCombat for why this replaced the
+// old two-click "toggle mode, then separately roll initiative" flow. Full
+// resync (not a narrower event) because this can touch mode, round, turn
+// index, active participant, AND every participant's initiative/turn_order
+// all at once — reusing the granular MODE_CHANGED/INITIATIVE_ROLLED/
+// TURN_ADVANCED events for one atomic action would mean the client
+// reconciling three partial patches for something that's really one state
+// transition.
+encountersRouter.post('/:id/start-combat', requireEncounterDm, async (req, res) => {
+  const { encounter, participants } = await encountersService.startCombat(pool, (req.params.id as string));
+  await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
+  res.json({ encounter, participants });
+});
+
+// DM control to force every relevant player back into fullscreen (map-first
+// encounter system) regardless of whether they'd minimized it — same push
+// as /start, just explicitly re-triggerable and always "forced" (overrides
+// a player's own minimized preference; ENCOUNTER_OPENED, by contrast,
+// respects it). No encounter-state mutation, so no broadcastFullStateResync.
+encountersRouter.post('/:id/force-fullscreen', requireEncounterDm, async (req, res) => {
+  const encounterId = req.params.id as string;
+  const result = await pool.query<{ id: string; campaign_id: string; name: string; sync_seq: number }>(
+    `SELECT id, campaign_id, name, sync_seq FROM encounters WHERE id = $1`,
+    [encounterId],
+  );
+  const encounter = result.rows[0];
+  if (!encounter) throw notFound('Encounter');
+  await broadcastEncounterOpened(getIo(req.app), pool, encounter, encounter.name, true);
+  res.status(204).send();
 });
 
 // Resets every monster instance currently seated in this encounter back to

@@ -11,15 +11,16 @@ export const encounters = {
     namePlaceholder: 'Nombre del encuentro',
     noEncountersYet: 'Aún no hay encuentros.',
     selectOrCreate: 'Selecciona o crea un encuentro para ver su seguimiento.',
-    closeTab: 'Cerrar pestaña de {name}',
-    openEncountersTabs: 'Encuentros abiertos',
   },
   tracker: {
     connectingLive: 'Conectando al estado de combate en vivo…',
     noCharacterYet: 'Aún no tienes un personaje en este encuentro — no hay nada que mostrar hasta que el DJ te añada.',
     startEncounter: 'Iniciar encuentro',
     endEncounter: 'Terminar encuentro',
+    startCombat: 'Iniciar combate',
+    endCombat: 'Terminar combate',
     rollInitiative: 'Tirar iniciativa',
+    rerollInitiative: 'Volver a tirar iniciativa',
     advanceTurn: 'Avanzar turno',
     round: 'Ronda {round}',
     roundInline: ' · Ronda {round}',
@@ -250,5 +251,10 @@ export const encounters = {
   },
   overlay: {
     manageTitle: 'Gestionar encuentro',
+  },
+  live: {
+    minimize: 'Minimizar',
+    forceFullscreen: 'Llevar a todos a pantalla completa',
+    switchSession: 'Cambiar de sesión',
   },
 };

@@ -46,6 +46,15 @@ interface EncounterRow {
   mode: 'exploration' | 'combat';
   current_round: number;
   current_turn_index: number;
+  // Map-first encounter system: the authoritative pointer to who's active,
+  // immune to turn_order churn from a mid-combat re-roll or splice (see
+  // 1784269784666_add-active-participant-tracking.ts's header comment).
+  // current_turn_index is kept in lockstep as a derived/display value — it
+  // always equals this participant's own turn_order — purely so every
+  // existing turn_order-vs-current_turn_index equality check (requireCurrentTurn,
+  // canMoveToken.ts, advanceTurn's action-economy-reset WHERE clause) keeps
+  // working unchanged.
+  active_participant_id: string | null;
   sync_seq: number;
   [key: string]: unknown;
 }
@@ -127,14 +136,55 @@ async function fetchParticipants(client: Pool | PoolClient, encounterId: string)
 // non-DM's list at all — not just be inert/greyed-out. The DM always sees
 // everything, matching the "DM sees the full list regardless of state"
 // column-filtering pattern used below in getEncounter/fetchParticipants.
+// participant_count (nav point: Map section) — lets a client pick "which
+// encounter actually has anything on its map" without an N-request detail
+// fetch per encounter; a plain COUNT subquery, not a join, so an encounter
+// with zero participants still returns exactly one row.
 export async function listEncounters(pool: Pool, campaignId: string, viewerRole: CampaignRole) {
   const result = await pool.query(
     viewerRole === 'dm'
-      ? `SELECT * FROM encounters WHERE campaign_id = $1 ORDER BY created_at DESC`
-      : `SELECT * FROM encounters WHERE campaign_id = $1 AND status != 'preparing' ORDER BY created_at DESC`,
+      ? `SELECT e.*, (SELECT COUNT(*) FROM combat_participants cp WHERE cp.encounter_id = e.id)::int AS participant_count
+         FROM encounters e WHERE e.campaign_id = $1 ORDER BY e.created_at DESC`
+      : `SELECT e.*, (SELECT COUNT(*) FROM combat_participants cp WHERE cp.encounter_id = e.id)::int AS participant_count
+         FROM encounters e WHERE e.campaign_id = $1 AND e.status != 'preparing' ORDER BY e.created_at DESC`,
     [campaignId],
   );
   return result.rows;
+}
+
+// Map-first encounter system: "on reload/reconnect, land directly in the
+// current fullscreen map" needs a way to ask, before anything has pushed
+// anything, "is there an active encounter I should be in fullscreen for
+// right now" — mirrors relevantSocketIds' (sockets/broadcast.ts) DM-or-owns-
+// a-seated-participant relevance rule, just as a pull instead of a push.
+// Most-recently-started wins if more than one is active (a split-party edge
+// case) — the client only auto-navigates once per mount, so this is only
+// ever the FIRST encounter a returning user lands in; any other relevant one
+// surfaces the same way it would for a brand new push (see the client-side
+// listener, not a server concern).
+export async function getMyLiveEncounter(
+  pool: Pool,
+  campaignId: string,
+  userId: string,
+  role: CampaignRole,
+): Promise<{ id: string; name: string } | null> {
+  const result =
+    role === 'dm'
+      ? await pool.query<{ id: string; name: string }>(
+          `SELECT id, name FROM encounters WHERE campaign_id = $1 AND status = 'active' ORDER BY started_at DESC LIMIT 1`,
+          [campaignId],
+        )
+      : await pool.query<{ id: string; name: string }>(
+          `SELECT DISTINCT e.id, e.name, e.started_at
+           FROM encounters e
+           JOIN combat_participants cp ON cp.encounter_id = e.id
+           JOIN characters c ON c.id = cp.character_id
+           WHERE e.campaign_id = $1 AND e.status = 'active' AND c.owner_user_id = $2
+           ORDER BY e.started_at DESC
+           LIMIT 1`,
+          [campaignId, userId],
+        );
+  return result.rows[0] ?? null;
 }
 
 // Drops participant rows a non-DM viewer shouldn't see at all (visible_to_players
@@ -1053,6 +1103,16 @@ export async function endEncounter(pool: Pool, encounterId: string) {
 // end — no transition restrictions, callable in any status, so a DM can
 // e.g. allow free-roam movement mid-"active" encounter for out-of-initiative
 // narrative movement without ending combat first.
+// Exploration/combat mode is a DM toggle fully independent of status/start/
+// end — no transition restrictions, callable in any status (unchanged from
+// before the map-first encounter system). The new "Start combat" UI action
+// calls startCombat instead of this directly, since entering combat that way
+// also rolls initiative and sets the active-participant pointer atomically —
+// but this raw toggle stays available for combat -> exploration ("End
+// combat"), which is deliberately a plain single-column update: it preserves
+// active_participant_id/turn_order/positions/HP/conditions/participants
+// untouched, so the map returns to free-roam exploration with everything
+// exactly as combat left it.
 export async function setEncounterMode(pool: Pool, encounterId: string, input: SetEncounterModeInput): Promise<EncounterRow> {
   const result = await pool.query<EncounterRow>(
     `UPDATE encounters SET mode = $1, sync_seq = sync_seq + 1 WHERE id = $2 RETURNING *`,
@@ -1085,7 +1145,9 @@ export async function addParticipant(
   try {
     await client.query('BEGIN');
 
-    const encounter = await fetchEncounterById(client, encounterId);
+    const encounterRes = await client.query<EncounterRow>(`SELECT * FROM encounters WHERE id = $1 FOR UPDATE`, [encounterId]);
+    const encounter = encounterRes.rows[0];
+    if (!encounter) throw notFound('Encounter');
     const joinedRound = Math.max(1, encounter.current_round);
 
     const existingCount = await client.query<{ count: string }>(
@@ -1131,13 +1193,33 @@ export async function addParticipant(
       throw err;
     }
 
-    const encounterRes = await client.query<EncounterRow>(
+    // Joining mid-combat: a token every other participant already has a
+    // real initiative roll and a turn_order slotted by it (per this
+    // encounter's own mode/status, not a global assumption) gets one too,
+    // right now, rather than sitting at the tail end unrolled until the DM
+    // remembers to re-roll. rollAndReorderInitiative(force=false) only rolls
+    // participants still at the UNROLLED_INITIATIVE sentinel — since every
+    // existing participant already got rolled by startCombat, this only
+    // touches the one just inserted — then resequences turn_order for
+    // everyone by the resulting ranking; syncActiveParticipantTurnIndex
+    // re-derives current_turn_index afterward in case that resequencing
+    // shifted the currently-active participant's own turn_order value.
+    // Skipped when the caller supplied an explicit initiativeRoll (DM
+    // override) — that participant isn't "unrolled" so there's nothing to do.
+    if (input.initiativeRoll === undefined && encounter.mode === 'combat' && encounter.status === 'active') {
+      await rollAndReorderInitiative(client, encounterId, false);
+      await syncActiveParticipantTurnIndex(client, encounterId);
+      const refreshed = await client.query<ParticipantRow>(`SELECT * FROM combat_participants WHERE id = $1`, [participant.id]);
+      participant = refreshed.rows[0]!;
+    }
+
+    const updatedEncounterRes = await client.query<EncounterRow>(
       `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
       [encounterId],
     );
 
     await client.query('COMMIT');
-    return { encounter: encounterRes.rows[0]!, participant };
+    return { encounter: updatedEncounterRes.rows[0]!, participant };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -1155,6 +1237,10 @@ export async function removeParticipant(
   try {
     await client.query('BEGIN');
 
+    const encounterRes = await client.query<EncounterRow>(`SELECT * FROM encounters WHERE id = $1 FOR UPDATE`, [encounterId]);
+    const encounter = encounterRes.rows[0];
+    if (!encounter) throw notFound('Encounter');
+
     const deleted = await client.query<ParticipantRow>(
       `DELETE FROM combat_participants WHERE id = $1 AND encounter_id = $2 RETURNING *`,
       [participantId, encounterId],
@@ -1162,13 +1248,51 @@ export async function removeParticipant(
     const participant = deleted.rows[0];
     if (!participant) throw notFound('Participant');
 
-    const encounterRes = await client.query<EncounterRow>(
-      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
-      [encounterId],
-    );
+    // "A token deleted while it is the active combatant" (map-first
+    // encounter system): removeParticipant is the one mutation that can
+    // orphan active_participant_id (ON DELETE SET NULL just fired), so
+    // resolve who picks up next here rather than leaving the encounter
+    // stuck with a null pointer until the next unrelated advance-turn call.
+    // Only meaningful while a round is actually live — outside 'active'
+    // status, turn order is inert (matches requireCurrentTurn's own
+    // "no-op outside active" rule).
+    let finalEncounter = encounter;
+    if (encounter.status === 'active' && encounter.active_participant_id === participant.id) {
+      const remainingRes = await client.query<{ id: string; turn_order: number }>(
+        `SELECT id, turn_order FROM combat_participants WHERE encounter_id = $1 ORDER BY turn_order ASC`,
+        [encounterId],
+      );
+      if (remainingRes.rows.length === 0) {
+        const clearedRes = await client.query<EncounterRow>(
+          `UPDATE encounters SET active_participant_id = NULL, sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+          [encounterId],
+        );
+        finalEncounter = clearedRes.rows[0]!;
+      } else {
+        const { nextTurnOrder, nextRound } = computeNextTurn(
+          remainingRes.rows.map((r) => r.turn_order),
+          participant.turn_order,
+          encounter.current_round,
+        );
+        const next = remainingRes.rows.find((r) => r.turn_order === nextTurnOrder)!;
+        const advancedRes = await client.query<EncounterRow>(
+          `UPDATE encounters
+           SET active_participant_id = $1, current_turn_index = $2, current_round = $3, sync_seq = sync_seq + 1
+           WHERE id = $4 RETURNING *`,
+          [next.id, nextTurnOrder, nextRound, encounterId],
+        );
+        finalEncounter = advancedRes.rows[0]!;
+      }
+    } else {
+      const bumpedRes = await client.query<EncounterRow>(
+        `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+        [encounterId],
+      );
+      finalEncounter = bumpedRes.rows[0]!;
+    }
 
     await client.query('COMMIT');
-    return { encounter: encounterRes.rows[0]!, participant };
+    return { encounter: finalEncounter, participant };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -1199,20 +1323,30 @@ export function dexModifier(dexScore: number): number {
   return Math.floor((dexScore - 10) / 2);
 }
 
-// Round-robin turn advancement: only wraps to the next round when the turn
-// index would run past the last participant. Pulled out as a pure function
-// so the round-wrap boundary condition (and only it, not the DB locking
-// around it) can be unit tested directly.
+// Round-robin turn advancement: given every remaining participant's
+// turn_order (ascending, need not be dense/contiguous) and whichever
+// turn_order value is currently active, finds the next one strictly greater
+// than it, wrapping to the lowest and incrementing the round when there
+// isn't one. Operating on turn_order VALUES rather than a positional index
+// is what makes this immune to gaps (a participant removed mid-combat) and
+// insertions (a latecomer's turn_order slotted in by initiative, not
+// appended) — see 1784269784666_add-active-participant-tracking.ts.
+// Reused by advanceTurn (currentTurnOrder = whoever's turn just ended) and
+// removeParticipant (currentTurnOrder = whoever was JUST DELETED, to find
+// who picks up next) — deleting the last-in-order active combatant wraps
+// and increments the round exactly like a normal turn ending would, which
+// is the intended behavior, not a special case. Pulled out as a pure
+// function so the round-wrap boundary condition can be unit tested directly.
 export function computeNextTurn(
-  currentIndex: number,
+  sortedTurnOrders: number[],
+  currentTurnOrder: number,
   currentRound: number,
-  participantCount: number,
-): { nextIndex: number; nextRound: number } {
-  const nextIndex = currentIndex + 1;
-  if (nextIndex >= participantCount) {
-    return { nextIndex: 0, nextRound: currentRound + 1 };
+): { nextTurnOrder: number; nextRound: number } {
+  const next = sortedTurnOrders.find((t) => t > currentTurnOrder);
+  if (next !== undefined) {
+    return { nextTurnOrder: next, nextRound: currentRound };
   }
-  return { nextIndex, nextRound: currentRound };
+  return { nextTurnOrder: sortedTurnOrders[0]!, nextRound: currentRound + 1 };
 }
 
 // docs/rules/actions.md:113 flagged this as a known gap: no endpoint that
@@ -1231,50 +1365,85 @@ export function requireCurrentTurn(
   }
 }
 
+// Shared roll-and-resequence core, used by both the standalone /roll-initiative
+// route (rollInitiative below) and startCombat: rolls a d20+dex-mod for every
+// participant that needs one (force=true re-rolls everyone; force=false only
+// the still-unrolled sentinel), then re-sequences EVERY participant's
+// turn_order to match the resulting initiative ranking. Throws CONFLICT if
+// there's nobody to roll for. Runs on an already-open transaction — callers
+// own BEGIN/COMMIT/ROLLBACK.
+async function rollAndReorderInitiative(client: PoolClient, encounterId: string, force: boolean): Promise<void> {
+  // Dex modifiers for every participant, sourced from characters.dex or
+  // (via the monster catalog) monsters.dex for monster instances.
+  const dexRes = await client.query<{ id: string; dex: number }>(
+    `SELECT cp.id, COALESCE(c.dex, m.dex) AS dex
+     FROM combat_participants cp
+     LEFT JOIN characters c ON c.id = cp.character_id
+     LEFT JOIN monster_instances mi ON mi.id = cp.monster_instance_id
+     LEFT JOIN monsters m ON m.id = mi.monster_id
+     WHERE cp.encounter_id = $1`,
+    [encounterId],
+  );
+
+  const participants = await fetchParticipants(client, encounterId);
+  if (participants.length === 0) {
+    throw new AppError('CONFLICT', 'This encounter has no participants to roll initiative for');
+  }
+  const dexById = new Map(dexRes.rows.map((r) => [r.id, r.dex]));
+
+  for (const participant of participants) {
+    const needsRoll = force || participant.initiative_roll === UNROLLED_INITIATIVE;
+    if (!needsRoll) continue;
+    const mod = dexModifier(dexById.get(participant.id) ?? 10);
+    const d20 = 1 + Math.floor(Math.random() * 20);
+    await client.query(
+      `UPDATE combat_participants SET initiative_roll = $1, initiative_tiebreak = $2 WHERE id = $3`,
+      [d20 + mod, mod, participant.id],
+    );
+  }
+
+  // Re-sort turn_order by the (possibly just-updated) initiative ranking:
+  // highest roll first, dex-mod tiebreak, then id for a stable final tiebreak.
+  // This intentionally reassigns turn_order to EVERY participant, including
+  // ones already mid-combat — safe (unlike the old dense-index scheme) only
+  // because whoever's actually active is tracked by active_participant_id,
+  // an id, not a position; syncActiveParticipantTurnIndex (called by every
+  // caller of this function) re-derives current_turn_index from that id's
+  // freshly-assigned turn_order right after, so a mid-combat re-roll or a
+  // latecomer's insertion can never leave current_turn_index pointing at the
+  // wrong participant.
+  const reordered = await client.query<ParticipantRow>(
+    `SELECT * FROM combat_participants WHERE encounter_id = $1
+     ORDER BY initiative_roll DESC, initiative_tiebreak DESC NULLS LAST, id ASC`,
+    [encounterId],
+  );
+  for (let i = 0; i < reordered.rows.length; i++) {
+    await client.query(`UPDATE combat_participants SET turn_order = $1 WHERE id = $2`, [i, reordered.rows[i]!.id]);
+  }
+}
+
+// Re-derives encounters.current_turn_index from active_participant_id's
+// live turn_order — call after anything that might have reassigned
+// turn_order values (rollAndReorderInitiative) or moved the active pointer
+// itself. No-op when the encounter isn't active or has no active participant
+// yet (e.g. before startCombat has ever run).
+async function syncActiveParticipantTurnIndex(client: PoolClient, encounterId: string): Promise<void> {
+  await client.query(
+    `UPDATE encounters e
+     SET current_turn_index = cp.turn_order
+     FROM combat_participants cp
+     WHERE e.id = $1 AND e.active_participant_id = cp.id AND e.status = 'active'`,
+    [encounterId],
+  );
+}
+
 export async function rollInitiative(pool: Pool, encounterId: string, force: boolean) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Dex modifiers for every participant, sourced from characters.dex or
-    // (via the monster catalog) monsters.dex for monster instances.
-    const dexRes = await client.query<{ id: string; dex: number }>(
-      `SELECT cp.id, COALESCE(c.dex, m.dex) AS dex
-       FROM combat_participants cp
-       LEFT JOIN characters c ON c.id = cp.character_id
-       LEFT JOIN monster_instances mi ON mi.id = cp.monster_instance_id
-       LEFT JOIN monsters m ON m.id = mi.monster_id
-       WHERE cp.encounter_id = $1`,
-      [encounterId],
-    );
-
-    const participants = await fetchParticipants(client, encounterId);
-    if (participants.length === 0) {
-      throw new AppError('CONFLICT', 'This encounter has no participants to roll initiative for');
-    }
-    const dexById = new Map(dexRes.rows.map((r) => [r.id, r.dex]));
-
-    for (const participant of participants) {
-      const needsRoll = force || participant.initiative_roll === UNROLLED_INITIATIVE;
-      if (!needsRoll) continue;
-      const mod = dexModifier(dexById.get(participant.id) ?? 10);
-      const d20 = 1 + Math.floor(Math.random() * 20);
-      await client.query(
-        `UPDATE combat_participants SET initiative_roll = $1, initiative_tiebreak = $2 WHERE id = $3`,
-        [d20 + mod, mod, participant.id],
-      );
-    }
-
-    // Re-sort turn_order by the (possibly just-updated) initiative ranking:
-    // highest roll first, dex-mod tiebreak, then id for a stable final tiebreak.
-    const reordered = await client.query<ParticipantRow>(
-      `SELECT * FROM combat_participants WHERE encounter_id = $1
-       ORDER BY initiative_roll DESC, initiative_tiebreak DESC NULLS LAST, id ASC`,
-      [encounterId],
-    );
-    for (let i = 0; i < reordered.rows.length; i++) {
-      await client.query(`UPDATE combat_participants SET turn_order = $1 WHERE id = $2`, [i, reordered.rows[i]!.id]);
-    }
+    await rollAndReorderInitiative(client, encounterId, force);
+    await syncActiveParticipantTurnIndex(client, encounterId);
 
     const encounterRes = await client.query<EncounterRow>(
       `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
@@ -1284,6 +1453,54 @@ export async function rollInitiative(pool: Pool, encounterId: string, force: boo
     await client.query('COMMIT');
     const finalParticipants = await fetchParticipants(pool, encounterId);
     return { encounter: encounterRes.rows[0], participants: finalParticipants };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Map-first encounter system — the atomic "Start combat" action: rolls
+// initiative for everyone who doesn't have one yet, sets mode='combat',
+// starts round 1 of THIS fight (a fresh round count each time combat
+// (re)starts, even within the same still-open encounter/map session — round
+// number is a combat-specific concept with no meaning during exploration),
+// and points active_participant_id/current_turn_index at whoever rolled
+// highest. One button, one transaction, one broadcast — replaces the old
+// two-click "toggle mode, then separately roll initiative" flow. Rejects
+// with the same zero-participants CONFLICT rollAndReorderInitiative already
+// throws (nothing DM-added means nothing to fight with).
+export async function startCombat(pool: Pool, encounterId: string) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const encounterRes = await client.query<EncounterRow>(`SELECT * FROM encounters WHERE id = $1 FOR UPDATE`, [encounterId]);
+    const encounter = encounterRes.rows[0];
+    if (!encounter) throw notFound('Encounter');
+    if (encounter.status !== 'active') {
+      throw new AppError('CONFLICT', `Cannot start combat on an encounter in status '${encounter.status}' (must be 'active')`);
+    }
+
+    await rollAndReorderInitiative(client, encounterId, false);
+
+    const firstRes = await client.query<{ id: string }>(
+      `SELECT id FROM combat_participants WHERE encounter_id = $1 ORDER BY turn_order ASC LIMIT 1`,
+      [encounterId],
+    );
+    const first = firstRes.rows[0]!;
+
+    const updatedRes = await client.query<EncounterRow>(
+      `UPDATE encounters
+       SET mode = 'combat', current_round = 1, current_turn_index = 0, active_participant_id = $1, sync_seq = sync_seq + 1
+       WHERE id = $2 RETURNING *`,
+      [first.id, encounterId],
+    );
+
+    await client.query('COMMIT');
+    const participants = await fetchParticipants(pool, encounterId);
+    return { encounter: updatedRes.rows[0]!, participants };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -1337,40 +1554,40 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
       throw new AppError('CONFLICT', `Cannot advance turn on an encounter in status '${encounter.status}' (must be 'active')`);
     }
 
-    const countRes = await client.query<{ count: string }>(
-      `SELECT COUNT(*)::int AS count FROM combat_participants WHERE encounter_id = $1`,
+    const turnOrdersRes = await client.query<{ turn_order: number }>(
+      `SELECT turn_order FROM combat_participants WHERE encounter_id = $1 ORDER BY turn_order ASC`,
       [encounterId],
     );
-    const participantCount = Number(countRes.rows[0]!.count);
-    if (participantCount === 0) {
+    if (turnOrdersRes.rows.length === 0) {
       throw new AppError('CONFLICT', 'This encounter has no participants to advance through');
     }
 
-    const { nextIndex, nextRound } = computeNextTurn(
+    const { nextTurnOrder, nextRound } = computeNextTurn(
+      turnOrdersRes.rows.map((r) => r.turn_order),
       encounter.current_turn_index,
       encounter.current_round,
-      participantCount,
     );
 
-    const updatedRes = await client.query<EncounterRow>(
-      `UPDATE encounters
-       SET current_turn_index = $1, current_round = $2, sync_seq = sync_seq + 1
-       WHERE id = $3
-       RETURNING *`,
-      [nextIndex, nextRound, encounterId],
-    );
-
-    // Fresh action economy for whoever's turn is starting — turn_order is
-    // assigned 0..participantCount-1 (rollInitiative), matching
-    // current_turn_index 1:1, so nextIndex directly selects the right row.
-    const startingRes = await client.query<{ character_id: string | null; monster_instance_id: string | null }>(
+    // Fresh action economy for whoever's turn is starting. turn_order need
+    // not be dense anymore (see computeNextTurn's header comment), so
+    // nextTurnOrder is looked up by value, not treated as a positional index.
+    const startingRes = await client.query<{ id: string; character_id: string | null; monster_instance_id: string | null }>(
       `UPDATE combat_participants
        SET action_used = false, bonus_action_used = false, reaction_used = false,
            dash_used = false, movement_used_ft = 0, object_interaction_used = false,
            last_action_economy_snapshot = NULL
        WHERE encounter_id = $1 AND turn_order = $2
-       RETURNING character_id, monster_instance_id`,
-      [encounterId, nextIndex],
+       RETURNING id, character_id, monster_instance_id`,
+      [encounterId, nextTurnOrder],
+    );
+    const nextParticipantId = startingRes.rows[0]!.id;
+
+    const updatedRes = await client.query<EncounterRow>(
+      `UPDATE encounters
+       SET current_turn_index = $1, current_round = $2, active_participant_id = $3, sync_seq = sync_seq + 1
+       WHERE id = $4
+       RETURNING *`,
+      [nextTurnOrder, nextRound, nextParticipantId, encounterId],
     );
 
     // Round-based effect expiry, in the SAME transaction as the turn advance

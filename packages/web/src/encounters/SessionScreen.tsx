@@ -42,6 +42,9 @@ export interface SessionScreenProps {
   setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
   startMutation: MutationLike<void>;
   endMutation: MutationLike<void>;
+  startCombatMutation: MutationLike<void>;
+  endCombatMutation: MutationLike<void>;
+  forceFullscreenMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
   addParticipantMutation: MutationLike<{ characterId?: string; monsterInstanceId?: string }>;
@@ -52,6 +55,19 @@ export interface SessionScreenProps {
   removeEffectMutation: MutationLike<string>;
   availableCharacters: Character[];
   availableMonsterInstances: MonsterInstance[];
+  /** LiveMapPage.tsx (map-first encounter system) already wraps this in a
+   * properly height-constrained flex container (no app header above it) —
+   * `h-full` there instead of the embedded /session view's own `100dvh`
+   * estimate, which assumes a specific amount of chrome above it that the
+   * fullscreen route doesn't have. Defaults to the embedded behavior. */
+  fullHeight?: boolean;
+  /** The reduced Session/prep page (EncountersPage → CombatTracker) no
+   * longer shows the map at all — positioning tokens now happens on its own
+   * dedicated Map section (MapSectionPage.tsx), so DM roster/prep controls
+   * (Manage/Log/Chat overlay, initiative strip) stay here without the
+   * battle-grid surface duplicating what the Map section already owns.
+   * Defaults to true (LiveMapPage's fullscreen combat view always shows it). */
+  showMap?: boolean;
 }
 
 type Overlay = 'sheet' | 'manage' | 'log' | 'chat' | null;
@@ -71,6 +87,9 @@ export function SessionScreen({
   setShowDiceRoller,
   startMutation,
   endMutation,
+  startCombatMutation,
+  endCombatMutation,
+  forceFullscreenMutation,
   rollInitiativeMutation,
   advanceTurnMutation,
   addParticipantMutation,
@@ -81,6 +100,8 @@ export function SessionScreen({
   removeEffectMutation,
   availableCharacters,
   availableMonsterInstances,
+  fullHeight = false,
+  showMap = true,
 }: SessionScreenProps) {
   const { t } = useLocale();
   const [overlay, setOverlay] = useState<Overlay>(null);
@@ -104,16 +125,65 @@ export function SessionScreen({
           ? t('encounters.combatLog.title')
           : t('encounters.sheet.chatButton');
 
+  // DM roster/HP/add-participant controls (or the player's read-only
+  // equivalent) — shared between the map view's floating "Manage" overlay
+  // and the mapless Session/prep page below, which shows this INLINE
+  // instead: with no map to look at, hiding the roster behind a click left
+  // that page looking almost empty by default.
+  const managePanel = isDm ? (
+    <BattleModeDmPanel
+      encounterId={encounter.id}
+      status={live.encounter.status}
+      live={live}
+      characters={characters}
+      monsterInstances={monsterInstances}
+      monsters={monsters}
+      expandedParticipantId={expandedParticipantId}
+      setExpandedParticipantId={setExpandedParticipantId}
+      showDiceRoller={showDiceRoller}
+      setShowDiceRoller={setShowDiceRoller}
+      startMutation={startMutation}
+      endMutation={endMutation}
+      startCombatMutation={startCombatMutation}
+      endCombatMutation={endCombatMutation}
+      forceFullscreenMutation={forceFullscreenMutation}
+      rollInitiativeMutation={rollInitiativeMutation}
+      advanceTurnMutation={advanceTurnMutation}
+      addParticipantMutation={addParticipantMutation}
+      removeParticipantMutation={removeParticipantMutation}
+      visibilityMutation={visibilityMutation}
+      hpMutation={hpMutation}
+      applyEffectMutation={applyEffectMutation}
+      removeEffectMutation={removeEffectMutation}
+      availableCharacters={availableCharacters}
+      availableMonsterInstances={availableMonsterInstances}
+    />
+  ) : (
+    <BattleModePlayerPanel
+      encounterId={encounter.id}
+      live={live}
+      myCharacterIds={myCharacterIds}
+      characters={characters}
+      showDiceRoller={showDiceRoller}
+      setShowDiceRoller={setShowDiceRoller}
+    />
+  );
+
   return (
-    <div className="flex h-[calc(100dvh-9rem)] min-h-[420px] flex-col gap-2">
+    <div className={`flex min-h-[420px] flex-col gap-2 ${fullHeight ? 'h-full' : 'h-[calc(100dvh-9rem)]'}`}>
       <div className="sticky top-0 z-30 flex flex-shrink-0 items-center gap-2 rounded-md bg-stone-950/95 backdrop-blur-sm py-1.5 -mx-1 px-1">
         <div className="min-w-0 flex-1">
           <InitiativeStrip participants={live.participants} activeParticipantId={live.activeParticipantId} onSelect={openSheet} />
         </div>
         <div className="flex flex-shrink-0 items-center gap-1.5">
-          <OverlayToggleButton active={overlay === 'manage'} onClick={() => setOverlay((o) => (o === 'manage' ? null : 'manage'))}>
-            {t('encounters.sheet.manageButton')}
-          </OverlayToggleButton>
+          {/* Redundant once the panel is shown inline below (mapless
+              Session page) — a toggle for something that's already always
+              visible has nothing to do. */}
+          {showMap && (
+            <OverlayToggleButton active={overlay === 'manage'} onClick={() => setOverlay((o) => (o === 'manage' ? null : 'manage'))}>
+              {t('encounters.sheet.manageButton')}
+            </OverlayToggleButton>
+          )}
           <OverlayToggleButton active={overlay === 'log'} onClick={() => setOverlay((o) => (o === 'log' ? null : 'log'))}>
             {t('encounters.sheet.logButton')}
           </OverlayToggleButton>
@@ -123,19 +193,23 @@ export function SessionScreen({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1">
-        <BattleMap
-          encounterId={encounter.id}
-          campaignId={campaignId}
-          map={live.map}
-          participants={live.participants}
-          activeParticipantId={live.activeParticipantId}
-          encounter={live.encounter}
-          isDm={isDm}
-          myCharacterIds={myCharacterIds}
-          onOpenSheet={openSheet}
-        />
-      </div>
+      {showMap ? (
+        <div className="min-h-0 flex-1">
+          <BattleMap
+            encounterId={encounter.id}
+            campaignId={campaignId}
+            map={live.map}
+            participants={live.participants}
+            activeParticipantId={live.activeParticipantId}
+            encounter={live.encounter}
+            isDm={isDm}
+            myCharacterIds={myCharacterIds}
+            onOpenSheet={openSheet}
+          />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">{managePanel}</div>
+      )}
 
       <SessionOverlayPanel open={overlay !== null} onClose={() => setOverlay(null)} title={overlayTitle}>
         {overlay === 'sheet' && selectedParticipant && (
@@ -153,42 +227,7 @@ export function SessionScreen({
             onRemoveEffect={isDm ? (effectId) => removeEffectMutation.mutate(effectId) : undefined}
           />
         )}
-        {overlay === 'manage' &&
-          (isDm ? (
-            <BattleModeDmPanel
-              encounterId={encounter.id}
-              status={live.encounter.status}
-              live={live}
-              characters={characters}
-              monsterInstances={monsterInstances}
-              monsters={monsters}
-              expandedParticipantId={expandedParticipantId}
-              setExpandedParticipantId={setExpandedParticipantId}
-              showDiceRoller={showDiceRoller}
-              setShowDiceRoller={setShowDiceRoller}
-              startMutation={startMutation}
-              endMutation={endMutation}
-              rollInitiativeMutation={rollInitiativeMutation}
-              advanceTurnMutation={advanceTurnMutation}
-              addParticipantMutation={addParticipantMutation}
-              removeParticipantMutation={removeParticipantMutation}
-              visibilityMutation={visibilityMutation}
-              hpMutation={hpMutation}
-              applyEffectMutation={applyEffectMutation}
-              removeEffectMutation={removeEffectMutation}
-              availableCharacters={availableCharacters}
-              availableMonsterInstances={availableMonsterInstances}
-            />
-          ) : (
-            <BattleModePlayerPanel
-              encounterId={encounter.id}
-              live={live}
-              myCharacterIds={myCharacterIds}
-              characters={characters}
-              showDiceRoller={showDiceRoller}
-              setShowDiceRoller={setShowDiceRoller}
-            />
-          ))}
+        {overlay === 'manage' && showMap && managePanel}
         {overlay === 'log' && <CombatLogPanel encounterId={encounter.id} />}
         {overlay === 'chat' && <EmptyState message={t('encounters.sheet.chatComingSoon')} />}
       </SessionOverlayPanel>

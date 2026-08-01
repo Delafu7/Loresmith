@@ -315,6 +315,10 @@ export interface Encounter {
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
+  /** Only populated by GET /campaigns/:id/encounters (listEncounters) — a
+   * cheap COUNT subquery added for MapSectionPage.tsx's focus-encounter
+   * pick. Absent (undefined) from every other encounter-shaped response. */
+  participant_count?: number;
 }
 
 export interface CombatParticipant {

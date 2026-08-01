@@ -8,9 +8,7 @@
 // props — this file never fetches or mutates anything on its own.
 
 import type { Dispatch, SetStateAction } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { api } from '../lib/api';
-import type { Character, EncounterMode, EncounterStatus, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
+import type { Character, EncounterStatus, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
 import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 import type { EncounterLiveState } from './useEncounterLive';
 import { HPBar } from '../components/HPBar';
@@ -32,29 +30,6 @@ import {
   ResetRevealsButton,
   resolveAbilityScores,
 } from './CombatTracker';
-
-// Exploration/combat mode toggle — self-contained, same "own mutation, no
-// cache write on success" pattern as ResetRevealsButton just below:
-// MODE_CHANGED arriving over the socket (useEncounterLive.ts) is the single
-// source of truth, including for the DM's own change.
-function ModeToggle({ encounterId, mode }: { encounterId: string; mode: EncounterMode }) {
-  const { t } = useLocale();
-  const mutation = useMutation({
-    mutationFn: (nextMode: EncounterMode) => api.patch<void>(`/encounters/${encounterId}/mode`, { mode: nextMode }),
-  });
-  const other: EncounterMode = mode === 'exploration' ? 'combat' : 'exploration';
-  return (
-    <button
-      type="button"
-      disabled={mutation.isPending}
-      onClick={() => mutation.mutate(other)}
-      title={t('encounters.battleMode.modeToggleTitle')}
-      className="min-h-11 rounded-md bg-stone-800 hover:bg-stone-700 px-2.5 text-[10px] uppercase tracking-wide text-stone-300 disabled:opacity-60"
-    >
-      {t(`encounters.battleMode.mode.${mode}`)}
-    </button>
-  );
-}
 
 // Structural (not TanStack's own UseMutationResult<...>) on purpose — this
 // panel only ever calls `.mutate(...)`/reads `.isPending` on whichever
@@ -79,6 +54,9 @@ export interface BattleModeDmPanelProps {
   setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
   startMutation: MutationLike<void>;
   endMutation: MutationLike<void>;
+  startCombatMutation: MutationLike<void>;
+  endCombatMutation: MutationLike<void>;
+  forceFullscreenMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
   addParticipantMutation: MutationLike<{ characterId?: string; monsterInstanceId?: string }>;
@@ -104,6 +82,9 @@ export function BattleModeDmPanel({
   setShowDiceRoller,
   startMutation,
   endMutation,
+  startCombatMutation,
+  endCombatMutation,
+  forceFullscreenMutation,
   rollInitiativeMutation,
   advanceTurnMutation,
   addParticipantMutation,
@@ -125,16 +106,21 @@ export function BattleModeDmPanel({
       <div className="rounded-md bg-stone-900 shadow-sm p-3">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs uppercase text-stone-500">
-            {status === 'preparing' ? t(`encounters.status.${status}`) : t('encounters.tracker.round', { round: live.encounter.currentRound })}
+            {status === 'preparing'
+              ? t(`encounters.status.${status}`)
+              : live.encounter.mode === 'combat'
+                ? t('encounters.tracker.round', { round: live.encounter.currentRound })
+                : t('encounters.battleMode.mode.exploration')}
           </p>
-          <ModeToggle encounterId={encounterId} mode={live.encounter.mode} />
         </div>
-        <div className="flex items-center gap-1.5 mt-1">
-          <TurnTorch size={18} className="text-amber-500 flex-shrink-0" />
-          <span className="font-semibold text-stone-100 truncate">
-            {activeParticipant ? activeParticipant.name : t('encounters.tracker.waitingForInitiative')}
-          </span>
-        </div>
+        {live.encounter.mode === 'combat' && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <TurnTorch size={18} className="text-amber-500 flex-shrink-0" />
+            <span className="font-semibold text-stone-100 truncate">
+              {activeParticipant ? activeParticipant.name : t('encounters.tracker.waitingForInitiative')}
+            </span>
+          </div>
+        )}
       </div>
 
       <ol className="space-y-1.5">
@@ -265,12 +251,31 @@ export function BattleModeDmPanel({
             {t('encounters.tracker.startEncounter')}
           </ActionButton>
         )}
-        <ActionButton onClick={() => rollInitiativeMutation.mutate(false)} pending={rollInitiativeMutation.isPending} variant="secondary">
-          {t('encounters.tracker.rollInitiative')}
-        </ActionButton>
+        {status === 'active' && live.encounter.mode === 'exploration' && (
+          <ActionButton onClick={() => startCombatMutation.mutate()} pending={startCombatMutation.isPending}>
+            {t('encounters.tracker.startCombat')}
+          </ActionButton>
+        )}
+        {live.encounter.mode === 'combat' && (
+          <>
+            <ActionButton onClick={() => advanceTurnMutation.mutate()} pending={advanceTurnMutation.isPending}>
+              {t('encounters.tracker.advanceTurn')}
+            </ActionButton>
+            <ActionButton onClick={() => rollInitiativeMutation.mutate(true)} pending={rollInitiativeMutation.isPending} variant="secondary">
+              {t('encounters.tracker.rerollInitiative')}
+            </ActionButton>
+            <ActionButton onClick={() => endCombatMutation.mutate()} pending={endCombatMutation.isPending} variant="secondary">
+              {t('encounters.tracker.endCombat')}
+            </ActionButton>
+          </>
+        )}
         {status === 'active' && (
-          <ActionButton onClick={() => advanceTurnMutation.mutate()} pending={advanceTurnMutation.isPending}>
-            {t('encounters.tracker.advanceTurn')}
+          <ActionButton
+            onClick={() => forceFullscreenMutation.mutate()}
+            pending={forceFullscreenMutation.isPending}
+            variant="secondary"
+          >
+            {t('encounters.live.forceFullscreen')}
           </ActionButton>
         )}
         {status !== 'preparing' && (

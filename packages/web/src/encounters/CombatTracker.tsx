@@ -1,22 +1,18 @@
 import { useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type {
   Character,
   CharacterAttack,
   Encounter,
-  EncounterWithParticipants,
   MonsterCatalogEntry,
   MonsterInstance,
   SnapshotParticipant,
   StatBlockEntry,
 } from '../lib/types';
-import { useCampaignShell } from '../campaigns/CampaignShell';
-import { useEncounterLive } from './useEncounterLive';
-import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
+import { useEncounterSessionData } from './useEncounterSessionData';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
 import { Combobox } from '../components/Combobox';
-import { useAuth } from '../auth/AuthContext';
 import { RevealToggle } from '../components/RevealToggle';
 import { useReveals } from '../lib/useReveal';
 import { StatBlock } from '../components/StatBlock';
@@ -204,151 +200,37 @@ export function CharacterAttackRoller({
 }
 
 export function CombatTracker({ encounter }: { encounter: Encounter }) {
-  const { campaignId, campaign, role } = useCampaignShell();
-  const { user } = useAuth();
   const { t } = useLocale();
-  const queryClient = useQueryClient();
-  const isDm = role === 'dm';
-  const live = useEncounterLive(encounter.id);
-  // REVISION-PLAN.md §9.3/§9.4 — both let the DM stay on this screen instead
-  // of navigating to the Bestiary tab or the Dice Rolls page mid-combat.
-  const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
-  const [showDiceRoller, setShowDiceRoller] = useState(false);
-
-  const detailQuery = useQuery({
-    queryKey: ['encounterDetail', encounter.id],
-    queryFn: () =>
-      api.get<{ encounter: EncounterWithParticipants }>(`/campaigns/${campaignId}/encounters/${encounter.id}`),
-  });
-
-  // Not DM-only: a player needs this too, to know which participant row is
-  // THEIR OWN character (see myCharacterIds below) — the player-facing
-  // "optimized for movement/HP/actions" visual redesign is a highlighted row
-  // for that character, since players have no other reason to scan the full
-  // roster the way a DM does.
-  const charactersQuery = useQuery({
-    queryKey: ['characters', campaignId],
-    queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${campaignId}/characters`),
-  });
-
-  const myCharacterIds = new Set(
-    charactersQuery.data?.characters.filter((c) => c.owner_user_id === user?.id).map((c) => c.id) ?? [],
-  );
-
-  const monsterInstancesQuery = useQuery({
-    queryKey: ['monsterInstances', campaignId],
-    queryFn: () => api.get<{ monsterInstances: MonsterInstance[] }>(`/campaigns/${campaignId}/monster-instances`),
-    enabled: isDm,
-  });
-
-  // Ability scores for the turn-action panel's roll triggers (Grab/Shove/
-  // Hide) — characters carry these directly, monster instances need a join
-  // through the bestiary catalog to their monster_id.
-  const bestiaryQuery = useQuery({
-    queryKey: ['catalog', 'monsters', campaign.srd_edition, campaignId],
-    queryFn: () =>
-      api.get<{ monsters: MonsterCatalogEntry[] }>(
-        `/catalog/monsters?edition=${campaign.srd_edition}&campaignId=${campaignId}`,
-      ),
-    enabled: isDm,
-  });
-
-  function invalidateControlPlane() {
-    void queryClient.invalidateQueries({ queryKey: ['encounters', campaignId] });
-    void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounter.id] });
-  }
-
-  const startMutation = useMutation({
-    mutationFn: () => api.post(`/encounters/${encounter.id}/start`),
-    onSuccess: invalidateControlPlane,
-  });
-  const endMutation = useMutation({
-    mutationFn: () => api.post(`/encounters/${encounter.id}/end`),
-    onSuccess: invalidateControlPlane,
-  });
-  const rollInitiativeMutation = useMutation({
-    mutationFn: (force: boolean) => api.post(`/encounters/${encounter.id}/roll-initiative`, { force }),
-    onSuccess: invalidateControlPlane,
-  });
-  const advanceTurnMutation = useMutation({
-    mutationFn: () => api.post(`/encounters/${encounter.id}/advance-turn`),
-    onSuccess: invalidateControlPlane,
-  });
-  const removeParticipantMutation = useMutation({
-    mutationFn: (participantId: string) => api.delete(`/encounters/${encounter.id}/participants/${participantId}`),
-    onSuccess: invalidateControlPlane,
-  });
-  // Encounter visibility by state (nav point 1) — the actual UI update comes
-  // from the FULL_STATE_SYNC resync this route broadcasts (useEncounterLive
-  // already handles that event); invalidateControlPlane is just the same
-  // belt-and-suspenders fallback every sibling participant mutation here uses.
-  const visibilityMutation = useMutation({
-    mutationFn: ({ participantId, visible }: { participantId: string; visible: boolean }) =>
-      api.patch(`/encounters/${encounter.id}/participants/${participantId}/visibility`, { visible }),
-    onSuccess: invalidateControlPlane,
-  });
-  const addParticipantMutation = useMutation({
-    mutationFn: (body: { characterId?: string; monsterInstanceId?: string }) =>
-      api.post(`/encounters/${encounter.id}/participants`, body),
-    onSuccess: invalidateControlPlane,
-  });
-  const hpMutation = useMutation({
-    mutationFn: ({
-      target,
-      id,
-      delta,
-      tempDelta,
-    }: {
-      target: 'character' | 'monster';
-      id: string;
-      delta: number;
-      tempDelta: number;
-    }) =>
-      target === 'character'
-        ? api.patch(`/characters/${id}/hp`, { delta, tempDelta })
-        : api.patch(`/monster-instances/${id}/hp`, { delta, tempDelta }),
-    // No cache write here on purpose — HP_CHANGED arriving over the socket
-    // (which the DM's own action also triggers, per PLAN.md §5.2) is the
-    // single source of truth for combat HP display, so this mutation only
-    // needs to surface errors, not race a second local write.
-  });
-  const applyEffectMutation = useMutation({
-    mutationFn: ({ participant, input }: { participant: SnapshotParticipant; input: ApplyEffectFormInput }) =>
-      api.post(`/encounters/${encounter.id}/effects`, {
-        ...(participant.characterId != null
-          ? { characterId: participant.characterId }
-          : { monsterInstanceId: participant.monsterInstanceId }),
-        effectDefinitionId: input.effectDefinitionId,
-        durationValue: input.durationValue,
-      }),
-    // Same "no cache write" discipline as hpMutation — EFFECT_APPLIED over
-    // the socket is the source of truth (see useEncounterLive.ts).
-  });
-  const removeEffectMutation = useMutation({
-    mutationFn: (effectId: string) => api.delete(`/effects/${effectId}`),
-    // EFFECT_EXPIRED over the socket patches the cache; see useEncounterLive.ts.
-  });
-
-  const status = live?.encounter.status ?? detailQuery.data?.encounter.status ?? encounter.status;
-  const currentRound = live?.encounter.currentRound ?? detailQuery.data?.encounter.current_round ?? encounter.current_round;
-
-  const existingCharacterIds = new Set(
-    (live?.participants.map((p) => p.characterId) ?? detailQuery.data?.encounter.participants.map((p) => p.character_id) ?? []).filter(
-      (id): id is string => id != null,
-    ),
-  );
-  const existingMonsterInstanceIds = new Set(
-    (
-      live?.participants.map((p) => p.monsterInstanceId) ??
-      detailQuery.data?.encounter.participants.map((p) => p.monster_instance_id) ??
-      []
-    ).filter((id): id is string => id != null),
-  );
-
-  const availableCharacters = (charactersQuery.data?.characters ?? []).filter((c) => !existingCharacterIds.has(c.id));
-  const availableMonsterInstances = (monsterInstancesQuery.data?.monsterInstances ?? []).filter(
-    (mi) => !existingMonsterInstanceIds.has(mi.id),
-  );
+  const {
+    campaignId,
+    isDm,
+    live,
+    expandedParticipantId,
+    setExpandedParticipantId,
+    showDiceRoller,
+    setShowDiceRoller,
+    charactersQuery,
+    monsterInstancesQuery,
+    bestiaryQuery,
+    myCharacterIds,
+    status,
+    currentRound,
+    availableCharacters,
+    availableMonsterInstances,
+    startMutation,
+    endMutation,
+    startCombatMutation,
+    endCombatMutation,
+    forceFullscreenMutation,
+    rollInitiativeMutation,
+    advanceTurnMutation,
+    removeParticipantMutation,
+    visibilityMutation,
+    addParticipantMutation,
+    hpMutation,
+    applyEffectMutation,
+    removeEffectMutation,
+  } = useEncounterSessionData(encounter);
 
   return (
     <div className="space-y-4">
@@ -363,6 +245,8 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
       {[
         startMutation,
         endMutation,
+        startCombatMutation,
+        endCombatMutation,
         rollInitiativeMutation,
         advanceTurnMutation,
         removeParticipantMutation,
@@ -398,6 +282,9 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
           setShowDiceRoller={setShowDiceRoller}
           startMutation={startMutation}
           endMutation={endMutation}
+          startCombatMutation={startCombatMutation}
+          endCombatMutation={endCombatMutation}
+          forceFullscreenMutation={forceFullscreenMutation}
           rollInitiativeMutation={rollInitiativeMutation}
           advanceTurnMutation={advanceTurnMutation}
           addParticipantMutation={addParticipantMutation}
@@ -408,6 +295,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
           removeEffectMutation={removeEffectMutation}
           availableCharacters={availableCharacters}
           availableMonsterInstances={availableMonsterInstances}
+          showMap={false}
         />
       )}
     </div>

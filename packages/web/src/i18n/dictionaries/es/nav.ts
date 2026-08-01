@@ -1,4 +1,6 @@
 export const nav = {
+  dashboard: 'Panel',
+  map: 'Mapa',
   characters: 'Personajes',
   bestiary: 'Bestiario',
   items: 'Objetos',

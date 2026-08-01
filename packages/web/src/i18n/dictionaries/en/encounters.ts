@@ -16,15 +16,16 @@ export const encounters = {
     namePlaceholder: 'Encounter name',
     noEncountersYet: 'No encounters yet.',
     selectOrCreate: 'Select or create an encounter to view its tracker.',
-    closeTab: 'Close {name} tab',
-    openEncountersTabs: 'Open encounters',
   },
   tracker: {
     connectingLive: 'Connecting to live combat state…',
     noCharacterYet: "You don't have a character in this encounter yet — nothing to show until the DM adds you.",
     startEncounter: 'Start encounter',
     endEncounter: 'End encounter',
+    startCombat: 'Start combat',
+    endCombat: 'End combat',
     rollInitiative: 'Roll initiative',
+    rerollInitiative: 'Re-roll initiative',
     advanceTurn: 'Advance turn',
     round: 'Round {round}',
     roundInline: ' · Round {round}',
@@ -255,5 +256,10 @@ export const encounters = {
   },
   overlay: {
     manageTitle: 'Manage encounter',
+  },
+  live: {
+    minimize: 'Minimize',
+    forceFullscreen: 'Bring everyone to fullscreen',
+    switchSession: 'Switch session',
   },
 };

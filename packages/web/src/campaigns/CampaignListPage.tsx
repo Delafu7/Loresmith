@@ -102,7 +102,7 @@ export function CampaignListPage() {
             <ImportCampaignButton
               onImported={(campaignId) => {
                 void queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-                navigate(`/campaigns/${campaignId}/characters`);
+                navigate(`/campaigns/${campaignId}`);
               }}
             />
             <button
@@ -179,7 +179,7 @@ export function CampaignListPage() {
           {campaignsQuery.data?.campaigns.map((c) => (
             <li key={c.id}>
               <Link
-                to={`/campaigns/${c.id}/characters`}
+                to={`/campaigns/${c.id}`}
                 className="block rounded-md bg-stone-900 shadow-sm hover:border-amber-700 hover:bg-stone-800/60 transition-colors px-4 py-3"
               >
                 <div className="flex items-center justify-between">

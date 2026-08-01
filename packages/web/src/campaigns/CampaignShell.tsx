@@ -6,6 +6,7 @@ import type { Campaign, CampaignRole } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useLocale, type TranslationKey } from '../i18n/LocaleContext';
 import { useJoinCampaign } from '../lib/useJoinCampaign';
+import { useLiveMapAutoOpen } from './useLiveMapAutoOpen';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { Sidebar, NavItemList, NavItem } from '../components/ui/Nav';
 import { isUuid } from '../lib/ids';
@@ -16,6 +17,8 @@ import { useHeaderBadge } from '../components/layout/HeaderBadgeContext';
 // the breadcrumb trail's second segment ("Home › Campaign › Session") is
 // derived once here instead of every nested page registering it itself.
 const SECTION_LABEL_KEYS: Record<string, TranslationKey> = {
+  dashboard: 'nav.dashboard',
+  map: 'nav.map',
   characters: 'nav.characters',
   monsters: 'nav.bestiary',
   items: 'nav.items',
@@ -34,7 +37,12 @@ interface CampaignShellContextValue {
   role: CampaignRole;
 }
 
-const CampaignShellContext = createContext<CampaignShellContextValue | null>(null);
+// Exported (not just the useCampaignShell hook below) so LiveMapPage.tsx
+// (map-first encounter system) can provide it too — the fullscreen live
+// route lives OUTSIDE this component's tree (no header/nav chrome), but
+// still needs every nested component that already calls useCampaignShell()
+// (ParticipantSheetPanel, ActionEconomyPanel, ...) to keep working unchanged.
+export const CampaignShellContext = createContext<CampaignShellContextValue | null>(null);
 
 export function useCampaignShell(): CampaignShellContextValue {
   const ctx = useContext(CampaignShellContext);
@@ -96,6 +104,7 @@ export function CampaignShell() {
   const location = useLocation();
 
   useJoinCampaign(campaignId);
+  useLiveMapAutoOpen(campaignId);
 
   const campaignQuery = useQuery({
     queryKey: ['campaign', campaignId],
@@ -139,6 +148,14 @@ export function CampaignShell() {
             <h1 className="font-display text-lg font-medium truncate">{campaignQuery.data.campaign.name}</h1>
           </div>
           <NavItemList>
+            {/* First item, matching design/nocturne.html's sidebar ordering
+                — the campaign's default landing view (see App.tsx's index
+                redirect). */}
+            <NavItem to="dashboard">{t('nav.dashboard')}</NavItem>
+            {/* Positioned right after Dashboard (not nocturne's literal
+                6th-of-8 slot) — this app's map-first premise makes it a
+                primary surface, not a secondary browse tab. */}
+            <NavItem to="map">{t('nav.map')}</NavItem>
             <NavItem to="characters">{t('nav.characters')}</NavItem>
             {isDm && <NavItem to="monsters">{t('nav.bestiary')}</NavItem>}
             {isDm && <NavItem to="items">{t('nav.items')}</NavItem>}

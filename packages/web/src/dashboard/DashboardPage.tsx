@@ -98,7 +98,7 @@ export function DashboardPage() {
                 count={dashboardQuery.data.campaigns.length}
               >
                 {dashboardQuery.data.campaigns.map((c) => (
-                  <ListRow key={c.id} to={`/campaigns/${c.id}/characters`} title={c.name} trailing={<Badge variant="outline">{c.my_role}</Badge>} />
+                  <ListRow key={c.id} to={`/campaigns/${c.id}`} title={c.name} trailing={<Badge variant="outline">{c.my_role}</Badge>} />
                 ))}
               </ListCard>
 

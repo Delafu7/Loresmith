@@ -10,7 +10,7 @@
 // initials/silhouette placeholder whenever it's null, so a missing image never
 // renders a gap or a broken-image icon.
 
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Portrait, type PortraitSize } from '../components/Portrait';
 import type { ParticipantHp, SnapshotParticipant } from '../lib/types';
 import { footprintCellsFor } from './creatureSize';
@@ -93,18 +93,7 @@ const FACTION_DOT: Record<SnapshotParticipant['faction'], string> = {
   neutral: 'bg-stone-600',
 };
 
-export function Token({
-  participant,
-  cellSizePx,
-  gridColumns,
-  gridRows,
-  zoom = 1,
-  isActive,
-  isDraggable,
-  isSelected,
-  onMove,
-  onSelect,
-}: {
+export interface TokenProps {
   participant: SnapshotParticipant;
   cellSizePx: number;
   gridColumns: number;
@@ -122,8 +111,56 @@ export function Token({
   isSelected?: boolean;
   /** Called once, on drop, with the final snapped cell indices. */
   onMove: (x: number, y: number) => void;
+  /** Single click/tap — selects the token for movement only (drag targeting,
+   * reachable-cell highlighting). Deliberately does NOT open the stats sheet
+   * — a DM repositioning several tokens in a row would otherwise get a stats
+   * panel popping open on every single click. See onOpenSheet below. */
   onSelect?: () => void;
-}) {
+  /** Double click/tap — opens the participant's full stats sheet. Kept
+   * separate from onSelect (both fire on a real double-click; harmless,
+   * since re-selecting an already-selected token is a no-op toggle). */
+  onOpenSheet?: () => void;
+}
+
+// Performance (map-first encounter system: the map is now the permanent
+// fullscreen focus, so an unnecessary re-render of every OTHER token on any
+// single HP/position/effect change matters more than it used to). onMove/
+// onSelect are deliberately excluded from the comparison — BattleMap.tsx
+// creates a fresh closure for each token on every one of ITS OWN renders,
+// but each closure only ever captures that same token's own participantId,
+// so a "stale" closure from a skipped re-render is never actually stale in
+// a way that matters. `participant` is compared by reference, not deep
+// equality: useEncounterLive.ts's patch functions already preserve the
+// object reference for every participant a given socket event didn't touch
+// (`prev.participants.map((p) => p.participantId === id ? {...} : p)`), so
+// reference equality alone already means "genuinely unchanged," with no need
+// to recompute or deep-compare anything here.
+function tokenPropsAreEqual(prev: TokenProps, next: TokenProps): boolean {
+  return (
+    prev.participant === next.participant &&
+    prev.cellSizePx === next.cellSizePx &&
+    prev.gridColumns === next.gridColumns &&
+    prev.gridRows === next.gridRows &&
+    prev.zoom === next.zoom &&
+    prev.isActive === next.isActive &&
+    prev.isDraggable === next.isDraggable &&
+    prev.isSelected === next.isSelected
+  );
+}
+
+function TokenComponent({
+  participant,
+  cellSizePx,
+  gridColumns,
+  gridRows,
+  zoom = 1,
+  isActive,
+  isDraggable,
+  isSelected,
+  onMove,
+  onSelect,
+  onOpenSheet,
+}: TokenProps) {
   const posX = participant.posX ?? 0;
   const posY = participant.posY ?? 0;
   const footprint = footprintCellsFor(participant.size);
@@ -173,6 +210,7 @@ export function Token({
       onPointerMove={isDraggable ? handlePointerMove : undefined}
       onPointerUp={isDraggable ? handlePointerUp : undefined}
       onClick={onSelect}
+      onDoubleClick={onOpenSheet}
       title={`${participant.name} (${String.fromCharCode(65 + posX)}${posY + 1})`}
     >
       {simplified ? (
@@ -219,3 +257,5 @@ export function Token({
     </div>
   );
 }
+
+export const Token = memo(TokenComponent, tokenPropsAreEqual);

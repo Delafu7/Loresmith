@@ -1,0 +1,15 @@
+export const campaignDashboard = {
+  welcome: 'Bon retour dans {name}',
+  party: 'Groupe',
+  noCharacters: 'Aucun personnage dans cette campagne pour le moment.',
+  acLine: 'CA {ac}',
+  nextSessionKicker: 'Prochaine session',
+  nextSessionHint: 'En préparation — pas encore commencée.',
+  noUpcomingDm: 'Aucune rencontre préparée pour le moment.',
+  noUpcomingPlayer: 'Rien de prévu pour le moment.',
+  createEncounterLink: 'Créer une rencontre →',
+  openSessionLink: 'Ouvrir la session →',
+  latestChronicleKicker: 'Dernière chronique',
+  noChronicle: 'Aucune entrée dans le journal de session pour le moment.',
+  openSessionLogLink: 'Ouvrir le journal de session →',
+};

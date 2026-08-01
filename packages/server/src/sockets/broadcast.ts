@@ -691,6 +691,62 @@ export function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRo
   io.to(campaignRoom(campaignId)).emit('DICE_ROLLED', payload);
 }
 
+// ---- ENCOUNTER_OPENED / ENCOUNTER_FULLSCREEN_FORCED (map-first encounter system) ----
+//
+// Pushes a "go fullscreen now" navigation signal to exactly the sockets that
+// should act on it: the campaign's DM (always relevant — they're the one who
+// opened it) and any player who owns a character seated as a
+// combat_participants row in this encounter. Targeted the same way
+// pushEncounterRoomJoinForOwner (above) resolves "which of this player's
+// currently-connected sockets" rather than broadcasting to the whole
+// campaign room and asking every client to self-filter — participants are
+// DM-only to add, so a player with no stake in this encounter has no
+// business being told it exists yet, same discipline 'preparing'-status
+// invisibility already applies elsewhere in this file.
+async function relevantSocketIds(io: Server, pool_: Pool, campaignId: string, encounterId: string): Promise<string[]> {
+  const campaignSockets = await io.in(campaignRoom(campaignId)).fetchSockets();
+  if (campaignSockets.length === 0) return [];
+
+  const relevantUserIds = new Set<string>();
+  const dmRes = await pool_.query<{ dm_user_id: string }>(`SELECT dm_user_id FROM campaigns WHERE id = $1`, [campaignId]);
+  const dmUserId = dmRes.rows[0]?.dm_user_id;
+  if (dmUserId) relevantUserIds.add(dmUserId);
+
+  const ownersRes = await pool_.query<{ owner_user_id: string }>(
+    `SELECT DISTINCT c.owner_user_id
+     FROM combat_participants cp
+     JOIN characters c ON c.id = cp.character_id
+     WHERE cp.encounter_id = $1 AND c.owner_user_id IS NOT NULL`,
+    [encounterId],
+  );
+  for (const row of ownersRes.rows) relevantUserIds.add(row.owner_user_id);
+
+  return campaignSockets.filter((s) => relevantUserIds.has((s.data as SocketData).userId)).map((s) => s.id);
+}
+
+// `forced` picks the event name rather than a payload flag (two distinct,
+// unambiguous event names, same choice this file already makes elsewhere
+// rather than a single event + mode field) — the client-side listener uses
+// the name alone to decide whether to override a player's own "I minimized
+// this" preference (ENCOUNTER_FULLSCREEN_FORCED) or respect it
+// (ENCOUNTER_OPENED).
+export async function broadcastEncounterOpened(
+  io: Server,
+  pool_: Pool,
+  encounter: EncounterLike,
+  name: string,
+  forced: boolean,
+): Promise<void> {
+  const socketIds = await relevantSocketIds(io, pool_, encounter.campaign_id, encounter.id);
+  if (socketIds.length === 0) return;
+  io.to(socketIds).emit(forced ? 'ENCOUNTER_FULLSCREEN_FORCED' : 'ENCOUNTER_OPENED', {
+    encounterId: encounter.id,
+    campaignId: encounter.campaign_id,
+    name,
+    serverTimestamp: Date.now(),
+  });
+}
+
 // ---- ACTION_RECORDED (nav point 2 — combat log) ----
 //
 // No sync_seq bump / resync discipline here, unlike FULL_STATE_SYNC: a

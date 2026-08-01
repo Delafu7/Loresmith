@@ -269,6 +269,21 @@ export interface ActionRecordedEvent {
   action: CombatActionWire;
 }
 
+// ENCOUNTER_OPENED / ENCOUNTER_FULLSCREEN_FORCED (map-first encounter
+// system) — same "not part of turn-sequencing, no seq" shape as DICE_ROLLED/
+// ACTION_RECORDED: this is a one-shot navigation nudge, not sync-critical
+// state. Server targets these at exactly the sockets that should act on
+// them (sockets/broadcast.ts's relevantSocketIds), so every socket that
+// receives one is, by construction, relevant — no client-side filtering
+// needed beyond "have I already minimized this specific encounter" (respect
+// that for ENCOUNTER_OPENED, override it for ENCOUNTER_FULLSCREEN_FORCED).
+export interface EncounterOpenedEvent {
+  encounterId: string;
+  campaignId: string;
+  name: string;
+  serverTimestamp: number;
+}
+
 export interface ServerToClientEvents {
   COMBAT_STARTED: (payload: CombatStartedEvent) => void;
   COMBAT_ENDED: (payload: CombatEndedEvent) => void;
@@ -289,6 +304,8 @@ export interface ServerToClientEvents {
   ACTION_ECONOMY_CHANGED: (payload: ActionEconomyChangedEvent) => void;
   DICE_ROLLED: (payload: DiceRolledEvent) => void;
   ACTION_RECORDED: (payload: ActionRecordedEvent) => void;
+  ENCOUNTER_OPENED: (payload: EncounterOpenedEvent) => void;
+  ENCOUNTER_FULLSCREEN_FORCED: (payload: EncounterOpenedEvent) => void;
 }
 
 export interface AckOk {

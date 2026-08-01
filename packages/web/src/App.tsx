@@ -11,11 +11,14 @@ import { LandingPage } from './landing/LandingPage';
 import { DashboardPage } from './dashboard/DashboardPage';
 import { CampaignListPage } from './campaigns/CampaignListPage';
 import { CampaignShell } from './campaigns/CampaignShell';
+import { CampaignDashboardPage } from './campaigns/CampaignDashboardPage';
+import { MapSectionPage } from './campaigns/MapSectionPage';
 import { CharactersListPage } from './characters/CharactersListPage';
 import { CharacterSheetPage } from './characters/CharacterSheetPage';
 import { MonstersPage } from './monsters/MonstersPage';
 import { CreatureEditorPage } from './monsters/CreatureEditorPage';
 import { ItemRepositoryPage } from './items/ItemRepositoryPage';
+import { LiveMapPage } from './encounters/LiveMapPage';
 import { EncountersPage } from './encounters/EncountersPage';
 import { NotesPage } from './notes/NotesPage';
 import { SessionLogPage } from './sessions/SessionLogPage';
@@ -47,6 +50,12 @@ function App() {
                   RequireAuth. */}
               <Route path="/styleguide" element={<StyleguidePage />} />
 
+              {/* Map-first encounter system: the fullscreen live map. Deliberately
+                  OUTSIDE AppLayout (same "skip the persistent header" pattern as
+                  /styleguide above) — a real viewport takeover, not a panel inside
+                  the normal chrome. Owns its own RequireAuth (LiveMapPage.tsx). */}
+              <Route path="/campaigns/:campaignId/live/:encounterId" element={<LiveMapPage />} />
+
               {/* Every authenticated route shares one persistent header/breadcrumb
                   shell (AppLayout) instead of each page wrapping itself in its
                   own <RequireAuth> and building its own ad hoc header. */}
@@ -69,7 +78,17 @@ function App() {
                 <Route path="/notes" element={<NotesIndexPage />} />
 
                 <Route path="/campaigns/:campaignId" element={<CampaignShell />}>
-                  <Route index element={<Navigate to="characters" replace />} />
+                  <Route index element={<Navigate to="dashboard" replace />} />
+                  {/* Campaign-scoped Dashboard (design/nocturne.html) — the
+                      default landing view; useLiveMapAutoOpen (mounted at
+                      CampaignShell) redirects straight past this into the
+                      fullscreen live map whenever an encounter is active. */}
+                  <Route path="dashboard" element={<CampaignDashboardPage />} />
+                  {/* Dedicated Map section (design/map.html) — DM token
+                      positioning + party stats, available anytime, separate
+                      from the fullscreen live-combat takeover at /live/:id
+                      (unchanged, still auto-pushed to on "Start combat"). */}
+                  <Route path="map" element={<MapSectionPage />} />
                   <Route path="characters" element={<CharactersListPage />} />
                   <Route path="characters/:characterId" element={<CharacterSheetPage />} />
                   <Route path="monsters" element={<MonstersPage />} />

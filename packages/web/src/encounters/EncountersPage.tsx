@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Encounter } from '../lib/types';
@@ -10,33 +10,25 @@ import { useBreadcrumb } from '../components/layout/BreadcrumbContext';
 
 const STATUS_ORDER: Record<Encounter['status'], number> = { active: 0, paused: 1, preparing: 2, completed: 3 };
 
+// Reduced from a multi-tab workspace to a list + single selection: once an
+// encounter goes active, useLiveMapAutoOpen (CampaignShell) already pushes
+// everyone — DM included — into the fullscreen live map, so this page only
+// ever needs to render one encounter's prep-mode CombatTracker at a time,
+// not several concurrently-mounted ones. See DESIGN_AUDIT.md / the approved
+// plan for why: design/nocturne.html has no multi-encounter workspace at
+// all, only a passive "next session" pointer (now CampaignDashboardPage).
 export function EncountersPage() {
   const { campaignId, role } = useCampaignShell();
   const { t } = useLocale();
   const queryClient = useQueryClient();
-  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
-  const autoOpened = useRef(false);
 
   const encountersQuery = useQuery({
     queryKey: ['encounters', campaignId],
     queryFn: () => api.get<{ encounters: Encounter[] }>(`/campaigns/${campaignId}/encounters`),
   });
-
-  function openEncounter(id: string) {
-    setOpenTabIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
-    setActiveTabId(id);
-  }
-
-  function closeTab(id: string) {
-    setOpenTabIds((ids) => {
-      const next = ids.filter((i) => i !== id);
-      setActiveTabId((current) => (current === id ? (next[0] ?? null) : current));
-      return next;
-    });
-  }
 
   const createMutation = useMutation({
     mutationFn: () => api.post<{ encounter: Encounter }>(`/campaigns/${campaignId}/encounters`, { name }),
@@ -44,7 +36,7 @@ export function EncountersPage() {
       setName('');
       setShowCreate(false);
       void queryClient.invalidateQueries({ queryKey: ['encounters', campaignId] });
-      openEncounter(data.encounter.id);
+      setSelectedId(data.encounter.id);
     },
   });
 
@@ -53,20 +45,9 @@ export function EncountersPage() {
     [encountersQuery.data],
   );
 
-  // Auto-open the top-sorted encounter once on first load only — after that,
-  // which tabs are open is entirely up to the user (this must NOT re-fire on
-  // every refetch, or a closed tab would keep popping back open).
-  useEffect(() => {
-    if (autoOpened.current) return;
-    if (sorted.length === 0) return;
-    autoOpened.current = true;
-    openEncounter(sorted[0]!.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sorted]);
-
   const encountersById = new Map(sorted.map((e) => [e.id, e]));
-  const activeEncounter = activeTabId ? encountersById.get(activeTabId) : undefined;
-  useBreadcrumb(2, activeEncounter ? [{ label: activeEncounter.name }] : []);
+  const selectedEncounter = selectedId ? encountersById.get(selectedId) : undefined;
+  useBreadcrumb(2, selectedEncounter ? [{ label: selectedEncounter.name }] : []);
 
   function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -120,14 +101,14 @@ export function EncountersPage() {
               <li key={enc.id}>
                 <button
                   type="button"
-                  onClick={() => openEncounter(enc.id)}
+                  onClick={() => setSelectedId(enc.id)}
                   className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors ${
-                    enc.id === activeTabId ? 'bg-amber-950 text-amber-400 font-medium' : 'bg-stone-900 text-stone-300 hover:bg-stone-800'
+                    enc.id === selectedId ? 'bg-amber-950 text-amber-400 font-medium' : 'bg-stone-900 text-stone-300 hover:bg-stone-800'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate">{enc.name}</span>
-                    <StatusBadge status={enc.status} active={enc.id === activeTabId} />
+                    <StatusBadge status={enc.status} active={enc.id === selectedId} />
                   </div>
                 </button>
               </li>
@@ -136,67 +117,7 @@ export function EncountersPage() {
         </aside>
 
         <div className="flex-1 min-w-0">
-          {/*
-            EncounterTabStrip (PLAN.md §6.2/§8 Phase 2): each open tab's
-            CombatTracker — and, inside it, useEncounterLive's socket
-            room join — stays MOUNTED for as long as its tab stays open,
-            regardless of which tab is currently visible. Hiding an inactive
-            tab is done with CSS (`hidden`) rather than by not rendering it
-            at all, which is what would tear the socket subscription down.
-            This is what lets a DM run two genuinely concurrent encounters
-            (e.g. a split party) and have both stay live at once.
-          */}
-          {openTabIds.length > 1 && (
-            <div
-              className="flex gap-1 border-b border-stone-800 mb-4 overflow-x-auto"
-              role="tablist"
-              aria-label={t('encounters.page.openEncountersTabs')}
-            >
-              {openTabIds.map((id) => {
-                const enc = encountersById.get(id);
-                if (!enc) return null;
-                const isActive = id === activeTabId;
-                return (
-                  <div
-                    key={id}
-                    role="tab"
-                    aria-selected={isActive}
-                    className={`flex-shrink-0 flex items-center gap-1.5 rounded-t-md px-3 py-2 text-sm cursor-pointer select-none ${
-                      isActive ? 'bg-stone-900 text-stone-100 border-x border-t border-stone-800' : 'text-stone-500 hover:text-stone-300'
-                    }`}
-                    onClick={() => setActiveTabId(id)}
-                  >
-                    <span className="truncate max-w-[10rem]">{enc.name}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeTab(id);
-                      }}
-                      aria-label={t('encounters.page.closeTab', { name: enc.name })}
-                      className="text-stone-600 hover:text-stone-300 leading-none"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {openTabIds.length === 0 ? (
-            <EmptyState message={t('encounters.page.selectOrCreate')} />
-          ) : (
-            openTabIds.map((id) => {
-              const enc = encountersById.get(id);
-              if (!enc) return null;
-              return (
-                <div key={id} className={id === activeTabId ? '' : 'hidden'}>
-                  <CombatTracker encounter={enc} />
-                </div>
-              );
-            })
-          )}
+          {selectedEncounter ? <CombatTracker encounter={selectedEncounter} /> : <EmptyState message={t('encounters.page.selectOrCreate')} />}
         </div>
       </div>
     </div>

@@ -14,6 +14,7 @@ import { common } from './common.js';
 import { login } from './login.js';
 import { register } from './register.js';
 import { dashboard } from './dashboard.js';
+import { campaignDashboard } from './campaignDashboard.js';
 import { nav } from './nav.js';
 import { hp } from './hp.js';
 import { proficiency } from './proficiency.js';
@@ -35,9 +36,10 @@ import { encounters } from './encounters.js';
 import { members } from './members.js';
 import { profile } from './profile.js';
 import { items } from './items.js';
+import { mapSection } from './mapSection.js';
 
 export const en = {
-  common, login, register, dashboard, nav, hp, proficiency, effects, hpAdjust, upload,
+  common, login, register, dashboard, campaignDashboard, nav, hp, proficiency, effects, hpAdjust, upload,
   campaigns, notes, sessionLog, assets, dice, landing, characters,
-  monsters, bestiary, statBlock, catalog, encounters, members, profile, items,
+  monsters, bestiary, statBlock, catalog, encounters, members, profile, items, mapSection,
 };

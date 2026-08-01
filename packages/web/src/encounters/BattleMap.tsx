@@ -19,7 +19,7 @@
 // computeValidatedMoveCost, remains the sole source of truth and re-validates
 // every move). Terrain painting stays DM-only.
 
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { EncounterMode, EncounterStatus, CampaignAsset, SnapshotParticipant } from '../lib/types';
@@ -106,13 +106,14 @@ export function BattleMap({
    * need it — isDm alone already grants unconditional control). Used to
    * decide which tokens a non-DM viewer may drag/tap-move/self-place. */
   myCharacterIds?: Set<string>;
-  /** Nav point 3 — fires whenever a token is newly selected (never on
-   * deselect), opening ParticipantSheetPanel in SessionScreen's floating
-   * overlay (the map-first redesign's only participant-detail surface —
-   * there's no more side-by-side roster list here; per-participant faction/
-   * visibility/HP controls live in the sheet and the DM "Manage" overlay
-   * instead). Purely additive: selection itself still drives move-targeting
-   * exactly as before whether or not this is supplied. */
+  /** Nav point 3 — fires on a token DOUBLE click/tap, opening
+   * ParticipantSheetPanel in the caller's floating overlay (per-participant
+   * faction/visibility/HP controls live in the sheet and the DM "Manage"
+   * overlay instead of a side-by-side roster list). Deliberately not tied to
+   * single-click selection — a DM repositioning several tokens shouldn't get
+   * a stats sheet popping open on every click. Purely additive: selection
+   * itself still drives move-targeting exactly as before whether or not this
+   * is supplied. */
   onOpenSheet?: (participantId: string) => void;
 }) {
   const { t } = useLocale();
@@ -161,6 +162,7 @@ export function BattleMap({
     if (!pinchStart.current) return;
     const distance = pointerDistance();
     if (distance == null || pinchStart.current.distance === 0) return;
+    userZoomedRef.current = true;
     setZoom(clamp10(pinchStart.current.zoom * (distance / pinchStart.current.distance)));
   }
 
@@ -260,6 +262,56 @@ export function BattleMap({
     });
   }
 
+  const mapWidthPx = map ? map.gridColumns * map.cellSizePx : 0;
+  const mapHeightPx = map ? map.gridRows * map.cellSizePx : 0;
+
+  // Fit-to-container zoom: the grid otherwise renders at its literal
+  // gridColumns*cellSizePx pixel size regardless of how much room the
+  // surrounding page gives it, leaving a large dead/empty strip in the
+  // scrollable container whenever the map is smaller than the viewport
+  // (reported directly against both the fullscreen live map and the new Map
+  // section). `userZoomedRef` stops this from fighting a zoom the user set
+  // on purpose — the zoom +/- buttons and pinch handler below all set it,
+  // and Reset clears it so the map goes back to auto-fitting on the next
+  // resize instead of pinning a fixed percentage.
+  //
+  // Applied directly from the ResizeObserver callback rather than via a
+  // second effect keyed on a `containerSize` state value — that two-step
+  // version lost its very first fit under React StrictMode's dev-only
+  // mount→cleanup→mount cycle (the first observer's initial notification
+  // landed after its own disconnect(), so only a later resize would have
+  // ever triggered it — confirmed live: the map sat at 100% until a manual
+  // Reset click, which computes the same formula synchronously and worked
+  // immediately). One callback, no intermediate render needed to apply it.
+  const userZoomedRef = useRef(false);
+
+  function fitZoomFor(width: number, height: number): number {
+    if (mapWidthPx <= 0 || mapHeightPx <= 0) return 1;
+    // max, not min: a "contain" fit (min of both ratios) shrinks a
+    // roughly-square map down to whichever dimension is more restrictive —
+    // for a square grid inside a short-and-wide viewport that's the height,
+    // which left the exact large dead strip on the sides this was meant to
+    // remove. max fills the container on at least one axis (usually width,
+    // for the common short-and-wide case), scrolling for whatever overflows
+    // the other axis — panning a map that's bigger than the viewport is
+    // already a normal, supported interaction here (drag-to-pan, zoom
+    // controls, center-on-active), unlike leaving most of the screen empty.
+    return clamp10(Math.max(width / mapWidthPx, height / mapHeightPx));
+  }
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry || userZoomedRef.current) return;
+      setZoom(fitZoomFor(entry.contentRect.width, entry.contentRect.height));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapWidthPx, mapHeightPx]);
+
   if (!map) {
     return (
       <div className="flex h-full flex-col gap-4">
@@ -275,9 +327,6 @@ export function BattleMap({
     );
   }
 
-  const mapWidthPx = map.gridColumns * map.cellSizePx;
-  const mapHeightPx = map.gridRows * map.cellSizePx;
-
   return (
     <div className="flex h-full flex-col gap-4">
       {positionMutation.isError && <ErrorBanner message={errorMessage(positionMutation.error)} />}
@@ -286,7 +335,10 @@ export function BattleMap({
         <div className="flex items-center gap-1 flex-wrap">
           <button
             type="button"
-            onClick={() => setZoom((z) => clamp10(z - ZOOM_STEP))}
+            onClick={() => {
+              userZoomedRef.current = true;
+              setZoom((z) => clamp10(z - ZOOM_STEP));
+            }}
             disabled={zoom <= ZOOM_MIN}
             aria-label={t('encounters.battleMap.zoomOut')}
             className="min-h-11 min-w-11 rounded-md bg-stone-900 shadow-sm text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
@@ -296,7 +348,10 @@ export function BattleMap({
           <span className="text-xs text-stone-400 w-12 text-center">{Math.round(zoom * 100)}%</span>
           <button
             type="button"
-            onClick={() => setZoom((z) => clamp10(z + ZOOM_STEP))}
+            onClick={() => {
+              userZoomedRef.current = true;
+              setZoom((z) => clamp10(z + ZOOM_STEP));
+            }}
             disabled={zoom >= ZOOM_MAX}
             aria-label={t('encounters.battleMap.zoomIn')}
             className="min-h-11 min-w-11 rounded-md bg-stone-900 shadow-sm text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
@@ -305,7 +360,15 @@ export function BattleMap({
           </button>
           <button
             type="button"
-            onClick={() => setZoom(1)}
+            onClick={() => {
+              // "Reset" means "fit the map to the screen" now, not a literal
+              // 100% — clearing the ref lets the effect above keep it fitted
+              // through future container resizes too, instead of pinning a
+              // manual zoom the user didn't ask to keep.
+              userZoomedRef.current = false;
+              const el = scrollRef.current;
+              setZoom(el ? fitZoomFor(el.clientWidth, el.clientHeight) : 1);
+            }}
             className="min-h-11 rounded-md bg-stone-900 shadow-sm px-3 text-xs text-stone-400 hover:bg-stone-800"
           >
             {t('encounters.battleMap.reset')}
@@ -480,13 +543,12 @@ export function BattleMap({
                       isDraggable={canControl(p)}
                       isSelected={p.participantId === selectedId}
                       onMove={(x, y) => positionMutation.mutate({ participantId: p.participantId, x, y })}
-                      onSelect={() => {
-                        const next = selectedId === p.participantId ? null : p.participantId;
-                        selectParticipant(next);
-                        // Nav point 3 — opens the floating participant
-                        // sheet (SessionScreen's SessionOverlayPanel).
-                        if (next !== null) onOpenSheet?.(next);
-                      }}
+                      onSelect={() => selectParticipant(selectedId === p.participantId ? null : p.participantId)}
+                      // Single click only selects (for move-targeting) —
+                      // opening the stats sheet on every click made
+                      // repositioning several tokens in a row annoying
+                      // (a sheet kept popping open). Double click opens it.
+                      onOpenSheet={() => onOpenSheet?.(p.participantId)}
                     />
                   ))}
                 </div>
