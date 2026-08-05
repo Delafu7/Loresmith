@@ -16,6 +16,7 @@ export const bestiary = {
     noCampaigns: "Vous ne faites partie d'aucune campagne pour le moment.",
     newHomebrew: '+ Nouvelle créature homebrew',
     noHomebrewCreatures: 'Aucune créature homebrew dans cette campagne pour le moment.',
+    homebrewHeading: 'Créatures homebrew',
   },
   sheet: {
     backToBestiary: '← Bestiaire',

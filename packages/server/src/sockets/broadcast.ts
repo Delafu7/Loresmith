@@ -668,6 +668,17 @@ export interface DiceRollBroadcastRow {
   created_at: Date | string;
 }
 
+// ---- BESTIARY_UPDATED (Task 1 — per-campaign bestiary) ----
+//
+// A bare invalidation signal, not a full-payload event like HP_CHANGED:
+// computing a role-correct entry payload here would risk leaking an
+// undiscovered creature to a player over the socket. The client just
+// refetches GET /campaigns/:id/bestiary on receipt, which already applies
+// the discovered-only filter server-side.
+export function broadcastBestiaryUpdated(io: Server, campaignId: string): void {
+  io.to(campaignRoom(campaignId)).emit('BESTIARY_UPDATED', { campaignId, serverTimestamp: Date.now() });
+}
+
 export function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRollBroadcastRow): void {
   const payload = {
     campaignId,

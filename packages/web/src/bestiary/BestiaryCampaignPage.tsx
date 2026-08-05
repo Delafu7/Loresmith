@@ -72,7 +72,14 @@ export function BestiaryCampaignPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="font-display text-lg font-medium">{campaignQuery.data?.campaign.name}</h2>
+        <div>
+          <h2 className="font-display text-lg font-medium">{campaignQuery.data?.campaign.name}</h2>
+          {/* Disambiguates this from the two other bestiary-shaped surfaces
+              (Task 1's /campaigns/:id/bestiary curation list, and the
+              combat-spawn workbench at /campaigns/:id/monsters) — this one
+              is homebrew-authored creatures only, no global-catalog union. */}
+          <p className="text-xs uppercase tracking-wide text-stone-500">{t('bestiary.campaign.homebrewHeading')}</p>
+        </div>
         {campaignQuery.data?.myRole === 'dm' && (
           <ButtonLink to={`/campaigns/${campaignId}/monsters/new`} variant="primary" size="sm">
             {t('bestiary.campaign.newHomebrew')}

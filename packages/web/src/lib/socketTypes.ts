@@ -284,6 +284,16 @@ export interface EncounterOpenedEvent {
   serverTimestamp: number;
 }
 
+// BESTIARY_UPDATED (Task 1 — per-campaign bestiary) — a bare invalidation
+// signal, same "not part of turn-sequencing, no seq" shape as DICE_ROLLED:
+// carries no entry data (a role-correct payload can't be computed once for
+// both DM and player sockets without risking an undiscovered creature
+// leaking), so a receiving client just refetches GET /campaigns/:id/bestiary.
+export interface BestiaryUpdatedEvent {
+  campaignId: string;
+  serverTimestamp: number;
+}
+
 export interface ServerToClientEvents {
   COMBAT_STARTED: (payload: CombatStartedEvent) => void;
   COMBAT_ENDED: (payload: CombatEndedEvent) => void;
@@ -306,6 +316,7 @@ export interface ServerToClientEvents {
   ACTION_RECORDED: (payload: ActionRecordedEvent) => void;
   ENCOUNTER_OPENED: (payload: EncounterOpenedEvent) => void;
   ENCOUNTER_FULLSCREEN_FORCED: (payload: EncounterOpenedEvent) => void;
+  BESTIARY_UPDATED: (payload: BestiaryUpdatedEvent) => void;
 }
 
 export interface AckOk {

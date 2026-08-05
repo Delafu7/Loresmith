@@ -20,7 +20,8 @@ const SECTION_LABEL_KEYS: Record<string, TranslationKey> = {
   dashboard: 'nav.dashboard',
   map: 'nav.map',
   characters: 'nav.characters',
-  monsters: 'nav.bestiary',
+  bestiary: 'nav.bestiary',
+  monsters: 'nav.monsters',
   items: 'nav.items',
   session: 'nav.session',
   'session-log': 'nav.sessionLog',
@@ -157,7 +158,11 @@ export function CampaignShell() {
                 primary surface, not a secondary browse tab. */}
             <NavItem to="map">{t('nav.map')}</NavItem>
             <NavItem to="characters">{t('nav.characters')}</NavItem>
-            {isDm && <NavItem to="monsters">{t('nav.bestiary')}</NavItem>}
+            {/* Task 1: curated bestiary, visible to DM + players (server-side
+                filters undiscovered creatures for players) — not gated like
+                the DM-only "monsters" workbench below. */}
+            <NavItem to="bestiary">{t('nav.bestiary')}</NavItem>
+            {isDm && <NavItem to="monsters">{t('nav.monsters')}</NavItem>}
             {isDm && <NavItem to="items">{t('nav.items')}</NavItem>}
             <NavItem to="session">{t('nav.session')}</NavItem>
             {/* "Session Log" — the DM's per-session recap (SessionLogPage), NOT

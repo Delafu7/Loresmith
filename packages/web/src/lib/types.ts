@@ -295,6 +295,47 @@ export interface MonsterInstance {
   damage_immunities?: string[] | null;
 }
 
+// ---- Task 1: per-campaign bestiary curation + generic categories ----
+// (packages/server/src/{routes,services}/campaignBestiary.ts,
+// campaignCategories.ts) — a reference to a MonsterCatalogEntry plus
+// campaign-scoped overrides, distinct from MonsterInstance (a live combat
+// copy) and from homebrew monsters (a DM-authored new catalog row). No FK
+// relationship to either — adding/removing an entry never touches combat
+// instances or the catalog.
+
+export interface CampaignCategory {
+  id: string;
+  campaign_id: string;
+  entity_type: string;
+  name: string;
+  color: string | null;
+  icon: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface CampaignBestiaryEntry {
+  id: string;
+  campaign_id: string;
+  monster_id: string;
+  custom_name: string | null;
+  // Raw override blob (snake_case keys matching monster columns) — prefer
+  // `effective` for display; this is mainly useful to know which fields were
+  // explicitly overridden.
+  stat_overrides: Record<string, unknown>;
+  notes: string | null;
+  discovered: boolean;
+  added_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  categories: CampaignCategory[];
+  // The unmodified catalog row.
+  monster: MonsterCatalogEntry;
+  // monster with stat_overrides shallow-merged on top — what the UI should
+  // render as this creature's actual stat block in this campaign.
+  effective: MonsterCatalogEntry;
+}
+
 export type EncounterStatus = 'preparing' | 'active' | 'paused' | 'completed';
 
 // Exploration (free player movement, no turn/budget checks) vs. combat

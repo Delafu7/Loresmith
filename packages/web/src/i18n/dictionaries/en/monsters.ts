@@ -5,6 +5,7 @@
 export const monsters = {
   dmOnly: 'The bestiary is only available to the DM.',
   list: {
+    heading: 'Monsters',
     allTypes: 'All types',
     newHomebrew: '+ New homebrew creature',
     colName: 'Name',

@@ -153,7 +153,7 @@ export function MonstersPage() {
     <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto space-y-8">
       <section>
         <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-          <h2 className="text-lg font-semibold">{t('nav.bestiary')}</h2>
+          <h2 className="text-lg font-semibold">{t('monsters.list.heading')}</h2>
           <div className="flex items-center gap-2">
             <select
               value={creatureTypeFilter}

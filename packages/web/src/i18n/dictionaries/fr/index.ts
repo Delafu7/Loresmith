@@ -19,6 +19,7 @@ import { landing } from './landing.js';
 import { characters } from './characters.js';
 import { monsters } from './monsters.js';
 import { bestiary } from './bestiary.js';
+import { campaignBestiary } from './campaignBestiary.js';
 import { statBlock } from './statBlock.js';
 import { catalog } from './catalog.js';
 import { encounters } from './encounters.js';
@@ -30,5 +31,5 @@ import { mapSection } from './mapSection.js';
 export const fr = {
   common, login, register, dashboard, campaignDashboard, nav, hp, proficiency, effects, hpAdjust, upload,
   campaigns, notes, sessionLog, assets, dice, landing, characters,
-  monsters, bestiary, statBlock, catalog, encounters, members, profile, items, mapSection,
+  monsters, bestiary, campaignBestiary, statBlock, catalog, encounters, members, profile, items, mapSection,
 } satisfies typeof en;

@@ -3,6 +3,7 @@ export const nav = {
   map: 'Mapa',
   characters: 'Personajes',
   bestiary: 'Bestiario',
+  monsters: 'Monstruos',
   items: 'Objetos',
   session: 'Sesión',
   sessionLog: 'Registro de sesión',

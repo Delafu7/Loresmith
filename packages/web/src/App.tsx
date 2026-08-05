@@ -27,6 +27,8 @@ import { BestiaryLayout } from './bestiary/BestiaryLayout';
 import { BestiaryBasicPage } from './bestiary/BestiaryBasicPage';
 import { BestiaryCampaignPage, BestiaryCampaignPickerPage } from './bestiary/BestiaryCampaignPage';
 import { CreatureSheetPage } from './bestiary/CreatureSheetPage';
+import { CampaignBestiaryPage } from './bestiary/CampaignBestiaryPage';
+import { AddToBestiaryPage } from './bestiary/AddToBestiaryPage';
 import { NotesIndexPage } from './notes/NotesIndexPage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
 import { CatalogEditorPage } from './catalog/CatalogEditorPage';
@@ -91,6 +93,11 @@ function App() {
                   <Route path="map" element={<MapSectionPage />} />
                   <Route path="characters" element={<CharactersListPage />} />
                   <Route path="characters/:characterId" element={<CharacterSheetPage />} />
+                  {/* Task 1: the curated per-campaign bestiary — DM + player, distinct
+                      from "monsters" below (the DM-only combat-spawn/homebrew
+                      workbench, unaffected by this feature). */}
+                  <Route path="bestiary" element={<CampaignBestiaryPage />} />
+                  <Route path="bestiary/add" element={<AddToBestiaryPage />} />
                   <Route path="monsters" element={<MonstersPage />} />
                   <Route path="monsters/new" element={<CreatureEditorPage />} />
                   <Route path="monsters/:monsterId/edit" element={<CreatureEditorPage />} />
