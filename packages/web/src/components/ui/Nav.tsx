@@ -11,17 +11,11 @@ import { NavLink, type NavLinkProps } from 'react-router-dom';
  * which fails AA under the new palette — see design-tokens.md) migrates to.
  */
 export function Sidebar({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return (
-    <nav
-      className={`flex flex-col gap-6 border-stone-800 px-4 py-4 max-md:border-b md:min-h-dvh md:w-56 md:border-r ${className}`}
-    >
-      {children}
-    </nav>
-  );
+  return <nav className={`flex flex-col gap-6 px-4 py-4 ${className}`}>{children}</nav>;
 }
 
 export function NavItemList({ children }: { children: ReactNode }) {
-  return <ul className="flex flex-col gap-1 max-md:flex-row max-md:flex-wrap">{children}</ul>;
+  return <ul className="flex flex-col gap-1">{children}</ul>;
 }
 
 export function NavItem({

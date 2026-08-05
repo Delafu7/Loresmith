@@ -17,4 +17,7 @@ export const nav = {
   logoAria: 'Loresmith — aller à l’accueil',
   userMenuAria: '{name} — menu du compte',
   myProfile: 'Mon profil',
+  openMenu: 'Ouvrir le menu',
+  collapseSidebar: 'Réduire la barre latérale',
+  expandSidebar: 'Développer la barre latérale',
 };

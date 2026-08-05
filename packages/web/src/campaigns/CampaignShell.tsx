@@ -9,9 +9,12 @@ import { useJoinCampaign } from '../lib/useJoinCampaign';
 import { useLiveMapAutoOpen } from './useLiveMapAutoOpen';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { Sidebar, NavItemList, NavItem } from '../components/ui/Nav';
+import { NavDrawer } from '../components/layout/NavDrawer';
 import { isUuid } from '../lib/ids';
 import { useBreadcrumb } from '../components/layout/BreadcrumbContext';
 import { useHeaderBadge } from '../components/layout/HeaderBadgeContext';
+
+const DESKTOP_COLLAPSED_KEY = 'campaignNavCollapsed';
 
 // Maps a campaign-nested route's leading path segment to its nav label, so
 // the breadcrumb trail's second segment ("Home › Campaign › Session") is
@@ -103,6 +106,21 @@ export function CampaignShell() {
   const { roleForCampaign } = useAuth();
   const { t } = useLocale();
   const location = useLocation();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Desktop-only, persisted across visits (a DM/player's collapsed
+  // preference shouldn't reset every page load) — mobile always starts
+  // closed, that state isn't worth persisting for an overlay.
+  const [desktopCollapsed, setDesktopCollapsed] = useState(
+    () => typeof window !== 'undefined' && window.localStorage.getItem(DESKTOP_COLLAPSED_KEY) === '1',
+  );
+
+  function toggleDesktopCollapsed() {
+    setDesktopCollapsed((prev) => {
+      const next = !prev;
+      window.localStorage.setItem(DESKTOP_COLLAPSED_KEY, next ? '1' : '0');
+      return next;
+    });
+  }
 
   useJoinCampaign(campaignId);
   useLiveMapAutoOpen(campaignId);
@@ -140,47 +158,109 @@ export function CampaignShell() {
   if (!campaignQuery.data) return null;
 
   const isDm = role === 'dm';
+  const campaignName = campaignQuery.data.campaign.name;
+
+  // Rendered twice (desktop persistent column, mobile drawer) — extracted so
+  // the ~20 NavItem lines aren't duplicated. onNavigate closes the mobile
+  // drawer after a tap; undefined (desktop) is a no-op prop, harmless.
+  function CampaignNavContent({ onNavigate }: { onNavigate?: () => void }) {
+    return (
+      <>
+        <div>
+          <h1 className="font-display text-lg font-medium truncate">{campaignName}</h1>
+        </div>
+        <NavItemList>
+          {/* First item, matching design/nocturne.html's sidebar ordering
+              — the campaign's default landing view (see App.tsx's index
+              redirect). */}
+          <NavItem to="dashboard" onClick={onNavigate}>{t('nav.dashboard')}</NavItem>
+          {/* Positioned right after Dashboard (not nocturne's literal
+              6th-of-8 slot) — this app's map-first premise makes it a
+              primary surface, not a secondary browse tab. */}
+          <NavItem to="map" onClick={onNavigate}>{t('nav.map')}</NavItem>
+          <NavItem to="characters" onClick={onNavigate}>{t('nav.characters')}</NavItem>
+          {/* Task 1: curated bestiary, visible to DM + players (server-side
+              filters undiscovered creatures for players) — not gated like
+              the DM-only "monsters" workbench below. */}
+          <NavItem to="bestiary" onClick={onNavigate}>{t('nav.bestiary')}</NavItem>
+          {isDm && <NavItem to="monsters" onClick={onNavigate}>{t('nav.monsters')}</NavItem>}
+          {isDm && <NavItem to="items" onClick={onNavigate}>{t('nav.items')}</NavItem>}
+          <NavItem to="session" onClick={onNavigate}>{t('nav.session')}</NavItem>
+          {/* "Session Log" — the DM's per-session recap (SessionLogPage), NOT
+              the live combat view above. Not DM-gated: any member can read the
+              recap log; only the write actions inside the page are DM-only. */}
+          <NavItem to="session-log" onClick={onNavigate}>{t('nav.sessionLog')}</NavItem>
+          <NavItem to="notes" onClick={onNavigate}>{t('nav.notes')}</NavItem>
+          <NavItem to="dice-rolls" onClick={onNavigate}>{t('nav.diceRolls')}</NavItem>
+          <NavItem to="assets" onClick={onNavigate}>{t('nav.assets')}</NavItem>
+          {isDm && <NavItem to="catalog" onClick={onNavigate}>{t('nav.catalog')}</NavItem>}
+          {isDm && <NavItem to="members" onClick={onNavigate}>{t('nav.members')}</NavItem>}
+        </NavItemList>
+        {isDm && (
+          <div className="mt-auto">
+            <ExportCampaignButton campaignId={campaignId} campaignName={campaignName} />
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <CampaignShellContext.Provider value={{ campaignId, campaign: campaignQuery.data.campaign, role: role! }}>
       <div className="min-h-dvh bg-stone-950 text-stone-100 flex flex-col md:flex-row">
-        <Sidebar>
-          <div>
-            <h1 className="font-display text-lg font-medium truncate">{campaignQuery.data.campaign.name}</h1>
-          </div>
-          <NavItemList>
-            {/* First item, matching design/nocturne.html's sidebar ordering
-                — the campaign's default landing view (see App.tsx's index
-                redirect). */}
-            <NavItem to="dashboard">{t('nav.dashboard')}</NavItem>
-            {/* Positioned right after Dashboard (not nocturne's literal
-                6th-of-8 slot) — this app's map-first premise makes it a
-                primary surface, not a secondary browse tab. */}
-            <NavItem to="map">{t('nav.map')}</NavItem>
-            <NavItem to="characters">{t('nav.characters')}</NavItem>
-            {/* Task 1: curated bestiary, visible to DM + players (server-side
-                filters undiscovered creatures for players) — not gated like
-                the DM-only "monsters" workbench below. */}
-            <NavItem to="bestiary">{t('nav.bestiary')}</NavItem>
-            {isDm && <NavItem to="monsters">{t('nav.monsters')}</NavItem>}
-            {isDm && <NavItem to="items">{t('nav.items')}</NavItem>}
-            <NavItem to="session">{t('nav.session')}</NavItem>
-            {/* "Session Log" — the DM's per-session recap (SessionLogPage), NOT
-                the live combat view above. Not DM-gated: any member can read the
-                recap log; only the write actions inside the page are DM-only. */}
-            <NavItem to="session-log">{t('nav.sessionLog')}</NavItem>
-            <NavItem to="notes">{t('nav.notes')}</NavItem>
-            <NavItem to="dice-rolls">{t('nav.diceRolls')}</NavItem>
-            <NavItem to="assets">{t('nav.assets')}</NavItem>
-            {isDm && <NavItem to="catalog">{t('nav.catalog')}</NavItem>}
-            {isDm && <NavItem to="members">{t('nav.members')}</NavItem>}
-          </NavItemList>
-          {isDm && (
-            <div className="mt-auto">
-              <ExportCampaignButton campaignId={campaignId} campaignName={campaignQuery.data.campaign.name} />
-            </div>
+        {/* Desktop: persistent column, collapsible (a DM/player's choice
+            persists via localStorage). Mobile: never rendered here — the
+            NavDrawer below owns mobile presentation entirely, so there's no
+            "always-visible squeezed strip" competing with page content. */}
+        <div className="hidden md:flex md:flex-shrink-0">
+          {desktopCollapsed ? (
+            <button
+              type="button"
+              onClick={toggleDesktopCollapsed}
+              aria-label={t('nav.expandSidebar')}
+              className="flex w-6 flex-shrink-0 items-center justify-center border-r border-stone-800 text-stone-500 hover:bg-stone-900 hover:text-stone-300"
+            >
+              »
+            </button>
+          ) : (
+            <Sidebar className="md:min-h-dvh md:w-56 md:border-r md:border-stone-800 relative">
+              <button
+                type="button"
+                onClick={toggleDesktopCollapsed}
+                aria-label={t('nav.collapseSidebar')}
+                title={t('nav.collapseSidebar')}
+                className="absolute right-2 top-4 flex size-7 items-center justify-center rounded-md text-stone-500 hover:bg-stone-800 hover:text-stone-300"
+              >
+                «
+              </button>
+              <CampaignNavContent />
+            </Sidebar>
           )}
-        </Sidebar>
+        </div>
+
+        {/* Mobile: a hamburger trigger + overlay drawer, reachable one-handed
+            at the top of the content area (per-page headers/back links, if
+            any, render below this inside <Outlet/>, so this stays the very
+            first interactive element on small screens). */}
+        <div className="flex items-center gap-2 border-b border-stone-800 px-3 py-2 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            aria-label={t('nav.openMenu')}
+            aria-haspopup="dialog"
+            aria-expanded={mobileNavOpen}
+            className="flex size-9 flex-shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-800"
+          >
+            ☰
+          </button>
+          <span className="font-display text-sm font-medium text-stone-100 truncate">{campaignName}</span>
+        </div>
+        <NavDrawer open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} title={campaignName}>
+          <Sidebar className="h-full">
+            <CampaignNavContent onNavigate={() => setMobileNavOpen(false)} />
+          </Sidebar>
+        </NavDrawer>
+
         <main className="flex-1 min-w-0">
           <Outlet />
         </main>
