@@ -59,6 +59,18 @@ export const setParticipantVisibilitySchema = z.object({
 });
 export type SetParticipantVisibilityInput = z.infer<typeof setParticipantVisibilitySchema>;
 
+// Encounter-level disposition (orthogonal to combat_participants.faction —
+// see 1784269787666_add-encounter-disposition.ts's header comment). Only
+// `toDisposition` is caller-supplied; `fromDisposition` is read server-side
+// from the current row so the logged transition can't be spoofed to not
+// match what was actually true beforehand.
+export const encounterDispositionEnum = z.enum(['friendly', 'neutral', 'hostile', 'unknown']);
+export const transitionDispositionSchema = z.object({
+  toDisposition: encounterDispositionEnum,
+  note: z.string().max(500).optional(),
+});
+export type TransitionDispositionInput = z.infer<typeof transitionDispositionSchema>;
+
 // REFACTOR-PLAN.md §4 / docs/rules/movement.md §2.1 — 'normal' is
 // deliberately not a valid value here; a normal cell is the absence of a
 // row (see map_cell_overrides' own "sparse table" comment), so removing an

@@ -257,4 +257,18 @@ export const encounters = {
     forceFullscreen: 'Llevar a todos a pantalla completa',
     switchSession: 'Cambiar de sesión',
   },
+  disposition: {
+    label: 'Disposición',
+    friendly: 'Amistoso',
+    neutral: 'Neutral',
+    hostile: 'Hostil',
+    unknown: 'Desconocido',
+    transitionTo: 'Cambiar a {disposition}',
+    notePlaceholder: 'Nota opcional (p. ej. "El enviado desenvaina un arma")',
+    transitioning: 'Actualizando…',
+    historyTitle: 'Historial de disposición',
+    historyEmpty: 'Todavía no hay cambios de disposición.',
+    historyLine: '{from} → {to}',
+    loading: 'Cargando…',
+  },
 };

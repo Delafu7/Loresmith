@@ -8,6 +8,7 @@ import type {
   DiceRollKeep,
   DiceRollType,
   EffectDurationType,
+  EncounterDisposition,
   EncounterMode,
   EncounterStatus,
 } from './types';
@@ -88,6 +89,7 @@ export interface FullStateSyncEvent extends Envelope {
   encounter: {
     status: EncounterStatus;
     mode: EncounterMode;
+    disposition: EncounterDisposition;
     currentRound: number;
     currentTurnIndex: number;
   };
@@ -142,6 +144,25 @@ export interface TokenMovedEvent extends Envelope {
 // split, same as MAP_UPDATED/TOKEN_MOVED.
 export interface ModeChangedEvent extends Envelope {
   mode: EncounterMode;
+}
+
+// DISPOSITION_CHANGED — encounter-level friendly/neutral/hostile/unknown
+// transition (distinct from PARTICIPANT_FACTION_CHANGED above, which is
+// per-participant board-coloring, not "is this scene a fight"). Carries the
+// full history event so a receiving client can append to a disposition
+// history list without a follow-up fetch, same reasoning as
+// ActionRecordedEvent below. No visibility split — disposition isn't
+// HP-sensitive info, same as MODE_CHANGED/TOKEN_MOVED.
+export interface DispositionChangedEvent extends Envelope {
+  disposition: EncounterDisposition;
+  event: {
+    id: string;
+    fromDisposition: EncounterDisposition;
+    toDisposition: EncounterDisposition;
+    changedByUserId: string;
+    note: string | null;
+    createdAt: string;
+  };
 }
 
 // Phase 3.5 — fires only for CHARACTER participants (never monster
@@ -309,6 +330,7 @@ export interface ServerToClientEvents {
   MAP_UPDATED: (payload: MapUpdatedEvent) => void;
   TOKEN_MOVED: (payload: TokenMovedEvent) => void;
   MODE_CHANGED: (payload: ModeChangedEvent) => void;
+  DISPOSITION_CHANGED: (payload: DispositionChangedEvent) => void;
   PARTICIPANT_AC_CHANGED: (payload: ParticipantAcChangedEvent) => void;
   PARTICIPANT_FACTION_CHANGED: (payload: ParticipantFactionChangedEvent) => void;
   ACTION_ECONOMY_CHANGED: (payload: ActionEconomyChangedEvent) => void;

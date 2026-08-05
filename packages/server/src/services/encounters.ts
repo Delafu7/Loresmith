@@ -30,6 +30,7 @@ import type {
   SetParticipantFactionInput,
   SetParticipantPositionInput,
   SetParticipantVisibilityInput,
+  TransitionDispositionInput,
   UpdateEncounterInput,
   UpsertEncounterMapInput,
 } from '../schemas/encounters.js';
@@ -56,7 +57,18 @@ interface EncounterRow {
   // working unchanged.
   active_participant_id: string | null;
   sync_seq: number;
+  disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown';
   [key: string]: unknown;
+}
+
+export interface EncounterDispositionEventRow {
+  id: string;
+  encounter_id: string;
+  from_disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown';
+  to_disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown';
+  changed_by_user_id: string;
+  note: string | null;
+  created_at: string;
 }
 
 interface ParticipantRow {
@@ -1121,6 +1133,72 @@ export async function setEncounterMode(pool: Pool, encounterId: string, input: S
   const row = result.rows[0];
   if (!row) throw notFound('Encounter');
   return row;
+}
+
+// Encounter-level disposition (see 1784269787666's header comment for why
+// this is a logged transition rather than a raw field, and how it differs
+// from combat_participants.faction). `fromDisposition` is read from the row
+// inside the same transaction, not trusted from the caller, so the history
+// is always accurate even under a race between two DMs. A no-op transition
+// (toDisposition === current) is rejected rather than silently logged, since
+// "why did the disposition change to the same thing" would be a confusing
+// history entry with no real event behind it.
+export interface DispositionMutationResult {
+  encounter: EncounterRow;
+  event: EncounterDispositionEventRow;
+}
+
+export async function transitionDisposition(
+  pool: Pool,
+  encounterId: string,
+  input: TransitionDispositionInput,
+  changedByUserId: string,
+): Promise<DispositionMutationResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const current = await client.query<EncounterRow>(
+      `SELECT * FROM encounters WHERE id = $1 FOR UPDATE`,
+      [encounterId],
+    );
+    const before = current.rows[0];
+    if (!before) throw notFound('Encounter');
+
+    if (before.disposition === input.toDisposition) {
+      throw new AppError('VALIDATION_ERROR', `Encounter is already ${input.toDisposition}`);
+    }
+
+    const updated = await client.query<EncounterRow>(
+      `UPDATE encounters SET disposition = $1, sync_seq = sync_seq + 1 WHERE id = $2 RETURNING *`,
+      [input.toDisposition, encounterId],
+    );
+    const encounter = updated.rows[0]!;
+
+    const eventRes = await client.query<EncounterDispositionEventRow>(
+      `INSERT INTO encounter_disposition_events
+         (encounter_id, from_disposition, to_disposition, changed_by_user_id, note)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [encounterId, before.disposition, input.toDisposition, changedByUserId, input.note ?? null],
+    );
+
+    await client.query('COMMIT');
+    return { encounter, event: eventRes.rows[0]! };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listDispositionEvents(pool: Pool, encounterId: string): Promise<EncounterDispositionEventRow[]> {
+  const result = await pool.query<EncounterDispositionEventRow>(
+    `SELECT * FROM encounter_disposition_events WHERE encounter_id = $1 ORDER BY created_at DESC`,
+    [encounterId],
+  );
+  return result.rows;
 }
 
 // ---- Participants (flat /encounters/:id/participants — campaign derived from the row) ----

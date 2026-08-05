@@ -244,6 +244,23 @@ export function broadcastModeChanged(io: Server, encounter: EncounterLike & { mo
   });
 }
 
+// Encounter-level disposition transition (distinct from
+// PARTICIPANT_FACTION_CHANGED below — this is "is the scene a fight",
+// not "which side is a participant on"). Carries the full event row so
+// clients can append to a disposition history list without a follow-up
+// fetch, same reasoning as ACTION_RECORDED below.
+export function broadcastDispositionChanged(
+  io: Server,
+  encounter: EncounterLike & { disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown' },
+  event: { id: string; fromDisposition: string; toDisposition: string; changedByUserId: string; note: string | null; createdAt: string },
+): void {
+  io.to(encounterRoom(encounter.id)).emit('DISPOSITION_CHANGED', {
+    ...envelope(encounter),
+    disposition: encounter.disposition,
+    event,
+  });
+}
+
 // REFACTOR-PLAN.md §3 — same no-visibility-split shape as TOKEN_MOVED above
 // (faction isn't HP-sensitive info).
 export function broadcastParticipantFactionChanged(
@@ -594,6 +611,7 @@ export async function buildFullStateSyncPayload(
     encounter: {
       status: encounter.status,
       mode: encounter.mode,
+      disposition: encounter.disposition,
       currentRound: encounter.current_round,
       currentTurnIndex: encounter.current_turn_index,
     },

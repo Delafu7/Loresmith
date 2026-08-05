@@ -14,7 +14,7 @@
 // opens the overlay showing that participant's ParticipantSheetPanel.
 
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import type { Character, Encounter, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
+import type { Character, Encounter, EncounterDisposition, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
 import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 import { EmptyState } from '../components/Feedback';
 import { BattleMap } from './BattleMap';
@@ -22,6 +22,7 @@ import { BattleModeDmPanel, type MutationLike } from './BattleModeDmPanel';
 import { BattleModePlayerPanel } from './BattleModePlayerPanel';
 import { InitiativeStrip } from './InitiativeStrip';
 import { CombatLogPanel } from './CombatLogPanel';
+import { DispositionBadge, DispositionHistoryPanel } from './DispositionPanel';
 import { ParticipantSheetPanel } from './ParticipantSheetPanel';
 import { SessionOverlayPanel } from './SessionOverlayPanel';
 import type { EncounterLiveState } from './useEncounterLive';
@@ -44,6 +45,7 @@ export interface SessionScreenProps {
   endMutation: MutationLike<void>;
   startCombatMutation: MutationLike<void>;
   endCombatMutation: MutationLike<void>;
+  dispositionMutation: MutationLike<{ toDisposition: EncounterDisposition; note?: string }>;
   forceFullscreenMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
@@ -89,6 +91,7 @@ export function SessionScreen({
   endMutation,
   startCombatMutation,
   endCombatMutation,
+  dispositionMutation,
   forceFullscreenMutation,
   rollInitiativeMutation,
   advanceTurnMutation,
@@ -146,6 +149,7 @@ export function SessionScreen({
       endMutation={endMutation}
       startCombatMutation={startCombatMutation}
       endCombatMutation={endCombatMutation}
+      dispositionMutation={dispositionMutation}
       forceFullscreenMutation={forceFullscreenMutation}
       rollInitiativeMutation={rollInitiativeMutation}
       advanceTurnMutation={advanceTurnMutation}
@@ -172,7 +176,8 @@ export function SessionScreen({
   return (
     <div className={`flex min-h-[420px] flex-col gap-2 ${fullHeight ? 'h-full' : 'h-[calc(100dvh-9rem)]'}`}>
       <div className="sticky top-0 z-30 flex flex-shrink-0 items-center gap-2 rounded-md bg-stone-950/95 backdrop-blur-sm py-1.5 -mx-1 px-1">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          <DispositionBadge disposition={live.encounter.disposition} />
           <InitiativeStrip participants={live.participants} activeParticipantId={live.activeParticipantId} onSelect={openSheet} />
         </div>
         <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -228,7 +233,12 @@ export function SessionScreen({
           />
         )}
         {overlay === 'manage' && showMap && managePanel}
-        {overlay === 'log' && <CombatLogPanel encounterId={encounter.id} />}
+        {overlay === 'log' && (
+          <div className="space-y-4">
+            <DispositionHistoryPanel encounterId={encounter.id} />
+            <CombatLogPanel encounterId={encounter.id} />
+          </div>
+        )}
         {overlay === 'chat' && <EmptyState message={t('encounters.sheet.chatComingSoon')} />}
       </SessionOverlayPanel>
     </div>

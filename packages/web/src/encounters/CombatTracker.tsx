@@ -221,6 +221,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
     endMutation,
     startCombatMutation,
     endCombatMutation,
+    dispositionMutation,
     forceFullscreenMutation,
     rollInitiativeMutation,
     advanceTurnMutation,
@@ -247,6 +248,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
         endMutation,
         startCombatMutation,
         endCombatMutation,
+        dispositionMutation,
         rollInitiativeMutation,
         advanceTurnMutation,
         removeParticipantMutation,
@@ -284,6 +286,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
           endMutation={endMutation}
           startCombatMutation={startCombatMutation}
           endCombatMutation={endCombatMutation}
+          dispositionMutation={dispositionMutation}
           forceFullscreenMutation={forceFullscreenMutation}
           rollInitiativeMutation={rollInitiativeMutation}
           advanceTurnMutation={advanceTurnMutation}

@@ -16,6 +16,7 @@ import {
   setParticipantFactionSchema,
   setParticipantPositionSchema,
   setParticipantVisibilitySchema,
+  transitionDispositionSchema,
   updateEncounterSchema,
   upsertCellOverrideSchema,
   upsertEncounterMapSchema,
@@ -41,6 +42,7 @@ import {
   broadcastMapUpdated,
   broadcastTokenMoved,
   broadcastModeChanged,
+  broadcastDispositionChanged,
   broadcastParticipantFactionChanged,
   broadcastActionEconomyChanged,
   broadcastDiceRolled,
@@ -299,6 +301,39 @@ encountersRouter.patch('/:id/mode', requireEncounterDm, async (req, res) => {
   const encounter = await encountersService.setEncounterMode(pool, (req.params.id as string), input);
   broadcastModeChanged(getIo(req.app), encounter);
   res.json({ encounter });
+});
+
+// Encounter-level disposition transition (friendly/neutral/hostile/unknown)
+// — a POST action, not a PATCH, since it's a first-class logged transition
+// (see 1784269787666's header comment), not a raw field edit. DM-only, same
+// guard as the rest of the combat-control surface in this file.
+encountersRouter.post('/:id/disposition', requireEncounterDm, async (req, res) => {
+  const input = transitionDispositionSchema.parse(req.body);
+  const { encounter, event } = await encountersService.transitionDisposition(
+    pool, (req.params.id as string), input, req.user!.id,
+  );
+  broadcastDispositionChanged(getIo(req.app), encounter, {
+    id: event.id,
+    fromDisposition: event.from_disposition,
+    toDisposition: event.to_disposition,
+    changedByUserId: event.changed_by_user_id,
+    note: event.note,
+    createdAt: event.created_at,
+  });
+  res.json({ encounter, event });
+});
+
+// History log for the disposition control (membership-gated, not DM-only —
+// same reasoning as GET /:id/actions just below: players should see why
+// the scene's mood changed, not just the DM).
+encountersRouter.get('/:id/disposition/events', async (req, res) => {
+  const encounterId = req.params.id as string;
+  const result = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
+  const row = result.rows[0];
+  if (!row) throw notFound('Encounter');
+  await requireMembership(pool, row.campaign_id, req.user!.id);
+  const events = await encountersService.listDispositionEvents(pool, encounterId);
+  res.json({ events });
 });
 
 // REFACTOR-PLAN.md §4: "selecting a character highlights reachable cells."

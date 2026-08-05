@@ -12,6 +12,7 @@ import { api } from '../lib/api';
 import type {
   Character,
   Encounter,
+  EncounterDisposition,
   EncounterWithParticipants,
   MonsterCatalogEntry,
   MonsterInstance,
@@ -94,6 +95,16 @@ export function useEncounterSessionData(encounter: Encounter) {
   const endCombatMutation = useMutation({
     mutationFn: () => api.patch(`/encounters/${encounter.id}/mode`, { mode: 'exploration' }),
     onSuccess: invalidateControlPlane,
+  });
+  // Encounter-level disposition transition (distinct from a participant's
+  // faction) — a POST action, not a raw field edit (see
+  // 1784269787666_add-encounter-disposition.ts). No cache write here: the
+  // DISPOSITION_CHANGED socket event (which the DM's own action also
+  // triggers) patches live.encounter.disposition, same "socket is the
+  // single source of truth" discipline as hpMutation above.
+  const dispositionMutation = useMutation({
+    mutationFn: ({ toDisposition, note }: { toDisposition: EncounterDisposition; note?: string }) =>
+      api.post(`/encounters/${encounter.id}/disposition`, { toDisposition, note }),
   });
   // DM control to pull every relevant player back into fullscreen regardless
   // of whether they'd minimized it (map-first encounter system) — no local
@@ -197,6 +208,7 @@ export function useEncounterSessionData(encounter: Encounter) {
     endMutation,
     startCombatMutation,
     endCombatMutation,
+    dispositionMutation,
     forceFullscreenMutation,
     rollInitiativeMutation,
     advanceTurnMutation,

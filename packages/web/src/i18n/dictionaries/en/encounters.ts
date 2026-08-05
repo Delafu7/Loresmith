@@ -262,4 +262,18 @@ export const encounters = {
     forceFullscreen: 'Bring everyone to fullscreen',
     switchSession: 'Switch session',
   },
+  disposition: {
+    label: 'Disposition',
+    friendly: 'Friendly',
+    neutral: 'Neutral',
+    hostile: 'Hostile',
+    unknown: 'Unknown',
+    transitionTo: 'Set to {disposition}',
+    notePlaceholder: 'Optional note (e.g. "The envoy draws a blade")',
+    transitioning: 'Updating…',
+    historyTitle: 'Disposition history',
+    historyEmpty: 'No disposition changes yet.',
+    historyLine: '{from} → {to}',
+    loading: 'Loading…',
+  },
 };

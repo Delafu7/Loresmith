@@ -12,6 +12,7 @@ import type {
   ActionEconomyChangedEvent,
   CombatStartedEvent,
   CombatEndedEvent,
+  DispositionChangedEvent,
   EffectAppliedEvent,
   EffectExpiredEvent,
   FullStateSyncEvent,
@@ -27,13 +28,14 @@ import type {
   TokenMovedEvent,
   TurnAdvancedEvent,
 } from '../lib/socketTypes';
-import type { EncounterMode, EncounterStatus, ParticipantHp, SnapshotParticipant } from '../lib/types';
+import type { EncounterDisposition, EncounterMode, EncounterStatus, ParticipantHp, SnapshotParticipant } from '../lib/types';
 
 export interface EncounterLiveState {
   seq: number;
   encounter: {
     status: EncounterStatus;
     mode: EncounterMode;
+    disposition: EncounterDisposition;
     currentRound: number;
     currentTurnIndex: number;
   };
@@ -321,6 +323,17 @@ export function useEncounterLive(encounterId: string | undefined) {
       });
     }
 
+    function onDispositionChanged(payload: DispositionChangedEvent) {
+      if (payload.encounterId !== encounterId) return;
+      withSeqCheck(payload.seq, () => {
+        patch((prev) => ({
+          ...prev,
+          seq: payload.seq,
+          encounter: { ...prev.encounter, disposition: payload.disposition },
+        }));
+      });
+    }
+
     function onParticipantFactionChanged(payload: ParticipantFactionChangedEvent) {
       if (payload.encounterId !== encounterId) return;
       withSeqCheck(payload.seq, () => {
@@ -361,6 +374,7 @@ export function useEncounterLive(encounterId: string | undefined) {
     socket.on('MAP_UPDATED', onMapUpdated);
     socket.on('TOKEN_MOVED', onTokenMoved);
     socket.on('MODE_CHANGED', onModeChanged);
+    socket.on('DISPOSITION_CHANGED', onDispositionChanged);
     socket.on('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
     socket.on('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
     socket.on('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);
@@ -382,6 +396,7 @@ export function useEncounterLive(encounterId: string | undefined) {
       socket.off('MAP_UPDATED', onMapUpdated);
       socket.off('TOKEN_MOVED', onTokenMoved);
       socket.off('MODE_CHANGED', onModeChanged);
+      socket.off('DISPOSITION_CHANGED', onDispositionChanged);
       socket.off('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
       socket.off('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
       socket.off('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);

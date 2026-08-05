@@ -344,12 +344,29 @@ export type EncounterStatus = 'preparing' | 'active' | 'paused' | 'completed';
 // computeValidatedMoveCost.
 export type EncounterMode = 'exploration' | 'combat';
 
+// Orthogonal to CombatParticipant.faction (which side a participant is on):
+// disposition is "is this scene currently a fight" — one value per
+// encounter, changed via a logged transition (POST .../disposition), not a
+// raw field edit. See 1784269787666_add-encounter-disposition.ts.
+export type EncounterDisposition = 'friendly' | 'neutral' | 'hostile' | 'unknown';
+
+export interface EncounterDispositionEvent {
+  id: string;
+  encounter_id: string;
+  from_disposition: EncounterDisposition;
+  to_disposition: EncounterDisposition;
+  changed_by_user_id: string;
+  note: string | null;
+  created_at: string;
+}
+
 export interface Encounter {
   id: string;
   campaign_id: string;
   name: string;
   status: EncounterStatus;
   mode: EncounterMode;
+  disposition: EncounterDisposition;
   current_round: number;
   current_turn_index: number;
   sync_seq: number;

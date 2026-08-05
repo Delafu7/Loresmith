@@ -181,6 +181,7 @@ function LiveMapSession({ encounter }: { encounter: Encounter }) {
     endMutation,
     startCombatMutation,
     endCombatMutation,
+    dispositionMutation,
     forceFullscreenMutation,
     rollInitiativeMutation,
     advanceTurnMutation,
@@ -218,6 +219,7 @@ function LiveMapSession({ encounter }: { encounter: Encounter }) {
       endMutation={endMutation}
       startCombatMutation={startCombatMutation}
       endCombatMutation={endCombatMutation}
+      dispositionMutation={dispositionMutation}
       forceFullscreenMutation={forceFullscreenMutation}
       rollInitiativeMutation={rollInitiativeMutation}
       advanceTurnMutation={advanceTurnMutation}

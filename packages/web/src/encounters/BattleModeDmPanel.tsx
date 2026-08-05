@@ -8,7 +8,7 @@
 // props — this file never fetches or mutates anything on its own.
 
 import type { Dispatch, SetStateAction } from 'react';
-import type { Character, EncounterStatus, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
+import type { Character, EncounterDisposition, EncounterStatus, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
 import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 import type { EncounterLiveState } from './useEncounterLive';
 import { HPBar } from '../components/HPBar';
@@ -18,6 +18,7 @@ import { EffectApplyDialog } from '../components/EffectApplyDialog';
 import { EmptyState } from '../components/Feedback';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { TurnTorch } from '../components/TurnTorch';
+import { DispositionControl } from './DispositionPanel';
 import { useLocale } from '../i18n/LocaleContext';
 import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
 import { useCampaignShell } from '../campaigns/CampaignShell';
@@ -56,6 +57,7 @@ export interface BattleModeDmPanelProps {
   endMutation: MutationLike<void>;
   startCombatMutation: MutationLike<void>;
   endCombatMutation: MutationLike<void>;
+  dispositionMutation: MutationLike<{ toDisposition: EncounterDisposition; note?: string }>;
   forceFullscreenMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
@@ -84,6 +86,7 @@ export function BattleModeDmPanel({
   endMutation,
   startCombatMutation,
   endCombatMutation,
+  dispositionMutation,
   forceFullscreenMutation,
   rollInitiativeMutation,
   advanceTurnMutation,
@@ -122,6 +125,12 @@ export function BattleModeDmPanel({
           </div>
         )}
       </div>
+
+      <DispositionControl
+        disposition={live.encounter.disposition}
+        pending={dispositionMutation.isPending}
+        onTransition={(toDisposition, note) => dispositionMutation.mutate({ toDisposition, note })}
+      />
 
       <ol className="space-y-1.5">
         {live.participants.map((p) => {
