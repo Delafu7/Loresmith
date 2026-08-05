@@ -114,6 +114,10 @@ export const characters = {
     dexLabel: 'Dex',
     shieldLabel: 'Bouclier',
     unarmoredLabel: 'sans armure',
+    encumbranceTitle: 'Poids transporté',
+    encumbranceWeight: '{carried} / {capacity} lb',
+    encumbered: 'Encombré — vitesse -10 pieds.',
+    heavilyEncumbered: 'Très encombré — vitesse -20 pieds, désavantage aux tests, attaques et sauvegardes de Force/Dex/Con.',
   },
   resources: {
     title: 'Ressources',

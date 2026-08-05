@@ -271,4 +271,14 @@ export const encounters = {
     historyLine: '{from} → {to}',
     loading: 'Cargando…',
   },
+  cast: {
+    trigger: 'Lanzar un conjuro',
+    slotLabel: 'Espacio de conjuro',
+    selectSlot: 'Selecciona un espacio…',
+    effectLabel: 'Efecto (opcional)',
+    noEffect: 'Sin efecto mecánico',
+    targetsLabel: 'Objetivos',
+    cast: 'Lanzar',
+    casting: 'Lanzando…',
+  },
 };

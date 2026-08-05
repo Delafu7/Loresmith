@@ -25,6 +25,7 @@ import { EconomyPip } from './ActionEconomyPanel';
 import { actionDescription, actionLabel } from './actionLabels';
 import { ACTION_REGISTRY, type ActionSlot } from './actionEconomy';
 import { ActionButton } from './CombatTracker';
+import { CastPanel } from './CastPanel';
 
 export interface BattleModePlayerPanelProps {
   encounterId: string;
@@ -54,6 +55,7 @@ export function BattleModePlayerPanel({
     <PlayerPanelBody
       encounterId={encounterId}
       participant={participant}
+      allParticipants={live.participants}
       isMyTurn={participant.participantId === live.activeParticipantId}
       character={characters?.find((c) => c.id === participant.characterId)}
       showDiceRoller={showDiceRoller}
@@ -68,6 +70,7 @@ export function BattleModePlayerPanel({
 function PlayerPanelBody({
   encounterId,
   participant,
+  allParticipants,
   isMyTurn,
   character,
   showDiceRoller,
@@ -75,6 +78,7 @@ function PlayerPanelBody({
 }: {
   encounterId: string;
   participant: EncounterLiveState['participants'][number];
+  allParticipants: EncounterLiveState['participants'];
   isMyTurn: boolean;
   character: Character | undefined;
   showDiceRoller: boolean;
@@ -164,6 +168,9 @@ function PlayerPanelBody({
           })}
         </div>
         {spendMutation.isError && <ErrorBanner message={errorMessage(spendMutation.error)} />}
+        {participant.characterId && (
+          <CastPanel encounterId={encounterId} casterCharacterId={participant.characterId} participants={allParticipants} />
+        )}
       </div>
 
       <div className="rounded-md bg-stone-900 shadow-sm p-3 space-y-2">

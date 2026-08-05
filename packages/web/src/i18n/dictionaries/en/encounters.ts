@@ -276,4 +276,14 @@ export const encounters = {
     historyLine: '{from} → {to}',
     loading: 'Loading…',
   },
+  cast: {
+    trigger: 'Cast a spell',
+    slotLabel: 'Spell slot',
+    selectSlot: 'Select a slot…',
+    effectLabel: 'Effect (optional)',
+    noEffect: 'No mechanical effect',
+    targetsLabel: 'Targets',
+    cast: 'Cast',
+    casting: 'Casting…',
+  },
 };

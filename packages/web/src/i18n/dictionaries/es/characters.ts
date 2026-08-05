@@ -114,6 +114,10 @@ export const characters = {
     dexLabel: 'Des',
     shieldLabel: 'Escudo',
     unarmoredLabel: 'sin armadura',
+    encumbranceTitle: 'Peso cargado',
+    encumbranceWeight: '{carried} / {capacity} lb',
+    encumbered: 'Sobrecargado — velocidad -10 pies.',
+    heavilyEncumbered: 'Muy sobrecargado — velocidad -20 pies, desventaja en pruebas, ataques y salvaciones de Fue/Des/Con.',
   },
   resources: {
     title: 'Recursos',

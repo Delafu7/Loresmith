@@ -128,6 +128,10 @@ export const characters = {
     dexLabel: 'Dex',
     shieldLabel: 'Shield',
     unarmoredLabel: 'unarmored',
+    encumbranceTitle: 'Carried weight',
+    encumbranceWeight: '{carried} / {capacity} lb',
+    encumbered: 'Encumbered — speed -10 ft.',
+    heavilyEncumbered: 'Heavily encumbered — speed -20 ft., disadvantage on Str/Dex/Con checks, attacks, and saves.',
   },
   resources: {
     title: 'Resources',

@@ -285,6 +285,15 @@ charactersRouter.get('/:id/items', async (req, res) => {
   res.json({ items });
 });
 
+// Read-only derivation (services/encumbrance.ts) — not stored, computed
+// fresh on every read from the character's STR score + summed item weight,
+// same "derived, not hardcoded in the UI" discipline the brief asks for
+// AC/damage/saves/speed (services/armorClass.ts's own precedent).
+charactersRouter.get('/:id/encumbrance', async (req, res) => {
+  const encumbrance = await characterItemsService.getCharacterEncumbrance(pool, req.user!.id, (req.params.id as string));
+  res.json({ encumbrance });
+});
+
 charactersRouter.post('/:id/items', async (req, res) => {
   const input = createCharacterItemSchema.parse(req.body);
   const { item, character, armorClassSync } = await characterItemsService.addCharacterItem(

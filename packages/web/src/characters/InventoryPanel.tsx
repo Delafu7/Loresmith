@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Character, CharacterItem, ItemCatalogEntry, ItemRarity, UpdateCharacterItemBody } from '../lib/types';
+import type { Character, CharacterItem, Encumbrance, ItemCatalogEntry, ItemRarity, UpdateCharacterItemBody } from '../lib/types';
 import { useDamageTypesCatalog, useItemsCatalog } from '../lib/useCatalog';
 import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { DiceRoller } from '../components/DiceRoller';
@@ -85,6 +85,41 @@ function armorClassBreakdown(
   return `${base} (${armor.name}) + ${dexContribution} (${t('characters.inventory.dexLabel')}${categoryLabel})${shieldTerm} = ${armorClass}`;
 }
 
+// Read-only meter for the server-derived encumbrance (services/encumbrance.ts)
+// — never recomputed client-side, same "server is the source of truth for
+// derived values" discipline as armorClassBreakdown's ac number above (only
+// the breakdown TEXT is client-formatted, not the underlying figure).
+function EncumbranceMeter({ encumbrance }: { encumbrance: Encumbrance }) {
+  const { t } = useLocale();
+  const pct = encumbrance.carryCapacityLb > 0
+    ? Math.min(100, (encumbrance.totalCarriedLb / encumbrance.carryCapacityLb) * 100)
+    : 0;
+  const barColor = encumbrance.heavilyEncumbered ? 'bg-red-600' : encumbrance.encumbered ? 'bg-amber-600' : 'bg-emerald-600';
+  const statusKey: TranslationKey | null = encumbrance.heavilyEncumbered
+    ? 'characters.inventory.heavilyEncumbered'
+    : encumbrance.encumbered
+      ? 'characters.inventory.encumbered'
+      : null;
+
+  return (
+    <div className="rounded-md border border-stone-800 bg-stone-950 p-3 space-y-1.5">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <h4 className="font-semibold uppercase tracking-wide text-stone-500">{t('characters.inventory.encumbranceTitle')}</h4>
+        <span className="text-stone-400">
+          {t('characters.inventory.encumbranceWeight', {
+            carried: encumbrance.totalCarriedLb,
+            capacity: encumbrance.carryCapacityLb,
+          })}
+        </span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-stone-800">
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+      </div>
+      {statusKey && <p className="text-xs text-stone-400">{t(statusKey)}</p>}
+    </div>
+  );
+}
+
 /** Inventory panel (PLAN.md §6.2's InventoryPanel + ItemCard grid). */
 export function InventoryPanel({
   characterId,
@@ -113,7 +148,15 @@ export function InventoryPanel({
     queryKey: ['character', characterId, 'items'],
     queryFn: () => api.get<{ items: CharacterItem[] }>(`/characters/${characterId}/items`),
   });
+  const encumbranceQuery = useQuery({
+    queryKey: ['character', characterId, 'encumbrance'],
+    queryFn: () => api.get<{ encumbrance: Encumbrance }>(`/characters/${characterId}/encumbrance`),
+  });
   const itemsCatalogQuery = useItemsCatalog(edition);
+
+  function invalidateEncumbrance() {
+    void queryClient.invalidateQueries({ queryKey: ['character', characterId, 'encumbrance'] });
+  }
 
   const addMutation = useMutation({
     mutationFn: (input: {
@@ -130,6 +173,7 @@ export function InventoryPanel({
       // toggle below — mirror that mutation's cache write so this panel's
       // AC display doesn't go stale on the add-item path either.
       queryClient.setQueryData(['character', characterId], { character: data.character });
+      invalidateEncumbrance();
       setAdding(false);
     },
   });
@@ -147,6 +191,7 @@ export function InventoryPanel({
       // AC stays in sync, exactly like armorClassModeMutation's cache write
       // below. Harmless to overwrite when AC didn't actually change.
       queryClient.setQueryData(['character', characterId], { character: data.character });
+      invalidateEncumbrance();
     },
   });
 
@@ -156,6 +201,7 @@ export function InventoryPanel({
       queryClient.setQueryData<{ items: CharacterItem[] }>(['character', characterId, 'items'], (prev) =>
         prev ? { items: prev.items.filter((i) => i.id !== itemRowId) } : prev,
       );
+      invalidateEncumbrance();
     },
   });
 
@@ -238,6 +284,8 @@ export function InventoryPanel({
         {armorClassMode === 'auto' && <p className="text-xs text-stone-500">{acBreakdown}</p>}
         {armorClassModeMutation.isError && <ErrorBanner message={errorMessage(armorClassModeMutation.error)} />}
       </div>
+
+      {encumbranceQuery.data && <EncumbranceMeter encumbrance={encumbranceQuery.data.encumbrance} />}
 
       {items.length === 0 ? (
         <EmptyState message={t('characters.inventory.noItems')} />

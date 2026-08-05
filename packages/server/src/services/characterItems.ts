@@ -8,12 +8,61 @@
 // separate rows, or the more common single row with quantity=2), and only
 // the row id unambiguously identifies "this specific inventory line."
 
-import type { Pool } from 'pg';
-import { notFound } from '../middleware/errors.js';
+import type { Pool, PoolClient } from 'pg';
+import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership } from './authz.js';
 import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
+import { computeEncumbrance, type EncumbranceResult } from './encumbrance.js';
 import type { CreateCharacterItemInput, UpdateCharacterItemInput } from '../schemas/characterItems.js';
+
+// Read-only derivation (services/encumbrance.ts) — ALL owned items count
+// toward carried weight, not just equipped ones (docs/rules/inventory-and-
+// attunement.md: "nothing exempts worn/equipped items from the total").
+export async function getCharacterEncumbrance(pool: Pool, actorId: string, characterId: string): Promise<EncumbranceResult> {
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  await requireMembership(pool, character.campaign_id, actorId);
+
+  const weightRes = await pool.query<{ total: string | null }>(
+    `SELECT SUM(ci.quantity * COALESCE(i.weight_lb, 0)) AS total
+     FROM character_items ci
+     JOIN items i ON i.id = ci.item_id
+     WHERE ci.character_id = $1`,
+    [characterId],
+  );
+  const totalCarriedLb = Number(weightRes.rows[0]?.total ?? 0);
+
+  return computeEncumbrance(character.str, totalCarriedLb);
+}
+
+// SRD attunement limit — hard cap, both editions (docs/rules/inventory-and-
+// attunement.md, dnd-rules agent). v1 enforces the count only, not the
+// short-rest-to-attune workflow or per-item prerequisites — same "track the
+// count, don't enforce prerequisites" precedent as this schema's existing
+// feats.prerequisite handling (per the rules doc's own recommendation).
+const ATTUNEMENT_LIMIT = 3;
+
+// Locks this character's currently-attuned rows FOR UPDATE before counting,
+// so two concurrent attune requests on the same character can't both pass
+// the count check and exceed the cap — same "lock the row you're counting
+// against" discipline as createCharacter's max_characters check
+// (services/characters.ts). Excludes `excludeItemId` so re-saving an
+// already-attuned row (isAttuned: true on a no-op patch) never
+// self-blocks.
+async function assertAttunementLimitNotExceeded(
+  client: PoolClient,
+  characterId: string,
+  excludeItemId: string | null,
+): Promise<void> {
+  const lockedRes = await client.query<{ id: string }>(
+    `SELECT id FROM character_items WHERE character_id = $1 AND is_attuned = true FOR UPDATE`,
+    [characterId],
+  );
+  const attunedCount = lockedRes.rows.filter((r) => r.id !== excludeItemId).length;
+  if (attunedCount >= ATTUNEMENT_LIMIT) {
+    throw new AppError('CONFLICT', `This character already has ${ATTUNEMENT_LIMIT} attuned items — the maximum allowed`);
+  }
+}
 
 export async function listCharacterItems(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
@@ -85,6 +134,10 @@ export async function addCharacterItem(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    if (input.isAttuned) {
+      await assertAttunementLimitNotExceeded(client, characterId, null);
+    }
 
     const result = await client.query(
       `INSERT INTO character_items (character_id, item_id, quantity, is_equipped, is_attuned, custom_name, charges_remaining, notes)
@@ -161,6 +214,10 @@ export async function updateCharacterItem(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    if (input.isAttuned === true) {
+      await assertAttunementLimitNotExceeded(client, characterId, characterItemId);
+    }
 
     values.push(characterItemId, characterId);
     const result = await client.query(

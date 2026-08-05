@@ -271,4 +271,14 @@ export const encounters = {
     historyLine: '{from} → {to}',
     loading: 'Chargement…',
   },
+  cast: {
+    trigger: 'Lancer un sort',
+    slotLabel: 'Emplacement de sort',
+    selectSlot: 'Sélectionner un emplacement…',
+    effectLabel: 'Effet (facultatif)',
+    noEffect: 'Aucun effet mécanique',
+    targetsLabel: 'Cibles',
+    cast: 'Lancer',
+    casting: 'Lancement…',
+  },
 };

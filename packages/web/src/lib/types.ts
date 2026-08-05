@@ -665,6 +665,16 @@ export interface CampaignAsset {
 // /encounters/:id/maps/:mapId/link and /encounters/:id/active-map. Distinct
 // from `MapConfig` (socketTypes.ts), the wire shape for "this encounter's
 // CURRENTLY ACTIVE map" as seen in the live view.
+// Read-only derivation (services/encumbrance.ts) — GET /characters/:id/encumbrance.
+export interface Encumbrance {
+  carryCapacityLb: number;
+  encumberedThresholdLb: number;
+  heavilyEncumberedThresholdLb: number;
+  totalCarriedLb: number;
+  encumbered: boolean;
+  heavilyEncumbered: boolean;
+}
+
 export interface CampaignMap {
   id: string;
   campaign_id: string;

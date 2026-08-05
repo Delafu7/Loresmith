@@ -29,6 +29,7 @@ import { campaignBestiaryRouter, campaignCategoriesRouter } from './routes/campa
 import { campaignMapsRouter } from './routes/maps.js';
 import { campaignItemStashRouter } from './routes/campaignItems.js';
 import { encounterEffectsRouter, effectsRouter } from './routes/effects.js';
+import { castingRouter } from './routes/casting.js';
 import { campaignRestsRouter } from './routes/rests.js';
 import { notesRouter } from './routes/notes.js';
 import { diceRollsRouter } from './routes/diceRolls.js';
@@ -124,6 +125,7 @@ async function main(): Promise<void> {
   app.use('/monster-instances', monsterInstancesRouter);
   app.use('/encounters', encountersRouter);
   app.use('/encounters', encounterEffectsRouter);
+  app.use('/encounters', castingRouter);
   app.use('/effects', effectsRouter);
   app.use('/assets', assetsRouter);
 
