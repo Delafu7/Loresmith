@@ -43,6 +43,7 @@ const UNROLLED_INITIATIVE = -9999;
 interface EncounterRow {
   id: string;
   campaign_id: string;
+  name: string;
   status: 'preparing' | 'active' | 'paused' | 'completed';
   mode: 'exploration' | 'combat';
   current_round: number;
@@ -56,6 +57,7 @@ interface EncounterRow {
   // canMoveToken.ts, advanceTurn's action-economy-reset WHERE clause) keeps
   // working unchanged.
   active_participant_id: string | null;
+  active_map_id: string | null;
   sync_seq: number;
   disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown';
   [key: string]: unknown;
@@ -250,13 +252,21 @@ export interface EncounterMapRow {
   feet_per_cell: number;
 }
 
+// Resolves through encounters.active_map_id into the campaign-scoped `maps`
+// library (see 1784269788666_create-campaign-maps-library.ts) rather than a
+// 1:1 encounter_maps row — but returns the EXACT SAME EncounterMapRow shape
+// as before on purpose, so every downstream consumer (formatMapForWire,
+// MAP_UPDATED, the cell-override routes, BattleMap.tsx) keeps working
+// unchanged: they only ever cared about "the encounter's current map,"
+// which is now just resolved differently, not reshaped.
 export async function getEncounterMap(pool: Pool | PoolClient, encounterId: string): Promise<EncounterMapRow | null> {
   const result = await pool.query<EncounterMapRow>(
-    `SELECT em.id, em.encounter_id, em.background_asset_id, ca.file_url AS background_file_url,
-            em.grid_columns, em.grid_rows, em.cell_size_px, em.feet_per_cell
-     FROM encounter_maps em
-     LEFT JOIN campaign_assets ca ON ca.id = em.background_asset_id
-     WHERE em.encounter_id = $1`,
+    `SELECT m.id, e.id AS encounter_id, m.background_asset_id, ca.file_url AS background_file_url,
+            m.grid_columns, m.grid_rows, m.cell_size_px, m.feet_per_cell
+     FROM encounters e
+     JOIN maps m ON m.id = e.active_map_id
+     LEFT JOIN campaign_assets ca ON ca.id = m.background_asset_id
+     WHERE e.id = $1`,
     [encounterId],
   );
   return result.rows[0] ?? null;
@@ -265,6 +275,10 @@ export async function getEncounterMap(pool: Pool | PoolClient, encounterId: stri
 export function formatMapForWire(map: EncounterMapRow | null) {
   if (!map) return null;
   return {
+    // The library map's own id (maps.id) — lets a client-side map-library
+    // picker (routes/maps.ts) tell which of a campaign's maps is this
+    // encounter's currently active one without a second round-trip.
+    id: map.id,
     backgroundAssetId: map.background_asset_id,
     backgroundFileUrl: map.background_file_url,
     gridColumns: map.grid_columns,
@@ -407,6 +421,16 @@ export interface EncounterMapMutationResult {
   map: EncounterMapRow;
 }
 
+// "The encounter's map" is now "the encounter's active library map" (see
+// 1784269788666_create-campaign-maps-library.ts) — this function preserves
+// its EXISTING contract (PUT /encounters/:id/map, called by BattleMap.tsx's
+// inline "Reconfigure map" form) exactly, so that flow needs zero frontend
+// changes: if the encounter already has an active map, this updates that
+// `maps` row in place (same partial-update semantics as before); if it
+// doesn't yet, this creates a new campaign-scoped library entry, links it,
+// and activates it — "configure this encounter's map inline" implicitly
+// creates a reusable library entry, while routes/maps.ts's library CRUD is
+// the additive surface for browsing/reusing/renaming maps across encounters.
 export async function upsertEncounterMap(
   pool: Pool,
   encounterId: string,
@@ -425,30 +449,49 @@ export async function upsertEncounterMap(
     await validateBackgroundAssetBelongsToCampaign(client, encounter.campaign_id, input.backgroundAssetId);
     const backgroundAssetIdSupplied = input.backgroundAssetId !== undefined;
 
-    // ON CONFLICT DO UPDATE only overwrites fields that were actually
-    // supplied — COALESCE(new, existing) for the plain-number fields, and an
-    // explicit boolean flag for background_asset_id since `null` is itself a
-    // meaningful supplied value (clear it), not "leave it alone".
-    await client.query(
-      `INSERT INTO encounter_maps (encounter_id, background_asset_id, grid_columns, grid_rows, cell_size_px, feet_per_cell, updated_at)
-       VALUES ($1, $2, COALESCE($3, 20), COALESCE($4, 20), COALESCE($5, 50), COALESCE($7, 5), now())
-       ON CONFLICT (encounter_id) DO UPDATE SET
-         background_asset_id = CASE WHEN $6 THEN $2 ELSE encounter_maps.background_asset_id END,
-         grid_columns = COALESCE($3, encounter_maps.grid_columns),
-         grid_rows = COALESCE($4, encounter_maps.grid_rows),
-         cell_size_px = COALESCE($5, encounter_maps.cell_size_px),
-         feet_per_cell = COALESCE($7, encounter_maps.feet_per_cell),
-         updated_at = now()`,
-      [
-        encounterId,
-        input.backgroundAssetId ?? null,
-        input.gridColumns ?? null,
-        input.gridRows ?? null,
-        input.cellSizePx ?? null,
-        backgroundAssetIdSupplied,
-        input.feetPerCell ?? null,
-      ],
-    );
+    if (encounter.active_map_id) {
+      // COALESCE(new, existing) only overwrites fields actually supplied,
+      // and an explicit boolean flag for background_asset_id since `null`
+      // is itself a meaningful supplied value (clear it), not "leave it
+      // alone" — same partial-update semantics as the pre-library version.
+      await client.query(
+        `UPDATE maps SET
+           background_asset_id = CASE WHEN $2 THEN $3 ELSE background_asset_id END,
+           grid_columns = COALESCE($4, grid_columns),
+           grid_rows = COALESCE($5, grid_rows),
+           cell_size_px = COALESCE($6, cell_size_px),
+           feet_per_cell = COALESCE($7, feet_per_cell),
+           updated_at = now()
+         WHERE id = $1`,
+        [
+          encounter.active_map_id,
+          backgroundAssetIdSupplied,
+          input.backgroundAssetId ?? null,
+          input.gridColumns ?? null,
+          input.gridRows ?? null,
+          input.cellSizePx ?? null,
+          input.feetPerCell ?? null,
+        ],
+      );
+    } else {
+      const mapRes = await client.query<{ id: string }>(
+        `INSERT INTO maps (campaign_id, name, background_asset_id, grid_columns, grid_rows, cell_size_px, feet_per_cell)
+         VALUES ($1, $2, $3, COALESCE($4, 20), COALESCE($5, 20), COALESCE($6, 50), COALESCE($7, 5))
+         RETURNING id`,
+        [
+          encounter.campaign_id,
+          `${encounter.name} Map`,
+          input.backgroundAssetId ?? null,
+          input.gridColumns ?? null,
+          input.gridRows ?? null,
+          input.cellSizePx ?? null,
+          input.feetPerCell ?? null,
+        ],
+      );
+      const newMapId = mapRes.rows[0]!.id;
+      await client.query(`INSERT INTO encounter_maps_link (encounter_id, map_id) VALUES ($1, $2)`, [encounterId, newMapId]);
+      await client.query(`UPDATE encounters SET active_map_id = $1 WHERE id = $2`, [newMapId, encounterId]);
+    }
 
     const encounterRes = await client.query<EncounterRow>(
       `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
@@ -484,7 +527,7 @@ async function loadMovementContext(
   participant: ParticipantRow,
 ): Promise<{ grid: MovementGrid; mover: MoverProfile; speedFt: number; remainingFt: number } | null> {
   const mapRes = await client.query<{ id: string; feet_per_cell: number; grid_columns: number; grid_rows: number }>(
-    `SELECT id, feet_per_cell, grid_columns, grid_rows FROM encounter_maps WHERE encounter_id = $1`,
+    `SELECT id, feet_per_cell, grid_columns, grid_rows FROM maps WHERE id = (SELECT active_map_id FROM encounters WHERE id = $1)`,
     [encounter.id],
   );
   const map = mapRes.rows[0];

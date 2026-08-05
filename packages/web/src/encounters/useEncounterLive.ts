@@ -292,6 +292,7 @@ export function useEncounterLive(encounterId: string | undefined) {
           ...prev,
           seq: payload.seq,
           map: {
+            id: payload.id,
             backgroundAssetId: payload.backgroundAssetId,
             backgroundFileUrl: payload.backgroundFileUrl,
             gridColumns: payload.gridColumns,

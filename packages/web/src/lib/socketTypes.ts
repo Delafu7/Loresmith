@@ -75,6 +75,9 @@ export interface HpChangedEvent extends Envelope {
 // here since this is the socket layer; that REST route uses snake_case per
 // this codebase's usual split).
 export interface MapConfig {
+  // The library map's own id (maps.id) — lets a map-library picker tell
+  // which of a campaign's maps is this encounter's currently active one.
+  id: string;
   backgroundAssetId: string | null;
   backgroundFileUrl: string | null;
   gridColumns: number;

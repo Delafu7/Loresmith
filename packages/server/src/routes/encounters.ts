@@ -29,6 +29,8 @@ import { performShove } from '../services/shove.js';
 import { performGrapple } from '../services/grapple.js';
 import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import * as combatActionsService from '../services/combatActions.js';
+import * as mapsService from '../services/maps.js';
+import { setActiveMapSchema } from '../schemas/maps.js';
 import {
   getIo,
   broadcastCombatStarted,
@@ -277,6 +279,38 @@ encountersRouter.put('/:id/map', requireEncounterDm, async (req, res) => {
   const input = upsertEncounterMapSchema.parse(req.body);
   const { encounter, map } = await encountersService.upsertEncounterMap(pool, (req.params.id as string), input);
   broadcastMapUpdated(getIo(req.app), encounter, map);
+  res.json({ map: encountersService.formatMapForWire(map) });
+});
+
+// Campaign-scoped map library (1784269788666_create-campaign-maps-library.ts)
+// — the N:M link/unlink/activate actions for THIS encounter. DM-only, same
+// guard as every other map-configuration route above. Library CRUD itself
+// (create/rename/delete a map) lives in routes/maps.ts's campaignMapsRouter.
+encountersRouter.get('/:id/maps', requireEncounterDm, async (req, res) => {
+  const maps = await mapsService.listMapsForEncounter(pool, req.params.id as string);
+  res.json({ maps });
+});
+
+encountersRouter.post('/:id/maps/:mapId/link', requireEncounterDm, async (req, res) => {
+  await mapsService.linkMapToEncounter(pool, req.params.id as string, req.params.mapId as string);
+  res.status(204).send();
+});
+
+// Unlinking the currently active map is a bigger change than a routine map-
+// settings tweak — a resync, not a MAP_UPDATED tick, same "genuinely
+// changes what's visible" precedent as the participant-visibility route
+// above. Unlinking a non-active map has nothing to broadcast (see
+// unlinkMapFromEncounter's own comment).
+encountersRouter.delete('/:id/maps/:mapId/link', requireEncounterDm, async (req, res) => {
+  const result = await mapsService.unlinkMapFromEncounter(pool, req.params.id as string, req.params.mapId as string);
+  if (result) await broadcastFullStateResync(getIo(req.app), result.encounter.id, result.encounter.campaign_id);
+  res.status(204).send();
+});
+
+encountersRouter.post('/:id/active-map', requireEncounterDm, async (req, res) => {
+  const input = setActiveMapSchema.parse(req.body);
+  const { encounter, map } = await mapsService.setActiveMap(pool, req.params.id as string, input.mapId);
+  broadcastMapUpdated(getIo(req.app), encounter, map!);
   res.json({ map: encountersService.formatMapForWire(map) });
 });
 

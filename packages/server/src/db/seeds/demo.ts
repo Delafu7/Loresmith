@@ -411,7 +411,7 @@ export async function seedDemo(client: Client): Promise<void> {
 
   const placeholderAssetId = await seedPlaceholderAsset(client, campaignId, dmId);
   await seedBrennaPortrait(client, brennaId, placeholderAssetId);
-  await seedDemoMap(client, encounterId, placeholderAssetId);
+  await seedDemoMap(client, campaignId, encounterId, placeholderAssetId);
   await seedHomebrewCreature(client, campaignId);
   await seedDiceRollHistory(client, campaignId, encounterId, dmId, playerId, brennaId);
   await seedAutoArmorClassDemo(client, brennaId);
@@ -466,16 +466,38 @@ async function seedBrennaPortrait(client: Client, brennaId: number, assetId: num
 // ---- Phase 3.3: a configured battle map with placed tokens on the existing
 // prepared encounter, so opening its "Map" view shows something immediately
 // rather than an empty grid.
-async function seedDemoMap(client: Client, encounterId: number, backgroundAssetId: number): Promise<void> {
-  await client.query(
-    `INSERT INTO encounter_maps (encounter_id, background_asset_id, grid_columns, grid_rows, cell_size_px)
-     VALUES ($1, $2, 15, 12, 50)
-     ON CONFLICT (encounter_id) DO UPDATE SET
-       background_asset_id = EXCLUDED.background_asset_id,
-       grid_columns = EXCLUDED.grid_columns, grid_rows = EXCLUDED.grid_rows, cell_size_px = EXCLUDED.cell_size_px,
-       updated_at = now()`,
-    [encounterId, backgroundAssetId],
+async function seedDemoMap(client: Client, campaignId: number, encounterId: number, backgroundAssetId: number): Promise<void> {
+  // Maps now live in the campaign-scoped `maps` library, linked N:M to
+  // encounters (1784269788666_create-campaign-maps-library.ts) rather than
+  // a 1:1 `encounter_maps` row — same "insert or update the encounter's
+  // active map" idempotency this seed always had, just resolved through
+  // active_map_id like services/encounters.ts's upsertEncounterMap.
+  const existing = await client.query<{ active_map_id: number | null }>(
+    `SELECT active_map_id FROM encounters WHERE id = $1`,
+    [encounterId],
   );
+  const activeMapId = existing.rows[0]?.active_map_id ?? null;
+
+  if (activeMapId) {
+    await client.query(
+      `UPDATE maps SET background_asset_id = $1, grid_columns = 15, grid_rows = 12, cell_size_px = 50, updated_at = now()
+       WHERE id = $2`,
+      [backgroundAssetId, activeMapId],
+    );
+  } else {
+    const mapRes = await client.query<{ id: number }>(
+      `INSERT INTO maps (campaign_id, name, background_asset_id, grid_columns, grid_rows, cell_size_px)
+       VALUES ($1, 'Ambush on the Old Road Map', $2, 15, 12, 50)
+       RETURNING id`,
+      [campaignId, backgroundAssetId],
+    );
+    const newMapId = mapRes.rows[0]!.id;
+    await client.query(
+      `INSERT INTO encounter_maps_link (encounter_id, map_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [encounterId, newMapId],
+    );
+    await client.query(`UPDATE encounters SET active_map_id = $1 WHERE id = $2`, [newMapId, encounterId]);
+  }
 
   // Spread the party near one corner and the monsters near another —
   // illustrative positions, not tied to any specific participant identity,
@@ -489,7 +511,7 @@ async function seedDemoMap(client: Client, encounterId: number, backgroundAssetI
     const [x, y] = positions[idx % positions.length]!;
     await client.query(`UPDATE combat_participants SET pos_x = $1, pos_y = $2 WHERE id = $3`, [x, y, participants.rows[idx]!.id]);
   }
-  console.log(`  encounter_maps: 1 (15x12 grid, ${participants.rows.length} tokens placed)`);
+  console.log(`  maps: 1 (15x12 grid, ${participants.rows.length} tokens placed)`);
 }
 
 // ---- Phase 3.2: one homebrew creature owned by the demo campaign, to show

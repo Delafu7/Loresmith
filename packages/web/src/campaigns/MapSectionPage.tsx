@@ -14,6 +14,7 @@ import type { Encounter } from '../lib/types';
 import { useCampaignShell } from './CampaignShell';
 import { useEncounterSessionData } from '../encounters/useEncounterSessionData';
 import { BattleMap } from '../encounters/BattleMap';
+import { MapLibraryPanel } from './MapLibraryPanel';
 import { PartyStatsSidebar } from '../encounters/PartyStatsSidebar';
 import { SessionOverlayPanel } from '../encounters/SessionOverlayPanel';
 import { ParticipantSheetPanel } from '../encounters/ParticipantSheetPanel';
@@ -98,12 +99,15 @@ function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
           onOpenSheet={setSelectedParticipantId}
         />
       </div>
-      <div className="min-h-0 rounded-md bg-stone-950 shadow-sm">
-        <PartyStatsSidebar
-          participants={live.participants}
-          activeParticipantId={live.activeParticipantId}
-          onSelect={setSelectedParticipantId}
-        />
+      <div className="min-h-0 flex flex-col gap-2 overflow-y-auto">
+        {isDm && <MapLibraryPanel campaignId={campaignId} encounterId={encounter.id} activeMapId={live.map?.id} />}
+        <div className="min-h-0 flex-1 rounded-md bg-stone-950 shadow-sm">
+          <PartyStatsSidebar
+            participants={live.participants}
+            activeParticipantId={live.activeParticipantId}
+            onSelect={setSelectedParticipantId}
+          />
+        </div>
       </div>
       <SessionOverlayPanel open={selectedParticipant != null} onClose={() => setSelectedParticipantId(null)} title={selectedParticipant?.name ?? ''}>
         {selectedParticipant && (

@@ -660,6 +660,26 @@ export interface CampaignAsset {
   updated_at: string;
 }
 
+// Campaign-scoped map library (1784269788666_create-campaign-maps-library.ts)
+// — a reusable location, linkable N:M to encounters via
+// /encounters/:id/maps/:mapId/link and /encounters/:id/active-map. Distinct
+// from `MapConfig` (socketTypes.ts), the wire shape for "this encounter's
+// CURRENTLY ACTIVE map" as seen in the live view.
+export interface CampaignMap {
+  id: string;
+  campaign_id: string;
+  name: string;
+  description: string | null;
+  background_asset_id: string | null;
+  grid_columns: number;
+  grid_rows: number;
+  cell_size_px: number;
+  feet_per_cell: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Note {
   id: string;
   campaign_id: string;

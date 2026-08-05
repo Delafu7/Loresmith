@@ -210,6 +210,7 @@ export function broadcastParticipantLeft(
 export function broadcastMapUpdated(io: Server, encounter: EncounterLike, map: EncounterMapRow): void {
   io.to(encounterRoom(encounter.id)).emit('MAP_UPDATED', {
     ...envelope(encounter),
+    id: map.id,
     backgroundAssetId: map.background_asset_id,
     backgroundFileUrl: map.background_file_url,
     gridColumns: map.grid_columns,
