@@ -4,6 +4,7 @@ import { queryClient } from './lib/queryClient';
 import { AuthProvider } from './auth/AuthContext';
 import { LocaleProvider } from './i18n/LocaleContext';
 import { SocketProvider } from './lib/SocketContext';
+import { ToastProvider } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage } from './auth/LoginPage';
 import { RegisterPage } from './auth/RegisterPage';
@@ -41,6 +42,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <LocaleProvider>
+        <ToastProvider>
         <SocketProvider>
           <BrowserRouter>
             <Routes>
@@ -122,6 +124,7 @@ function App() {
             </Routes>
           </BrowserRouter>
         </SocketProvider>
+        </ToastProvider>
         </LocaleProvider>
       </AuthProvider>
     </QueryClientProvider>

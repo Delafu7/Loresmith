@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type {
@@ -12,7 +12,6 @@ import type {
 } from '../lib/types';
 import { useEncounterSessionData } from './useEncounterSessionData';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
-import { Combobox } from '../components/Combobox';
 import { RevealToggle } from '../components/RevealToggle';
 import { useReveals } from '../lib/useReveal';
 import { StatBlock } from '../components/StatBlock';
@@ -228,6 +227,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
     removeParticipantMutation,
     visibilityMutation,
     addParticipantMutation,
+    spawnMutation,
     hpMutation,
     applyEffectMutation,
     removeEffectMutation,
@@ -291,6 +291,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
           rollInitiativeMutation={rollInitiativeMutation}
           advanceTurnMutation={advanceTurnMutation}
           addParticipantMutation={addParticipantMutation}
+          spawnMutation={spawnMutation}
           removeParticipantMutation={removeParticipantMutation}
           visibilityMutation={visibilityMutation}
           hpMutation={hpMutation}
@@ -379,63 +380,3 @@ export function ResetRevealsButton({ encounterId }: { encounterId: string }) {
   );
 }
 
-export function AddParticipantForm({
-  characters,
-  monsterInstances,
-  onAdd,
-  pending,
-}: {
-  characters: Character[];
-  monsterInstances: MonsterInstance[];
-  onAdd: (body: { characterId?: string; monsterInstanceId?: string }) => void;
-  pending: boolean;
-}) {
-  const { t } = useLocale();
-  const [kind, setKind] = useState<'character' | 'monster'>('character');
-  const [selected, setSelected] = useState('');
-
-  const options = kind === 'character' ? characters : monsterInstances;
-
-  function handleAdd() {
-    if (!selected) return;
-    onAdd(kind === 'character' ? { characterId: selected } : { monsterInstanceId: selected });
-    setSelected('');
-  }
-
-  return (
-    <div className="rounded-md bg-stone-900 shadow-sm p-4 flex flex-wrap items-end gap-2">
-      <div>
-        <label className="block text-xs text-stone-500 mb-1">{t('encounters.tracker.addParticipant')}</label>
-        <select
-          value={kind}
-          onChange={(e) => {
-            setKind(e.target.value as 'character' | 'monster');
-            setSelected('');
-          }}
-          className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
-        >
-          <option value="character">{t('encounters.tracker.character')}</option>
-          <option value="monster">{t('encounters.tracker.monsterInstance')}</option>
-        </select>
-      </div>
-      <Combobox
-        value={selected}
-        onChange={setSelected}
-        placeholder={t('common.search')}
-        className="min-w-[10rem]"
-        options={options.map((o) => ({
-          value: String(o.id),
-          label: 'name' in o ? o.name : (o as MonsterInstance).custom_name || (o as MonsterInstance).monster_name || `#${o.id}`,
-        }))}
-      />
-      <button
-        type="button"
-        disabled={!selected || pending}
-        onClick={handleAdd}
-        className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-sm"
-      >
-        {t('encounters.tracker.add')}
-      </button>
-    </div>
-  );
-}

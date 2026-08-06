@@ -23,6 +23,15 @@ import { useAuth } from '../auth/AuthContext';
 import { useEncounterLive } from './useEncounterLive';
 import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 
+export interface SpawnParticipantsBody {
+  monsterId: string;
+  quantity: number;
+  hpStrategy: 'average' | 'rolled' | 'same';
+  groupInitiative: boolean;
+  customBaseName?: string;
+  namingScheme: 'numeric' | 'alpha';
+}
+
 export function useEncounterSessionData(encounter: Encounter) {
   const { campaignId, campaign, role } = useCampaignShell();
   const { user } = useAuth();
@@ -131,7 +140,20 @@ export function useEncounterSessionData(encounter: Encounter) {
   });
   const addParticipantMutation = useMutation({
     mutationFn: (body: { characterId?: string; monsterInstanceId?: string }) =>
-      api.post(`/encounters/${encounter.id}/participants`, body),
+      api.post<{ participant: { id: string } }>(`/encounters/${encounter.id}/participants`, body),
+    onSuccess: invalidateControlPlane,
+  });
+  // Iteration 2 "Fast add/spawn UX" — batched sibling of addParticipantMutation
+  // above: one request creates N monster_instances + N combat_participants
+  // (see services/spawn.ts) instead of the caller driving N sequential
+  // create+seat round-trips. The response's participant ids are only used for
+  // AddToEncounterOverlay.tsx's undo action (a follow-up removeParticipantMutation
+  // per id) — display state comes from the FULL_STATE_SYNC the server pushes
+  // itself, same "socket is the single source of truth" discipline as
+  // hpMutation/dispositionMutation above, so no cache write here either.
+  const spawnMutation = useMutation({
+    mutationFn: (body: SpawnParticipantsBody) =>
+      api.post<{ participants: Array<{ id: string }> }>(`/encounters/${encounter.id}/spawn`, body),
     onSuccess: invalidateControlPlane,
   });
   const hpMutation = useMutation({
@@ -215,6 +237,7 @@ export function useEncounterSessionData(encounter: Encounter) {
     removeParticipantMutation,
     visibilityMutation,
     addParticipantMutation,
+    spawnMutation,
     hpMutation,
     applyEffectMutation,
     removeEffectMutation,

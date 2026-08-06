@@ -25,7 +25,6 @@ import { useCampaignShell } from '../campaigns/CampaignShell';
 import { ActionEconomyPanel } from './ActionEconomyPanel';
 import {
   ActionButton,
-  AddParticipantForm,
   ParticipantStatLookup,
   ParticipantWeaknessReveal,
   ResetRevealsButton,
@@ -61,14 +60,11 @@ export interface BattleModeDmPanelProps {
   forceFullscreenMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
-  addParticipantMutation: MutationLike<{ characterId?: string; monsterInstanceId?: string }>;
   removeParticipantMutation: MutationLike<string>;
   visibilityMutation: MutationLike<{ participantId: string; visible: boolean }>;
   hpMutation: MutationLike<{ target: 'character' | 'monster'; id: string; delta: number; tempDelta: number }>;
   applyEffectMutation: MutationLike<{ participant: SnapshotParticipant; input: ApplyEffectFormInput }>;
   removeEffectMutation: MutationLike<string>;
-  availableCharacters: Character[];
-  availableMonsterInstances: MonsterInstance[];
 }
 
 export function BattleModeDmPanel({
@@ -90,14 +86,11 @@ export function BattleModeDmPanel({
   forceFullscreenMutation,
   rollInitiativeMutation,
   advanceTurnMutation,
-  addParticipantMutation,
   removeParticipantMutation,
   visibilityMutation,
   hpMutation,
   applyEffectMutation,
   removeEffectMutation,
-  availableCharacters,
-  availableMonsterInstances,
 }: BattleModeDmPanelProps) {
   const { t } = useLocale();
   const { campaign } = useCampaignShell();
@@ -301,13 +294,6 @@ export function BattleModeDmPanel({
         <ResetRevealsButton encounterId={encounterId} />
       </div>
       {showDiceRoller && <QuickDiceRoller encounterId={encounterId} />}
-
-      <AddParticipantForm
-        characters={availableCharacters}
-        monsterInstances={availableMonsterInstances}
-        pending={addParticipantMutation.isPending}
-        onAdd={(body) => addParticipantMutation.mutate(body)}
-      />
     </div>
   );
 }

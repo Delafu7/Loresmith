@@ -188,6 +188,7 @@ function LiveMapSession({ encounter }: { encounter: Encounter }) {
     removeParticipantMutation,
     visibilityMutation,
     addParticipantMutation,
+    spawnMutation,
     hpMutation,
     applyEffectMutation,
     removeEffectMutation,
@@ -224,6 +225,7 @@ function LiveMapSession({ encounter }: { encounter: Encounter }) {
       rollInitiativeMutation={rollInitiativeMutation}
       advanceTurnMutation={advanceTurnMutation}
       addParticipantMutation={addParticipantMutation}
+      spawnMutation={spawnMutation}
       removeParticipantMutation={removeParticipantMutation}
       visibilityMutation={visibilityMutation}
       hpMutation={hpMutation}

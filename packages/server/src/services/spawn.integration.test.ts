@@ -78,7 +78,12 @@ describe('spawnParticipants (integration, live DB, throwaway fixtures)', () => {
   });
 
   afterAll(async () => {
+    // Campaign cascade clears monster_instances/combat_participants/encounters
+    // first, so the monsters catalog rows themselves (global, not
+    // campaign-scoped — see services/monsters.ts's uniqueness check spanning
+    // all campaigns) can be deleted afterward without an FK violation.
     if (campaignId) await pool.query(`DELETE FROM campaigns WHERE id = $1`, [campaignId]);
+    await pool.query(`DELETE FROM monsters WHERE id = ANY($1::uuid[])`, [[goblinId, uniqueBossId]]);
     if (dmUserId) await pool.query(`DELETE FROM users WHERE id = $1`, [dmUserId]);
     await pool.end();
   });

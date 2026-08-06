@@ -13,7 +13,7 @@
 // Clicking a token (BattleMap's onOpenSheet) or an initiative-strip chip
 // opens the overlay showing that participant's ParticipantSheetPanel.
 
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import type { Character, Encounter, EncounterDisposition, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
 import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 import { EmptyState } from '../components/Feedback';
@@ -25,7 +25,9 @@ import { CombatLogPanel } from './CombatLogPanel';
 import { DispositionBadge, DispositionHistoryPanel } from './DispositionPanel';
 import { ParticipantSheetPanel } from './ParticipantSheetPanel';
 import { SessionOverlayPanel } from './SessionOverlayPanel';
+import { AddToEncounterOverlay, type AsyncMutationLike } from './AddToEncounterOverlay';
 import type { EncounterLiveState } from './useEncounterLive';
+import type { SpawnParticipantsBody } from './useEncounterSessionData';
 import { useLocale } from '../i18n/LocaleContext';
 
 export interface SessionScreenProps {
@@ -49,7 +51,8 @@ export interface SessionScreenProps {
   forceFullscreenMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
-  addParticipantMutation: MutationLike<{ characterId?: string; monsterInstanceId?: string }>;
+  addParticipantMutation: AsyncMutationLike<{ characterId?: string; monsterInstanceId?: string }, { participant: { id: string } }>;
+  spawnMutation: AsyncMutationLike<SpawnParticipantsBody, { participants: Array<{ id: string }> }>;
   removeParticipantMutation: MutationLike<string>;
   visibilityMutation: MutationLike<{ participantId: string; visible: boolean }>;
   hpMutation: MutationLike<{ target: 'character' | 'monster'; id: string; delta: number; tempDelta: number }>;
@@ -96,6 +99,7 @@ export function SessionScreen({
   rollInitiativeMutation,
   advanceTurnMutation,
   addParticipantMutation,
+  spawnMutation,
   removeParticipantMutation,
   visibilityMutation,
   hpMutation,
@@ -109,6 +113,22 @@ export function SessionScreen({
   const { t } = useLocale();
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const [addOverlayOpen, setAddOverlayOpen] = useState(false);
+
+  // Cmd/Ctrl+K trigger, scoped to this screen (not app-global — see
+  // AddToEncounterOverlay.tsx's header note on why). DM-only, matching the
+  // trigger button below.
+  useEffect(() => {
+    if (!isDm) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setAddOverlayOpen(true);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isDm]);
 
   function openSheet(participantId: string) {
     setSelectedParticipantId(participantId);
@@ -153,14 +173,11 @@ export function SessionScreen({
       forceFullscreenMutation={forceFullscreenMutation}
       rollInitiativeMutation={rollInitiativeMutation}
       advanceTurnMutation={advanceTurnMutation}
-      addParticipantMutation={addParticipantMutation}
       removeParticipantMutation={removeParticipantMutation}
       visibilityMutation={visibilityMutation}
       hpMutation={hpMutation}
       applyEffectMutation={applyEffectMutation}
       removeEffectMutation={removeEffectMutation}
-      availableCharacters={availableCharacters}
-      availableMonsterInstances={availableMonsterInstances}
     />
   ) : (
     <BattleModePlayerPanel
@@ -181,6 +198,21 @@ export function SessionScreen({
           <InitiativeStrip participants={live.participants} activeParticipantId={live.activeParticipantId} onSelect={openSheet} />
         </div>
         <div className="flex flex-shrink-0 items-center gap-1.5">
+          {/* Always visible (not gated by showMap like Manage below) — the
+              highest-priority ask this overlay exists for is adding
+              creatures without ever leaving the live view, on both the
+              fullscreen map and the mapless prep page. */}
+          {isDm && (
+            <button
+              type="button"
+              onClick={() => setAddOverlayOpen(true)}
+              aria-label={t('encounters.addOverlay.trigger')}
+              title={t('encounters.addOverlay.trigger')}
+              className="flex min-h-9 items-center justify-center rounded-md bg-stone-900 px-2.5 text-sm font-medium text-stone-400 hover:bg-stone-800 hover:text-stone-200"
+            >
+              +
+            </button>
+          )}
           {/* Redundant once the panel is shown inline below (mapless
               Session page) — a toggle for something that's already always
               visible has nothing to do. */}
@@ -241,6 +273,20 @@ export function SessionScreen({
         )}
         {overlay === 'chat' && <EmptyState message={t('encounters.sheet.chatComingSoon')} />}
       </SessionOverlayPanel>
+
+      {isDm && (
+        <AddToEncounterOverlay
+          open={addOverlayOpen}
+          onClose={() => setAddOverlayOpen(false)}
+          campaignId={campaignId}
+          monsters={monsters}
+          availableCharacters={availableCharacters}
+          availableMonsterInstances={availableMonsterInstances}
+          addParticipantMutation={addParticipantMutation}
+          spawnMutation={spawnMutation}
+          removeParticipantMutation={removeParticipantMutation}
+        />
+      )}
     </div>
   );
 }
