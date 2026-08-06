@@ -220,6 +220,12 @@ export interface MonsterCatalogEntry {
   // GET /catalog/monsters?campaignId=.
   is_homebrew: boolean;
   owning_campaign_id: string | null;
+  // Iteration 2 "Shared bestiary" — the other homebrew ownership tier,
+  // mutually exclusive with owning_campaign_id: "my library, reusable
+  // across every campaign I run." Provenance for a fork made via the
+  // duplicate action — null unless this row was forked from another.
+  owning_user_id: string | null;
+  derived_from_template_id: string | null;
   art_asset_id: string | null;
   // Catalog-level: caps monster_instances at 1 per campaign for this stat
   // block (named legendary villains etc.) — see services/monsters.ts.
@@ -334,6 +340,10 @@ export interface CampaignBestiaryEntry {
   // monster with stat_overrides shallow-merged on top — what the UI should
   // render as this creature's actual stat block in this campaign.
   effective: MonsterCatalogEntry;
+  // Iteration 2 "Shared bestiary" — DISTINCT campaign count currently
+  // curating this template, computed fresh server-side on every read. 1
+  // means "just this campaign" — render no badge, not a redundant one.
+  shared_campaign_count: number;
 }
 
 export type EncounterStatus = 'preparing' | 'active' | 'paused' | 'completed';

@@ -27,10 +27,12 @@ campaignBestiaryRouter.post('/', requireRole('dm'), async (req, res) => {
   res.status(201).json(result);
 });
 
-// Bulk remove — mounted before /:entryId so Express doesn't try to match
-// the literal path "bulk" against that param route; DELETE with a JSON body
-// (Express's json() body-parser applies regardless of method).
-campaignBestiaryRouter.delete('/bulk', requireRole('dm'), async (req, res) => {
+// Bulk remove — POST-as-action (not DELETE-with-body) since this app's
+// frontend api client (lib/api.ts) only sends a JSON body for post/patch/put,
+// same convention as the promote-to-library/assign-to-campaign actions.
+// Mounted before /:entryId so Express doesn't try to match the literal path
+// "bulk-remove" against that param route.
+campaignBestiaryRouter.post('/bulk-remove', requireRole('dm'), async (req, res) => {
   const input = removeFromBestiarySchema.parse(req.body);
   const result = await campaignBestiaryService.removeCampaignBestiaryEntries(pool, req.campaignId!, input.entryIds);
   broadcastBestiaryUpdated(getIo(req.app), req.campaignId!);

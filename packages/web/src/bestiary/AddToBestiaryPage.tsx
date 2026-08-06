@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { CampaignBestiaryEntry, MonsterCatalogEntry } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
+import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Button, ButtonLink } from '../components/ui/Button';
@@ -14,8 +15,38 @@ import { formatCrLabel } from './formatCr';
 // creatures to the curated campaign bestiary (POST /campaigns/:id/bestiary).
 // Reuses the same catalog query + filter shape as MonstersPage.tsx/
 // BestiaryBasicPage.tsx rather than inventing a new browse UI.
+// Iteration 2 "Shared bestiary" — client-local MRU of monster ids this DM
+// has added to any campaign's bestiary from this browser, same localStorage
+// pattern as AddToEncounterOverlay.tsx's recents (no server-side "recently
+// used" endpoint exists, and this is a convenience sort, not authoritative
+// data). One flat key, not per-campaign, since "recently used" should
+// surface a monster you just added to a DIFFERENT campaign too.
+const RECENTS_KEY = 'bestiaryAddRecents';
+const RECENTS_MAX = 20;
+
+function readRecents(): string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENTS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+function pushRecents(ids: string[]): void {
+  try {
+    const next = [...ids, ...readRecents().filter((id) => !ids.includes(id))].slice(0, RECENTS_MAX);
+    window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+  } catch {
+    // Storage unavailable — the sort option just has nothing to show.
+  }
+}
+
+type SourceFilter = 'all' | 'srd' | 'mine' | 'campaign';
+type SortMode = 'name' | 'recent';
+
 export function AddToBestiaryPage() {
   const { campaignId, campaign, role } = useCampaignShell();
+  const { user } = useAuth();
   const { t } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -24,7 +55,10 @@ export function AddToBestiaryPage() {
   const [creatureType, setCreatureType] = useState('');
   const [crMin, setCrMin] = useState('');
   const [crMax, setCrMax] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('name');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [recentIds, setRecentIds] = useState<string[]>(() => readRecents());
 
   const catalogParams = new URLSearchParams({ edition: campaign.srd_edition, campaignId });
   if (creatureType) catalogParams.set('creatureType', creatureType);
@@ -46,7 +80,9 @@ export function AddToBestiaryPage() {
 
   const addMutation = useMutation({
     mutationFn: (monsterIds: string[]) => api.post(`/campaigns/${campaignId}/bestiary`, { monsterIds }),
-    onSuccess: () => {
+    onSuccess: (_data, monsterIds) => {
+      pushRecents(monsterIds);
+      setRecentIds(readRecents());
       void queryClient.invalidateQueries({ queryKey: ['campaignBestiary', campaignId] });
       navigate(`/campaigns/${campaignId}/bestiary`);
     },
@@ -61,9 +97,31 @@ export function AddToBestiaryPage() {
   }
 
   const creatureTypes = [...new Set(catalogQuery.data?.monsters.map((m) => m.creature_type) ?? [])].sort();
-  const filtered = (catalogQuery.data?.monsters ?? []).filter(
-    (m) => !search || m.name.toLowerCase().includes(search.toLowerCase()),
-  );
+
+  function matchesSource(m: MonsterCatalogEntry): boolean {
+    switch (sourceFilter) {
+      case 'srd':
+        return m.owning_campaign_id === null && m.owning_user_id === null;
+      case 'mine':
+        return m.owning_user_id === user?.id;
+      case 'campaign':
+        return m.owning_campaign_id === campaignId;
+      default:
+        return true;
+    }
+  }
+
+  const recentRank = new Map(recentIds.map((id, i) => [id, i]));
+  const filtered = (catalogQuery.data?.monsters ?? [])
+    .filter((m) => (!search || m.name.toLowerCase().includes(search.toLowerCase())) && matchesSource(m))
+    .sort((a, b) => {
+      if (sortMode === 'recent') {
+        const rankA = recentRank.get(a.id) ?? Infinity;
+        const rankB = recentRank.get(b.id) ?? Infinity;
+        if (rankA !== rankB) return rankA - rankB;
+      }
+      return a.name.localeCompare(b.name);
+    });
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -101,6 +159,16 @@ export function AddToBestiaryPage() {
         </Select>
         <Input type="number" placeholder={t('campaignBestiary.add.crMin')} value={crMin} onChange={(e) => setCrMin(e.target.value)} className="sm:w-24" />
         <Input type="number" placeholder={t('campaignBestiary.add.crMax')} value={crMax} onChange={(e) => setCrMax(e.target.value)} className="sm:w-24" />
+        <Select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value as SourceFilter)} className="sm:w-36">
+          <option value="all">{t('campaignBestiary.add.sourceAll')}</option>
+          <option value="srd">{t('campaignBestiary.add.sourceSrd')}</option>
+          <option value="mine">{t('campaignBestiary.add.sourceMine')}</option>
+          <option value="campaign">{t('campaignBestiary.add.sourceCampaign')}</option>
+        </Select>
+        <Select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)} className="sm:w-36">
+          <option value="name">{t('campaignBestiary.add.sortName')}</option>
+          <option value="recent">{t('campaignBestiary.add.sortRecent')}</option>
+        </Select>
       </div>
 
       {catalogQuery.isLoading && <Loading />}
@@ -134,6 +202,12 @@ export function AddToBestiaryPage() {
                   </td>
                   <td className="px-3 py-2 text-stone-100">
                     {m.name}
+                    {m.owning_user_id !== null && (
+                      <span className="ml-2 text-xs text-amber-500">{t('campaignBestiary.add.sourceMine')}</span>
+                    )}
+                    {m.owning_campaign_id !== null && (
+                      <span className="ml-2 text-xs text-stone-500">{t('campaignBestiary.add.sourceCampaign')}</span>
+                    )}
                     {alreadyAdded && <span className="ml-2 text-xs text-stone-500">{t('campaignBestiary.add.alreadyAdded')}</span>}
                   </td>
                   <td className="px-3 py-2 text-stone-400">{m.creature_type}</td>

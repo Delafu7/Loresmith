@@ -28,6 +28,11 @@ interface BestiaryEntryRow {
   added_by_user_id: string | null;
   created_at: string;
   updated_at: string;
+  // Iteration 2 "Shared bestiary" — how many DISTINCT campaigns currently
+  // curate this template, computed fresh on every read (not stored) so it's
+  // never stale. 1 means "only this campaign," which the frontend renders
+  // as no badge at all rather than a redundant "shared with 1 campaign."
+  shared_campaign_count: number;
 }
 
 interface BestiaryEntryWithMonsterRow extends BestiaryEntryRow {
@@ -61,12 +66,19 @@ function toDto(row: BestiaryEntryWithMonsterRow, categories: campaignCategoriesS
     categories,
     monster: row.monster,
     effective: { ...row.monster, ...row.stat_overrides },
+    shared_campaign_count: row.shared_campaign_count,
   };
 }
 
+// (SELECT COUNT(DISTINCT ...) ...) rather than a separate query per row —
+// one indexed subquery, correlated on monster_id, computed fresh on every
+// read (never stored, so it can't go stale the way a denormalized counter
+// column could).
+const SHARED_COUNT_SUBQUERY = `(SELECT COUNT(DISTINCT campaign_id)::int FROM campaign_bestiary_entries WHERE monster_id = cbe.monster_id) AS shared_campaign_count`;
+
 async function fetchEntryWithMonsterOrThrow(pool: Pool, campaignId: string, entryId: string): Promise<BestiaryEntryWithMonsterRow> {
   const result = await pool.query<BestiaryEntryWithMonsterRow>(
-    `SELECT cbe.*, row_to_json(m.*) AS monster
+    `SELECT cbe.*, row_to_json(m.*) AS monster, ${SHARED_COUNT_SUBQUERY}
      FROM campaign_bestiary_entries cbe
      JOIN monsters m ON m.id = cbe.monster_id
      WHERE cbe.id = $1 AND cbe.campaign_id = $2`,
@@ -86,7 +98,7 @@ export async function listCampaignBestiary(pool: Pool, campaignId: string, role:
   if (role !== 'dm') where += ' AND cbe.discovered = true';
 
   const result = await pool.query<BestiaryEntryWithMonsterRow>(
-    `SELECT cbe.*, row_to_json(m.*) AS monster
+    `SELECT cbe.*, row_to_json(m.*) AS monster, ${SHARED_COUNT_SUBQUERY}
      FROM campaign_bestiary_entries cbe
      JOIN monsters m ON m.id = cbe.monster_id
      WHERE ${where}

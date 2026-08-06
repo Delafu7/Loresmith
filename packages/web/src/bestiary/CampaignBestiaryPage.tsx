@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { CampaignBestiaryEntry } from '../lib/types';
+import type { CampaignBestiaryEntry, MonsterCatalogEntry } from '../lib/types';
 import type { BestiaryUpdatedEvent } from '../lib/socketTypes';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useSocket } from '../lib/SocketContext';
@@ -24,6 +24,7 @@ export function CampaignBestiaryPage() {
   const { socket } = useSocket();
   const isDm = role === 'dm';
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const queryKey = ['campaignBestiary', campaignId];
   const entriesQuery = useQuery({
@@ -56,6 +57,17 @@ export function CampaignBestiaryPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey }),
   });
 
+  // Iteration 2 "Shared bestiary" — bulk unassociate, the natural complement
+  // to AddToBestiaryPage.tsx's existing bulk-add. DELETE with a JSON body,
+  // same convention as the server route.
+  const bulkRemoveMutation = useMutation({
+    mutationFn: (entryIds: string[]) => api.post<{ removed: number }>(`/campaigns/${campaignId}/bestiary/bulk-remove`, { entryIds }),
+    onSuccess: () => {
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
   const attachTagMutation = useMutation({
     mutationFn: ({ entryId, name }: { entryId: string; name: string }) =>
       api.post<{ entry: CampaignBestiaryEntry }>(`/campaigns/${campaignId}/bestiary/${entryId}/categories`, { name }),
@@ -70,8 +82,17 @@ export function CampaignBestiaryPage() {
 
   const entries = entriesQuery.data?.entries ?? [];
 
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
-    <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto space-y-4">
+    <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto space-y-4 pb-24">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h2 className="text-lg font-semibold">{t('nav.bestiary')}</h2>
         {isDm && <ButtonLink to="add" variant="primary" size="sm">{t('campaignBestiary.addButton')}</ButtonLink>}
@@ -80,6 +101,7 @@ export function CampaignBestiaryPage() {
       {entriesQuery.isLoading && <Loading />}
       {entriesQuery.isError && <ErrorBanner message={errorMessage(entriesQuery.error)} />}
       {removeMutation.isError && <ErrorBanner message={errorMessage(removeMutation.error)} />}
+      {bulkRemoveMutation.isError && <ErrorBanner message={errorMessage(bulkRemoveMutation.error)} />}
       {updateMutation.isError && <ErrorBanner message={errorMessage(updateMutation.error)} />}
       {entries.length === 0 && !entriesQuery.isLoading && (
         <EmptyState message={isDm ? t('campaignBestiary.emptyDm') : t('campaignBestiary.emptyPlayer')} />
@@ -89,6 +111,7 @@ export function CampaignBestiaryPage() {
         <table className="w-full text-sm">
           <thead className="bg-stone-900 text-stone-500 text-xs uppercase">
             <tr>
+              {isDm && <th className="px-3 py-2" />}
               <th className="text-left px-3 py-2">{t('campaignBestiary.colName')}</th>
               <th className="text-left px-3 py-2">{t('campaignBestiary.colType')}</th>
               <th className="text-left px-3 py-2">{t('campaignBestiary.colTags')}</th>
@@ -100,6 +123,16 @@ export function CampaignBestiaryPage() {
             {entries.map((entry) => (
               <Fragment key={entry.id}>
                 <tr className="border-t border-stone-800 hover:bg-stone-900/60">
+                  {isDm && (
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(entry.id)}
+                        onChange={() => toggleSelected(entry.id)}
+                        aria-label={t('campaignBestiary.selectAria', { name: entry.custom_name || entry.monster.name })}
+                      />
+                    </td>
+                  )}
                   <td className="px-3 py-2 text-stone-100">
                     <button
                       type="button"
@@ -160,7 +193,7 @@ export function CampaignBestiaryPage() {
                 </tr>
                 {expandedId === entry.id && (
                   <tr className="border-t border-stone-800">
-                    <td colSpan={isDm ? 5 : 4} className="px-3 py-3 bg-stone-950/40">
+                    <td colSpan={isDm ? 6 : 4} className="px-3 py-3 bg-stone-950/40">
                       <BestiaryEntryDetail
                         entry={entry}
                         isDm={isDm}
@@ -176,6 +209,27 @@ export function CampaignBestiaryPage() {
           </tbody>
         </table>
       </div>
+
+      {isDm && selected.size > 0 && (
+        <div className="fixed bottom-0 inset-x-0 sm:sticky sm:bottom-4 flex justify-center">
+          <div className="flex items-center gap-3 rounded-md bg-stone-900 shadow-lg border border-stone-800 px-4 py-3">
+            <span className="text-sm text-stone-300">{t('campaignBestiary.selectedCount', { count: selected.size })}</span>
+            <Button
+              variant="danger"
+              disabled={bulkRemoveMutation.isPending}
+              onClick={() => {
+                if (confirm(t('campaignBestiary.confirmBulkRemove', { count: selected.size }))) {
+                  bulkRemoveMutation.mutate([...selected]);
+                }
+              }}
+            >
+              {bulkRemoveMutation.isPending
+                ? t('campaignBestiary.removing')
+                : t('campaignBestiary.bulkRemoveButton', { count: selected.size })}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -202,6 +256,17 @@ function BestiaryEntryDetail({
 
   const overriddenFields = Object.keys(entry.stat_overrides);
 
+  // Iteration 2 "Shared bestiary" — provenance is just an id on the monster
+  // row (derived_from_template_id); the source's display name needs its own
+  // fetch. Only fires when there's actually a source to name, and reuses the
+  // existing single-creature catalog endpoint rather than a new one.
+  const sourceTemplateId = entry.monster.derived_from_template_id;
+  const sourceTemplateQuery = useQuery({
+    queryKey: ['catalog', 'monsters', sourceTemplateId],
+    queryFn: () => api.get<{ monster: MonsterCatalogEntry }>(`/catalog/monsters/${sourceTemplateId}`),
+    enabled: sourceTemplateId != null,
+  });
+
   function saveDetails() {
     const statOverrides: Record<string, unknown> = {};
     if (armorClassOverride.trim() !== '') statOverrides.armorClass = Number(armorClassOverride);
@@ -215,6 +280,19 @@ function BestiaryEntryDetail({
 
   return (
     <div className="space-y-4">
+      {(entry.shared_campaign_count > 1 || sourceTemplateId != null) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {entry.shared_campaign_count > 1 && (
+            <Badge variant="accent">{t('campaignBestiary.detail.sharedBadge', { count: entry.shared_campaign_count })}</Badge>
+          )}
+          {sourceTemplateId != null && sourceTemplateQuery.data && (
+            <span className="text-stone-500">
+              {t('campaignBestiary.detail.basedOn', { name: sourceTemplateQuery.data.monster.name })}
+            </span>
+          )}
+        </div>
+      )}
+
       {isDm && (
         <div className="grid sm:grid-cols-2 gap-3 rounded-md bg-stone-900 p-3">
           <label className="flex flex-col gap-1 text-xs text-stone-400">

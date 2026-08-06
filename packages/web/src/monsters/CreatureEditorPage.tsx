@@ -102,6 +102,10 @@ interface FormState {
   source: string;
   artAssetId: string | null;
   isUnique: boolean;
+  // Iteration 2 "Shared bestiary" — create-time only, never editable via the
+  // generic PATCH afterward (that's what the dedicated promote/assign
+  // actions on MonstersPage.tsx are for). Ignored entirely in edit mode.
+  libraryScope: 'campaign' | 'library';
 }
 
 function emptyForm(): FormState {
@@ -137,6 +141,7 @@ function emptyForm(): FormState {
     source: '',
     artAssetId: null,
     isUnique: false,
+    libraryScope: 'campaign',
   };
 }
 
@@ -186,6 +191,7 @@ function monsterToForm(m: MonsterCatalogEntry): FormState {
     source: m.source ?? '',
     artAssetId: m.art_asset_id,
     isUnique: m.is_unique,
+    libraryScope: 'campaign',
   };
 }
 
@@ -237,6 +243,7 @@ function buildPayload(form: FormState) {
     source: form.source.trim() || null,
     artAssetId: form.artAssetId,
     isUnique: form.isUnique,
+    libraryScope: form.libraryScope,
   };
 }
 
@@ -277,6 +284,8 @@ function previewMonster(form: FormState): MonsterCatalogEntry {
     source: payload.source,
     is_homebrew: true,
     owning_campaign_id: null,
+    owning_user_id: null,
+    derived_from_template_id: null,
     art_asset_id: payload.artAssetId,
     is_unique: payload.isUnique,
     image_url: null,
@@ -489,6 +498,26 @@ export function CreatureEditorPage() {
           />
           {t('monsters.editor.uniqueLabel')}
         </label>
+        {/* Iteration 2 "Shared bestiary" — create-time only choice; changing
+            scope afterward goes through the dedicated promote/assign actions
+            on MonstersPage.tsx instead of a generic edit. */}
+        {!isEdit && (
+          <Field label={t('monsters.editor.libraryScopeLabel')}>
+            <select
+              value={form.libraryScope}
+              onChange={(e) => update('libraryScope', e.target.value as FormState['libraryScope'])}
+              className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100 sm:w-64"
+            >
+              <option value="campaign">{t('monsters.editor.libraryScopeCampaign')}</option>
+              <option value="library">{t('monsters.editor.libraryScopeLibrary')}</option>
+            </select>
+            <p className="mt-1 text-xs text-stone-500">
+              {form.libraryScope === 'library'
+                ? t('monsters.editor.libraryScopeLibraryHint')
+                : t('monsters.editor.libraryScopeCampaignHint')}
+            </p>
+          </Field>
+        )}
       </section>
 
       {/* Defense */}

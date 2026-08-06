@@ -136,6 +136,20 @@ export function MonstersPage() {
     },
   });
 
+  // Iteration 2 "Shared bestiary" — in-place scope conversion (same row).
+  // The catalog union already includes the caller's own library rows
+  // regardless of which campaign this page is viewed from (services/
+  // catalog.ts's listMonsters), so both actions are reachable from any
+  // campaign the DM runs.
+  const promoteToLibraryMutation = useMutation({
+    mutationFn: (id: string) => api.post<{ monster: MonsterCatalogEntry }>(`/campaigns/${campaignId}/monsters/${id}/promote-to-library`, {}),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: bestiaryQueryKey }),
+  });
+  const assignToCampaignMutation = useMutation({
+    mutationFn: (id: string) => api.post<{ monster: MonsterCatalogEntry }>(`/campaigns/${campaignId}/monsters/${id}/assign-to-campaign`, {}),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: bestiaryQueryKey }),
+  });
+
   if (role !== 'dm') {
     return (
       <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
@@ -256,6 +270,14 @@ export function MonstersPage() {
                           {t('monsters.list.homebrewBadge')}
                         </span>
                       )}
+                      {m.owning_user_id !== null && (
+                        <span
+                          className="ml-2 inline-block rounded border border-sky-700 text-sky-400 text-[10px] uppercase px-1 py-0.5 align-middle"
+                          title={t('monsters.list.libraryBadgeTitle')}
+                        >
+                          {t('monsters.list.libraryBadge')}
+                        </span>
+                      )}
                       {m.is_unique && (
                         <span className="ml-2 inline-block rounded border border-purple-700 text-purple-400 text-[10px] uppercase px-1 py-0.5 align-middle">
                           {t('monsters.list.uniqueBadge')}
@@ -322,6 +344,28 @@ export function MonstersPage() {
                       >
                         {t('monsters.list.duplicate')}
                       </button>
+                      {m.owning_campaign_id === campaignId && (
+                        <button
+                          type="button"
+                          disabled={promoteToLibraryMutation.isPending}
+                          onClick={() => promoteToLibraryMutation.mutate(m.id)}
+                          title={t('monsters.list.promoteToLibraryTitle')}
+                          className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800 disabled:opacity-50"
+                        >
+                          {t('monsters.list.promoteToLibrary')}
+                        </button>
+                      )}
+                      {m.owning_user_id !== null && (
+                        <button
+                          type="button"
+                          disabled={assignToCampaignMutation.isPending}
+                          onClick={() => assignToCampaignMutation.mutate(m.id)}
+                          title={t('monsters.list.assignToCampaignTitle')}
+                          className="rounded-md border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:bg-stone-800 disabled:opacity-50"
+                        >
+                          {t('monsters.list.assignToCampaign')}
+                        </button>
+                      )}
                       {m.is_homebrew && (
                         <button
                           type="button"
