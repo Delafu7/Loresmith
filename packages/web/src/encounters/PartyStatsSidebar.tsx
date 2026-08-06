@@ -6,10 +6,12 @@
 // the same ParticipantSheetPanel the map's own double-click does — this
 // list isn't a move-targeting surface, so it has no reason to withhold the
 // sheet the way Token.tsx's single click deliberately does.
-import type { SnapshotParticipant } from '../lib/types';
+import type { Character, SnapshotParticipant } from '../lib/types';
 import { Portrait } from '../components/Portrait';
 import { HPBar } from '../components/HPBar';
+import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
+import { CONTROL_BADGE_DOT_COLOR, controlBadgeFor, controlBadgeLabel } from './controlBadge';
 
 const FACTION_RING: Record<SnapshotParticipant['faction'], string> = {
   player: 'ring-sky-500',
@@ -21,13 +23,18 @@ const FACTION_RING: Record<SnapshotParticipant['faction'], string> = {
 export function PartyStatsSidebar({
   participants,
   activeParticipantId,
+  characters,
   onSelect,
 }: {
   participants: SnapshotParticipant[];
   activeParticipantId: string | null;
+  /** Iteration 2 "Character ownership vs. control" — undefined renders every
+   * row with no control badge, same as before this iteration. */
+  characters?: Character[];
   onSelect: (participantId: string) => void;
 }) {
   const { t } = useLocale();
+  const { user } = useAuth();
 
   if (participants.length === 0) {
     return <p className="text-sm text-stone-500 italic p-3">{t('encounters.tracker.noParticipantsYet')}</p>;
@@ -35,7 +42,9 @@ export function PartyStatsSidebar({
 
   return (
     <ul className="flex flex-col gap-2 overflow-y-auto p-2">
-      {participants.map((p) => (
+      {participants.map((p) => {
+        const badge = controlBadgeFor(p.characterId, characters, user?.id);
+        return (
         <li key={p.participantId}>
           <button
             type="button"
@@ -44,8 +53,15 @@ export function PartyStatsSidebar({
               p.participantId === activeParticipantId ? 'outline outline-1 outline-amber-500' : ''
             }`}
           >
-            <div className={`flex-shrink-0 rounded-full ring-2 ${FACTION_RING[p.faction]}`}>
+            <div className={`relative flex-shrink-0 rounded-full ring-2 ${FACTION_RING[p.faction]}`}>
               <Portrait fileUrl={p.imageUrl} alt={p.name} shape="circle" size="sm" placeholderLabel={p.name} />
+              {badge && (
+                <span
+                  title={controlBadgeLabel(t, badge)}
+                  aria-label={controlBadgeLabel(t, badge)}
+                  className={`absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-1 ring-stone-950 ${CONTROL_BADGE_DOT_COLOR[badge]}`}
+                />
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
@@ -56,7 +72,8 @@ export function PartyStatsSidebar({
             </div>
           </button>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Locale, Membership, TextSize, UiTheme, User } from '../lib/types';
+import type { CampaignRole, Locale, Membership, TextSize, UiTheme, User } from '../lib/types';
 import { getSocket } from '../lib/socket';
 
 export interface MeResponse {
@@ -14,7 +14,7 @@ interface AuthContextValue {
   memberships: Membership[];
   isLoading: boolean;
   isAuthenticated: boolean;
-  roleForCampaign: (campaignId: string) => 'dm' | 'player' | null;
+  roleForCampaign: (campaignId: string) => CampaignRole | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, displayName: string, password: string) => Promise<void>;
   logout: () => Promise<void>;

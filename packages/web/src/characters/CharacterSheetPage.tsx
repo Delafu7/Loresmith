@@ -143,6 +143,20 @@ export function CharacterSheetPage() {
     },
   });
 
+  // Iteration 2's one concrete GM-only field — its own mutation (not
+  // updateCharacterMutation above) so saving it never incidentally closes an
+  // in-progress ability-score edit via that mutation's setEditingCore(false).
+  const [gmNotesDraft, setGmNotesDraft] = useState('');
+  useEffect(() => {
+    setGmNotesDraft(character?.gm_notes ?? '');
+  }, [character?.gm_notes]);
+  const gmNotesMutation = useMutation({
+    mutationFn: (gmNotes: string) => api.patch<{ character: Character }>(`/characters/${characterId}`, { gmNotes }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['character', characterId], data);
+    },
+  });
+
   const skillsMutation = useMutation({
     mutationFn: (rows: Array<{ skillId: string; level: SkillProficiencyLevel }>) =>
       api.put<{ skillProficiencies: SkillProficiency[] }>(`/characters/${characterId}/skill-proficiencies`, rows),
@@ -491,6 +505,23 @@ export function CharacterSheetPage() {
           <p className="text-sm text-stone-300 whitespace-pre-wrap">{character.notes || '—'}</p>
         )}
       </section>
+
+      {role === 'dm' && (
+        <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 border border-violet-900/40">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-violet-400 mb-2">{t('characters.sheet.gmNotesTitle')}</h3>
+          <p className="text-xs text-stone-500 mb-2">{t('characters.sheet.gmNotesHint')}</p>
+          <textarea
+            rows={4}
+            value={gmNotesDraft}
+            onChange={(e) => setGmNotesDraft(e.target.value)}
+            onBlur={() => {
+              if (gmNotesDraft !== (character.gm_notes ?? '')) gmNotesMutation.mutate(gmNotesDraft);
+            }}
+            className="w-full rounded-md bg-stone-800 border border-violet-900/60 px-3 py-2 text-stone-100 text-sm"
+          />
+          {gmNotesMutation.isError && <ErrorBanner message={errorMessage(gmNotesMutation.error)} />}
+        </section>
+      )}
     </div>
   );
 }

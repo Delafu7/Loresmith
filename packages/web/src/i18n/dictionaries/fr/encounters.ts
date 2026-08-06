@@ -302,4 +302,10 @@ export const encounters = {
     toastAdded: '{name} ajouté',
     undo: 'Annuler',
   },
+  control: {
+    mine: 'À moi',
+    delegated: 'Temporairement à vous',
+    other: "À un autre joueur",
+    gm: 'Contrôlé par le MJ',
+  },
 };

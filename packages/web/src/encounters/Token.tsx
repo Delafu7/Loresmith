@@ -14,6 +14,7 @@ import { memo, useRef, useState } from 'react';
 import { Portrait, type PortraitSize } from '../components/Portrait';
 import type { ParticipantHp, SnapshotParticipant } from '../lib/types';
 import { footprintCellsFor } from './creatureSize';
+import { CONTROL_BADGE_DOT_COLOR, controlBadgeLabel, type ControlBadgeKind } from './controlBadge';
 import { useLocale } from '../i18n/LocaleContext';
 
 function portraitSizeFor(spanPx: number): PortraitSize {
@@ -109,6 +110,11 @@ export interface TokenProps {
   /** REFACTOR-PLAN.md §3: two-way sync with the side roster — highlighted
    * when the corresponding roster row is hovered/selected, and vice versa. */
   isSelected?: boolean;
+  /** Iteration 2 "Character ownership vs. control" — a small corner dot
+   * (controlBadge.ts), not a token recolor, distinguishing "mine,"
+   * "temporarily mine," "another player's," and "GM-run." Null/undefined
+   * (monster instances, DM-run NPCs) renders no dot at all. */
+  controlBadge?: ControlBadgeKind | null;
   /** Called once, on drop, with the final snapped cell indices. */
   onMove: (x: number, y: number) => void;
   /** Single click/tap — selects the token for movement only (drag targeting,
@@ -144,7 +150,8 @@ function tokenPropsAreEqual(prev: TokenProps, next: TokenProps): boolean {
     prev.zoom === next.zoom &&
     prev.isActive === next.isActive &&
     prev.isDraggable === next.isDraggable &&
-    prev.isSelected === next.isSelected
+    prev.isSelected === next.isSelected &&
+    prev.controlBadge === next.controlBadge
   );
 }
 
@@ -157,10 +164,12 @@ function TokenComponent({
   isActive,
   isDraggable,
   isSelected,
+  controlBadge = null,
   onMove,
   onSelect,
   onOpenSheet,
 }: TokenProps) {
+  const { t } = useLocale();
   const posX = participant.posX ?? 0;
   const posY = participant.posY ?? 0;
   const footprint = footprintCellsFor(participant.size);
@@ -219,12 +228,19 @@ function TokenComponent({
         // colored dot with initials reads better at a glance than shrinking
         // every layer proportionally (docs/design-tokens.md mobile pass).
         <div
-          className={`flex items-center justify-center rounded-full text-white font-semibold ${FACTION_DOT[participant.faction]} ${
+          className={`relative flex items-center justify-center rounded-full text-white font-semibold ${FACTION_DOT[participant.faction]} ${
             isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
           } ${isSelected ? 'outline outline-2 outline-offset-1 outline-amber-300' : ''}`}
           style={{ width: spanPx, height: spanPx, fontSize: Math.max(8, spanPx * 0.4) }}
         >
           {initials(participant.name)}
+          {controlBadge && (
+            <span
+              title={controlBadgeLabel(t, controlBadge)}
+              aria-label={controlBadgeLabel(t, controlBadge)}
+              className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ring-1 ring-stone-950 ${CONTROL_BADGE_DOT_COLOR[controlBadge]}`}
+            />
+          )}
         </div>
       ) : (
         <>
@@ -251,6 +267,13 @@ function TokenComponent({
           >
             <Portrait fileUrl={participant.imageUrl} alt={participant.name} shape="circle" size={size} placeholderLabel={participant.name} />
             <TokenHpIndicator hp={participant.hp} />
+            {controlBadge && (
+              <span
+                title={controlBadgeLabel(t, controlBadge)}
+                aria-label={controlBadgeLabel(t, controlBadge)}
+                className={`absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-1 ring-stone-950 z-10 ${CONTROL_BADGE_DOT_COLOR[controlBadge]}`}
+              />
+            )}
           </div>
         </>
       )}

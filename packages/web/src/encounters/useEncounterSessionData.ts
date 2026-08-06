@@ -56,6 +56,15 @@ export function useEncounterSessionData(encounter: Encounter) {
   const myCharacterIds = new Set(
     charactersQuery.data?.characters.filter((c) => c.owner_user_id === user?.id).map((c) => c.id) ?? [],
   );
+  // Iteration 2 "Character ownership vs. control" — owned ∪ actively
+  // delegated-to-me, used for INTERACTIVITY (canMoveToken, resource-spend
+  // buttons) instead of raw ownership. myCharacterIds above stays
+  // ownership-only (sheet-edit gating, useCharacterEditMode) unchanged.
+  const myControlledCharacterIds = new Set(
+    charactersQuery.data?.characters
+      .filter((c) => (c.controller_user_id ?? c.owner_user_id) === user?.id)
+      .map((c) => c.id) ?? [],
+  );
 
   const monsterInstancesQuery = useQuery({
     queryKey: ['monsterInstances', campaignId],
@@ -222,6 +231,7 @@ export function useEncounterSessionData(encounter: Encounter) {
     monsterInstancesQuery,
     bestiaryQuery,
     myCharacterIds,
+    myControlledCharacterIds,
     status,
     currentRound,
     availableCharacters,

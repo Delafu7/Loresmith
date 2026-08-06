@@ -279,7 +279,7 @@ export function CharactersListPage() {
         {pcs.length === 0 && <EmptyState message={t('characters.list.noPcs')} />}
         <ul className="grid sm:grid-cols-2 gap-3">
           {pcs.map((c) => (
-            <CharacterCard key={c.id} character={c} campaignId={campaignId} isDm={role === 'dm'} />
+            <CharacterCard key={c.id} character={c} campaignId={campaignId} isDm={role === 'dm'} players={players} />
           ))}
         </ul>
       </section>
@@ -290,7 +290,7 @@ export function CharactersListPage() {
           {npcs.length === 0 && <EmptyState message={t('characters.list.noNpcs')} />}
           <ul className="grid sm:grid-cols-2 gap-3">
             {npcs.map((c) => (
-              <CharacterCard key={c.id} character={c} campaignId={campaignId} isDm={role === 'dm'} />
+              <CharacterCard key={c.id} character={c} campaignId={campaignId} isDm={role === 'dm'} players={players} />
             ))}
           </ul>
         </section>
@@ -299,7 +299,17 @@ export function CharactersListPage() {
   );
 }
 
-function CharacterCard({ character, campaignId, isDm }: { character: Character; campaignId: string; isDm: boolean }) {
+function CharacterCard({
+  character,
+  campaignId,
+  isDm,
+  players,
+}: {
+  character: Character;
+  campaignId: string;
+  isDm: boolean;
+  players: CampaignMember[];
+}) {
   const { t } = useLocale();
   return (
     <li className="rounded-md bg-stone-900 shadow-sm hover:border-amber-700 hover:bg-stone-800/60 transition-colors">
@@ -318,6 +328,9 @@ function CharacterCard({ character, campaignId, isDm }: { character: Character; 
       </Link>
       {isDm && character.is_pc && character.owner_user_id === null && (
         <AssignOwnerControl characterId={character.id} campaignId={campaignId} />
+      )}
+      {isDm && character.is_pc && character.owner_user_id !== null && (
+        <DelegateControlControl character={character} campaignId={campaignId} players={players} />
       )}
     </li>
   );
@@ -367,6 +380,105 @@ function AssignOwnerControl({ characterId, campaignId }: { characterId: string; 
       </button>
       {assignMutation.isError && (
         <p className="w-full text-[11px] text-red-400">{errorMessage(assignMutation.error)}</p>
+      )}
+    </form>
+  );
+}
+
+// Iteration 2 "Character ownership vs. control" — DM-only, sibling of
+// AssignOwnerControl above but visually distinct on purpose: assign =
+// ownership (amber, matches the rest of this app's primary-action color),
+// delegate = temporary control (violet, matches the control badges'
+// "delegated" dot in controlBadge.ts). Only rendered for an already-OWNED PC
+// — an unclaimed PC shows AssignOwnerControl instead (see CharacterCard),
+// mirroring the server's own owner-vs-controller split.
+function DelegateControlControl({
+  character,
+  campaignId,
+  players,
+}: {
+  character: Character;
+  campaignId: string;
+  players: CampaignMember[];
+}) {
+  const { t } = useLocale();
+  const queryClient = useQueryClient();
+  const [toUserId, setToUserId] = useState('');
+
+  function invalidate() {
+    void queryClient.invalidateQueries({ queryKey: ['characters', campaignId] });
+  }
+
+  const delegateMutation = useMutation({
+    mutationFn: () => api.post<{ character: Character }>(`/characters/${character.id}/delegate-control`, { toUserId }),
+    onSuccess: () => {
+      setToUserId('');
+      invalidate();
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: () => api.post<{ character: Character }>(`/characters/${character.id}/revoke-control`, {}),
+    onSuccess: invalidate,
+  });
+
+  if (character.controller_user_id !== null) {
+    const controller = players.find((p) => p.user_id === character.controller_user_id);
+    return (
+      <div className="flex items-center gap-1.5 border-t border-stone-800 px-4 py-2">
+        <span className="text-[11px] text-violet-400 flex-shrink-0 truncate">
+          {t('characters.list.currentlyControlledBy', { name: controller?.display_name ?? '?' })}
+        </span>
+        <button
+          type="button"
+          onClick={() => revokeMutation.mutate()}
+          disabled={revokeMutation.isPending}
+          className="ml-auto flex-shrink-0 rounded border border-stone-700 text-stone-300 hover:bg-stone-800 disabled:opacity-45 px-2 py-1 text-[11px] font-semibold"
+        >
+          {revokeMutation.isPending ? t('characters.list.revokingControl') : t('characters.list.revokeControlButton')}
+        </button>
+        {revokeMutation.isError && (
+          <p className="w-full text-[11px] text-red-400">{errorMessage(revokeMutation.error)}</p>
+        )}
+      </div>
+    );
+  }
+
+  // Nobody else to delegate to (a solo campaign, or every other member is
+  // this character's own owner) — nothing useful to render.
+  const delegatable = players.filter((p) => p.user_id !== character.owner_user_id);
+  if (delegatable.length === 0) return null;
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!toUserId) return;
+    delegateMutation.mutate();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex items-center gap-1.5 border-t border-stone-800 px-4 py-2">
+      <select
+        required
+        value={toUserId}
+        onChange={(e) => setToUserId(e.target.value)}
+        className="min-w-0 flex-1 rounded bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
+      >
+        <option value="">{t('characters.list.delegateToPlaceholder')}</option>
+        {delegatable.map((p) => (
+          <option key={p.user_id} value={p.user_id}>
+            {p.display_name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="submit"
+        disabled={delegateMutation.isPending}
+        className="flex-shrink-0 rounded border border-violet-500 text-violet-400 hover:bg-violet-500/10 disabled:opacity-45 px-2 py-1 text-[11px] font-semibold"
+      >
+        {delegateMutation.isPending ? t('characters.list.delegatingControl') : t('characters.list.delegateControlButton')}
+      </button>
+      {delegateMutation.isError && (
+        <p className="w-full text-[11px] text-red-400">{errorMessage(delegateMutation.error)}</p>
       )}
     </form>
   );

@@ -25,6 +25,12 @@ export const characters = {
     assigning: 'Asignando…',
     creationDisabled: 'El DJ ha deshabilitado la creación de personajes para ti en esta campaña.',
     creationLimitReached: 'Has alcanzado tu límite de personajes ({max}) en esta campaña.',
+    currentlyControlledBy: 'Actualmente controlado por {name}',
+    revokeControlButton: 'Revocar control',
+    revokingControl: 'Revocando…',
+    delegateToPlaceholder: 'Delegar control a…',
+    delegateControlButton: 'Delegar control',
+    delegatingControl: 'Delegando…',
   },
   sheet: {
     changePortrait: 'Cambiar',
@@ -39,6 +45,8 @@ export const characters = {
     speed: 'Velocidad',
     notes: 'Notas',
     loadingCharacter: 'Cargando personaje…',
+    gmNotesTitle: 'Notas del DJ',
+    gmNotesHint: 'Solo visibles para el DJ — nunca se muestran a los jugadores, ni siquiera al propietario del personaje.',
   },
   abilityGenerator: {
     generateScores: 'Generar puntuaciones:',

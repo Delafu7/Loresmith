@@ -211,7 +211,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
     charactersQuery,
     monsterInstancesQuery,
     bestiaryQuery,
-    myCharacterIds,
+    myControlledCharacterIds,
     status,
     currentRound,
     availableCharacters,
@@ -274,7 +274,7 @@ export function CombatTracker({ encounter }: { encounter: Encounter }) {
           campaignId={campaignId}
           isDm={isDm}
           live={live}
-          myCharacterIds={myCharacterIds}
+          myCharacterIds={myControlledCharacterIds}
           characters={charactersQuery.data?.characters}
           monsterInstances={monsterInstancesQuery.data?.monsterInstances}
           monsters={bestiaryQuery.data?.monsters}

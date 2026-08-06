@@ -307,4 +307,13 @@ export const encounters = {
     toastAdded: 'Added {name}',
     undo: 'Undo',
   },
+  // Iteration 2 "Character ownership vs. control" — the corner-badge visual
+  // language shared by Token.tsx, PartyStatsSidebar.tsx, and
+  // BattleModeDmPanel.tsx's roster rows (controlBadge.ts).
+  control: {
+    mine: 'Mine',
+    delegated: 'Temporarily yours',
+    other: "Another player's",
+    gm: 'GM-run',
+  },
 };

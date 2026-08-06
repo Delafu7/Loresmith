@@ -25,6 +25,12 @@ export const characters = {
     assigning: 'Attribution…',
     creationDisabled: 'Le MJ a désactivé la création de personnages pour vous dans cette campagne.',
     creationLimitReached: 'Vous avez atteint votre limite de personnages ({max}) pour cette campagne.',
+    currentlyControlledBy: 'Actuellement contrôlé par {name}',
+    revokeControlButton: 'Révoquer le contrôle',
+    revokingControl: 'Révocation…',
+    delegateToPlaceholder: 'Déléguer le contrôle à…',
+    delegateControlButton: 'Déléguer le contrôle',
+    delegatingControl: 'Délégation…',
   },
   sheet: {
     changePortrait: 'Changer',
@@ -39,6 +45,8 @@ export const characters = {
     speed: 'Vitesse',
     notes: 'Notes',
     loadingCharacter: 'Chargement du personnage…',
+    gmNotesTitle: 'Notes du MJ',
+    gmNotesHint: 'Visibles uniquement par le MJ — jamais montrées aux joueurs, même au propriétaire du personnage.',
   },
   abilityGenerator: {
     generateScores: 'Générer les scores :',

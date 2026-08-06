@@ -96,6 +96,7 @@ function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
           encounter={live.encounter}
           isDm={isDm}
           myCharacterIds={myCharacterIds}
+          characters={characters}
           onOpenSheet={setSelectedParticipantId}
         />
       </div>
@@ -105,6 +106,7 @@ function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
           <PartyStatsSidebar
             participants={live.participants}
             activeParticipantId={live.activeParticipantId}
+            characters={characters}
             onSelect={setSelectedParticipantId}
           />
         </div>
@@ -140,7 +142,7 @@ function useMapSectionData(encounter: Encounter) {
     campaignId: data.campaignId,
     isDm: data.isDm,
     live: data.live,
-    myCharacterIds: data.myCharacterIds,
+    myCharacterIds: data.myControlledCharacterIds,
     characters: data.charactersQuery.data?.characters,
     monsterInstances: data.monsterInstancesQuery.data?.monsterInstances,
     monsters: data.bestiaryQuery.data?.monsters,

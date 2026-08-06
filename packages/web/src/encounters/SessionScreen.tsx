@@ -241,6 +241,7 @@ export function SessionScreen({
             encounter={live.encounter}
             isDm={isDm}
             myCharacterIds={myCharacterIds}
+            characters={characters}
             onOpenSheet={openSheet}
           />
         </div>

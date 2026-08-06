@@ -39,6 +39,12 @@ export const characters = {
     assigning: 'Assigning…',
     creationDisabled: 'The DM has disabled character creation for you in this campaign.',
     creationLimitReached: "You've reached your character limit ({max}) for this campaign.",
+    currentlyControlledBy: 'Currently controlled by {name}',
+    revokeControlButton: 'Revoke control',
+    revokingControl: 'Revoking…',
+    delegateToPlaceholder: 'Delegate control to…',
+    delegateControlButton: 'Delegate control',
+    delegatingControl: 'Delegating…',
   },
   sheet: {
     changePortrait: 'Change',
@@ -53,6 +59,8 @@ export const characters = {
     speed: 'Speed',
     notes: 'Notes',
     loadingCharacter: 'Loading character…',
+    gmNotesTitle: 'GM notes',
+    gmNotesHint: 'Only visible to the DM — never shown to players, even the character\'s owner.',
   },
   abilityGenerator: {
     generateScores: 'Generate scores:',

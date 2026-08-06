@@ -4,7 +4,7 @@
 // request bodies follow the Zod schemas (camelCase). Keep both conventions
 // distinct rather than normalizing, so a diff against the server stays easy.
 
-export type CampaignRole = 'dm' | 'player';
+export type CampaignRole = 'dm' | 'player' | 'spectator';
 
 export type UiTheme = 'crimson' | 'amber' | 'ember';
 
@@ -75,6 +75,27 @@ export interface CampaignInvitation {
   responded_at: string | null;
   // Present only on GET /me/invitations (joined in for display there).
   campaign_name?: string;
+  // Iteration 2 "Character ownership vs. control" — set when this invitation
+  // doubles as "invite this specific person to claim this pre-built PC"
+  // (accepting it sets the character's owner_user_id in the same
+  // transaction as the membership insert). Null for a plain membership
+  // invitation, unchanged from before this iteration.
+  character_id: string | null;
+}
+
+// Iteration 2 "Character ownership vs. control" — one row per delegate/
+// revoke action (services/characterControl.ts's character_control_delegations
+// table), newest first. Read-only history for dispute resolution.
+export interface ControlDelegationEvent {
+  id: string;
+  character_id: string;
+  from_controller_user_id: string | null;
+  to_controller_user_id: string | null;
+  granted_by_user_id: string;
+  reason: string | null;
+  encounter_id: string | null;
+  expires_at: string | null;
+  created_at: string;
 }
 
 export interface Character {
@@ -82,6 +103,11 @@ export interface Character {
   campaign_id: string;
   is_pc: boolean;
   owner_user_id: string | null;
+  // Iteration 2 "Character ownership vs. control" — who's actually driving
+  // this character right now, separate from stable ownership above. Null
+  // means "defer to owner_user_id" (the default for every character that's
+  // never had control delegated). See services/characterControl.ts.
+  controller_user_id: string | null;
   created_by_user_id: string;
   name: string;
   race_id: string | null;
@@ -106,6 +132,10 @@ export interface Character {
   languages: number[] | null;
   is_alive: boolean;
   notes: string | null;
+  // Iteration 2's one concrete GM-only field — DM-only read/write; the
+  // server strips it from any response served to a non-DM (redactGmNotes in
+  // services/characters.ts), so a player's Character always has this null.
+  gm_notes: string | null;
   portrait_asset_id: string | null;
   created_at: string;
   updated_at: string;

@@ -21,8 +21,10 @@ import { TurnTorch } from '../components/TurnTorch';
 import { DispositionControl } from './DispositionPanel';
 import { useLocale } from '../i18n/LocaleContext';
 import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
+import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { ActionEconomyPanel } from './ActionEconomyPanel';
+import { CONTROL_BADGE_DOT_COLOR, controlBadgeFor, controlBadgeLabel } from './controlBadge';
 import {
   ActionButton,
   ParticipantStatLookup,
@@ -93,6 +95,7 @@ export function BattleModeDmPanel({
   removeEffectMutation,
 }: BattleModeDmPanelProps) {
   const { t } = useLocale();
+  const { user } = useAuth();
   const { campaign } = useCampaignShell();
   const effectDefinitionsQuery = useEffectDefinitionsCatalog(campaign.id);
   const activeParticipant = live.participants.find((p) => p.participantId === live.activeParticipantId);
@@ -128,6 +131,7 @@ export function BattleModeDmPanel({
       <ol className="space-y-1.5">
         {live.participants.map((p) => {
           const isActive = p.participantId === live.activeParticipantId;
+          const controlBadge = controlBadgeFor(p.characterId, characters, user?.id);
           return (
             <li
               key={p.participantId}
@@ -138,6 +142,13 @@ export function BattleModeDmPanel({
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
                   {isActive && <TurnTorch size={14} className="text-amber-500 flex-shrink-0" />}
+                  {controlBadge && (
+                    <span
+                      title={controlBadgeLabel(t, controlBadge)}
+                      aria-label={controlBadgeLabel(t, controlBadge)}
+                      className={`h-2 w-2 flex-shrink-0 rounded-full ${CONTROL_BADGE_DOT_COLOR[controlBadge]}`}
+                    />
+                  )}
                   <span className="font-medium text-stone-100 truncate">{p.name}</span>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">

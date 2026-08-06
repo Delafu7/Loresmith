@@ -22,16 +22,18 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { EncounterMode, EncounterStatus, CampaignAsset, SnapshotParticipant } from '../lib/types';
+import type { Character, EncounterMode, EncounterStatus, CampaignAsset, SnapshotParticipant } from '../lib/types';
 import type { MapConfig } from '../lib/socketTypes';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Field, Input } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
+import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
 import { canMoveToken } from './canMoveToken';
 import { Token } from './Token';
+import { controlBadgeFor } from './controlBadge';
 
 const GRID_MIN = 5;
 const GRID_MAX = 50;
@@ -91,6 +93,7 @@ export function BattleMap({
   encounter,
   isDm,
   myCharacterIds = new Set(),
+  characters,
   onOpenSheet,
 }: {
   encounterId: string;
@@ -106,6 +109,12 @@ export function BattleMap({
    * need it — isDm alone already grants unconditional control). Used to
    * decide which tokens a non-DM viewer may drag/tap-move/self-place. */
   myCharacterIds?: Set<string>;
+  /** Iteration 2 "Character ownership vs. control" — full character rows
+   * (not just the id Sets above), needed to distinguish "mine" from
+   * "temporarily mine" for the corner control badge (controlBadge.ts).
+   * Undefined renders every token with no badge, same as before this
+   * iteration. */
+  characters?: Character[];
   /** Nav point 3 — fires on a token DOUBLE click/tap, opening
    * ParticipantSheetPanel in the caller's floating overlay (per-participant
    * faction/visibility/HP controls live in the sheet and the DM "Manage"
@@ -117,6 +126,7 @@ export function BattleMap({
   onOpenSheet?: (participantId: string) => void;
 }) {
   const { t } = useLocale();
+  const { user } = useAuth();
   const [showSetup, setShowSetup] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -542,6 +552,7 @@ export function BattleMap({
                       isActive={p.participantId === activeParticipantId}
                       isDraggable={canControl(p)}
                       isSelected={p.participantId === selectedId}
+                      controlBadge={controlBadgeFor(p.characterId, characters, user?.id)}
                       onMove={(x, y) => positionMutation.mutate({ participantId: p.participantId, x, y })}
                       onSelect={() => selectParticipant(selectedId === p.participantId ? null : p.participantId)}
                       // Single click only selects (for move-targeting) —

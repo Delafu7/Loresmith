@@ -8,7 +8,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { CampaignInvitation, CampaignMember, CampaignRole } from '../lib/types';
+import type { CampaignInvitation, CampaignMember, CampaignRole, Character } from '../lib/types';
 import { useCampaignShell } from './CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Field, Input, Select } from '../components/ui/Field';
@@ -47,7 +47,7 @@ export function CampaignMembersPage() {
 }
 
 function roleLabel(t: (key: TranslationKey) => string, role: CampaignRole): string {
-  return role === 'dm' ? t('members.dmRole') : t('members.playerRole');
+  return role === 'dm' ? t('members.dmRole') : role === 'spectator' ? t('members.spectatorRole') : t('members.playerRole');
 }
 
 function MembersList({ campaignId }: { campaignId: string }) {
@@ -147,16 +147,34 @@ function InvitationsPanel({ campaignId }: { campaignId: string }) {
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<CampaignRole>('player');
+  // Iteration 2 "Character ownership vs. control" — optional invite-to-claim:
+  // '' means "plain membership invite," unchanged from before this
+  // iteration; a picked character id turns this into a claim invite (see
+  // services/campaignInvitations.ts's acceptInvitation).
+  const [claimCharacterId, setClaimCharacterId] = useState('');
 
   const invitationsQuery = useQuery({
     queryKey: ['campaign', campaignId, 'invitations'],
     queryFn: () => api.get<{ invitations: CampaignInvitation[] }>(`/campaigns/${campaignId}/invitations`),
   });
 
+  const charactersQuery = useQuery({
+    queryKey: ['characters', campaignId],
+    queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${campaignId}/characters`),
+  });
+  const unclaimedPcs = (charactersQuery.data?.characters ?? []).filter((c) => c.is_pc && c.owner_user_id === null);
+  const charactersById = new Map((charactersQuery.data?.characters ?? []).map((c) => [c.id, c]));
+
   const createMutation = useMutation({
-    mutationFn: () => api.post<{ invitation: CampaignInvitation }>(`/campaigns/${campaignId}/invitations`, { email, role: inviteRole }),
+    mutationFn: () =>
+      api.post<{ invitation: CampaignInvitation }>(`/campaigns/${campaignId}/invitations`, {
+        email,
+        role: inviteRole,
+        characterId: claimCharacterId || undefined,
+      }),
     onSuccess: () => {
       setEmail('');
+      setClaimCharacterId('');
       void queryClient.invalidateQueries({ queryKey: ['campaign', campaignId, 'invitations'] });
     },
   });
@@ -186,8 +204,21 @@ function InvitationsPanel({ campaignId }: { campaignId: string }) {
           <Select id="inviteRole" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as CampaignRole)}>
             <option value="player">{t('members.playerRole')}</option>
             <option value="dm">{t('members.dmRole')}</option>
+            <option value="spectator">{t('members.spectatorRole')}</option>
           </Select>
         </Field>
+        {unclaimedPcs.length > 0 && (
+          <Field label={t('members.claimCharacterLabel')} htmlFor="claimCharacter" className="min-w-[12rem]">
+            <Select id="claimCharacter" value={claimCharacterId} onChange={(e) => setClaimCharacterId(e.target.value)}>
+              <option value="">{t('members.claimCharacterNone')}</option>
+              {unclaimedPcs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <Button type="submit" variant="primary" disabled={createMutation.isPending}>
           {createMutation.isPending ? t('members.inviting') : t('members.inviteButton')}
         </Button>
@@ -204,6 +235,8 @@ function InvitationsPanel({ campaignId }: { campaignId: string }) {
               <span className="block truncate text-sm font-medium text-stone-100">{inv.invited_email}</span>
               <span className="block truncate text-[11px] text-stone-500">
                 {roleLabel(t, inv.role)} · {t('members.invitedOn', { date: formatTimestamp(inv.created_at) })}
+                {inv.character_id != null &&
+                  ` · ${t('members.claimsCharacter', { name: charactersById.get(inv.character_id)?.name ?? '?' })}`}
               </span>
             </span>
             <div className="flex items-center gap-2 flex-shrink-0">
