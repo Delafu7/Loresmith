@@ -79,7 +79,15 @@ const homebrewMonsterShape = {
   imageUrl: z.string().url().max(2000).optional().nullable(),
 };
 
-export const createHomebrewMonsterSchema = z.object(homebrewMonsterShape);
+// Iteration 2 "Shared bestiary" — chosen once, at creation time, never
+// changed via a generic PATCH (that's what the dedicated promote/assign
+// routes are for, see services/monsterCatalog.ts). 'campaign' (default)
+// matches every pre-existing caller's behavior unchanged; 'library' scopes
+// the new row to the creating user instead of the campaign.
+export const createHomebrewMonsterSchema = z.object({
+  ...homebrewMonsterShape,
+  libraryScope: z.enum(['campaign', 'library']).optional(),
+});
 export type CreateHomebrewMonsterInput = z.infer<typeof createHomebrewMonsterSchema>;
 
 export const updateHomebrewMonsterSchema = z.object(homebrewMonsterShape).partial();

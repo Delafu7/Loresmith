@@ -33,19 +33,34 @@ monsterCatalogRouter.get('/', async (req, res) => {
   if (query.campaignId !== undefined) {
     await requireMembership(pool, query.campaignId, req.user!.id);
   }
-  res.json({ monsters: await catalogService.listMonsters(pool, query) });
+  res.json({ monsters: await catalogService.listMonsters(pool, query, req.user!.id) });
 });
 
 // Own endpoint for a single creature (REFACTOR-PLAN.md §1: /creature/:id on
-// the web side). A global row (owning_campaign_id NULL) is readable by any
-// authenticated user, same as the unfiltered list above; a homebrew row
-// additionally requires membership in its owning campaign — never leaks
-// existence of another campaign's homebrew creature to a non-member.
+// the web side). A global row (owning_campaign_id/owning_user_id both NULL)
+// is readable by any authenticated user, same as the unfiltered list above;
+// a campaign-owned homebrew row requires membership in its owning campaign,
+// same as before Iteration 2. A user-library row (Iteration 2 "Shared
+// bestiary") is readable by its owning user OR by any member of a campaign
+// that has curated it into their bestiary (campaign_bestiary_entries) —
+// otherwise a shared template would be invisible to the very campaigns
+// using it. Never leaks existence of another campaign's/user's homebrew
+// creature to someone without one of those two paths in.
 monsterCatalogRouter.get('/:id', async (req, res) => {
   const monster = await catalogService.getMonsterById(pool, (req.params.id as string));
   if (!monster) throw notFound('Monster');
-  if (monster.owning_campaign_id !== null) {
-    await requireMembership(pool, monster.owning_campaign_id as string, req.user!.id);
+  const owningCampaignId = monster.owning_campaign_id as string | null;
+  const owningUserId = monster.owning_user_id as string | null;
+  if (owningCampaignId !== null) {
+    await requireMembership(pool, owningCampaignId, req.user!.id);
+  } else if (owningUserId !== null && owningUserId !== req.user!.id) {
+    const sharedRes = await pool.query(
+      `SELECT 1 FROM campaign_bestiary_entries cbe
+       JOIN campaign_members cm ON cm.campaign_id = cbe.campaign_id
+       WHERE cbe.monster_id = $1 AND cm.user_id = $2 LIMIT 1`,
+      [monster.id, req.user!.id],
+    );
+    if ((sharedRes.rowCount ?? 0) === 0) throw notFound('Monster');
   }
   res.json({ monster });
 });
@@ -59,18 +74,20 @@ campaignMonstersRouter.use(requireAuth, requireCampaignMember());
 
 campaignMonstersRouter.post('/', requireRole('dm'), async (req, res) => {
   const input = createHomebrewMonsterSchema.parse(req.body);
-  const monster = await monsterCatalogService.createHomebrewMonster(pool, req.campaignId!, input);
+  const monster = await monsterCatalogService.createHomebrewMonster(pool, req.campaignId!, req.user!.id, input);
   res.status(201).json({ monster });
 });
 
 campaignMonstersRouter.patch('/:monsterId', requireRole('dm'), async (req, res) => {
   const input = updateHomebrewMonsterSchema.parse(req.body);
-  const monster = await monsterCatalogService.updateHomebrewMonster(pool, req.campaignId!, (req.params.monsterId as string), input);
+  const monster = await monsterCatalogService.updateHomebrewMonster(
+    pool, req.campaignId!, req.user!.id, (req.params.monsterId as string), input,
+  );
   res.json({ monster });
 });
 
 campaignMonstersRouter.delete('/:monsterId', requireRole('dm'), async (req, res) => {
-  await monsterCatalogService.deleteHomebrewMonster(pool, req.campaignId!, (req.params.monsterId as string));
+  await monsterCatalogService.deleteHomebrewMonster(pool, req.campaignId!, req.user!.id, (req.params.monsterId as string));
   res.status(204).send();
 });
 
@@ -80,6 +97,23 @@ campaignMonstersRouter.delete('/:monsterId', requireRole('dm'), async (req, res)
 campaignMonstersRouter.post('/:monsterId/duplicate', requireRole('dm'), async (req, res) => {
   const monster = await monsterCatalogService.duplicateHomebrewMonster(pool, req.campaignId!, (req.params.monsterId as string));
   res.status(201).json({ monster });
+});
+
+// Iteration 2 "Shared bestiary" — in-place scope conversion (same row, not a
+// copy). No request body: source/destination are fully determined by the
+// URL (this campaign) and the caller (req.user).
+campaignMonstersRouter.post('/:monsterId/promote-to-library', requireRole('dm'), async (req, res) => {
+  const monster = await monsterCatalogService.promoteHomebrewMonsterToLibrary(
+    pool, req.campaignId!, req.user!.id, (req.params.monsterId as string),
+  );
+  res.json({ monster });
+});
+
+campaignMonstersRouter.post('/:monsterId/assign-to-campaign', requireRole('dm'), async (req, res) => {
+  const monster = await monsterCatalogService.assignHomebrewMonsterToCampaign(
+    pool, req.campaignId!, req.user!.id, (req.params.monsterId as string),
+  );
+  res.json({ monster });
 });
 
 // Mounted at /campaigns/:id/monster-instances — per PLAN.md §4.1 this

@@ -6,7 +6,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
-import { addToBestiarySchema, updateBestiaryEntrySchema, attachCategorySchema } from '../schemas/campaignBestiary.js';
+import { addToBestiarySchema, removeFromBestiarySchema, updateBestiaryEntrySchema, attachCategorySchema } from '../schemas/campaignBestiary.js';
 import { listCategoriesQuerySchema } from '../schemas/campaignCategories.js';
 import * as campaignBestiaryService from '../services/campaignBestiary.js';
 import * as campaignCategoriesService from '../services/campaignCategories.js';
@@ -25,6 +25,16 @@ campaignBestiaryRouter.post('/', requireRole('dm'), async (req, res) => {
   const result = await campaignBestiaryService.addToCampaignBestiary(pool, req.campaignId!, req.user!.id, input.monsterIds);
   broadcastBestiaryUpdated(getIo(req.app), req.campaignId!);
   res.status(201).json(result);
+});
+
+// Bulk remove — mounted before /:entryId so Express doesn't try to match
+// the literal path "bulk" against that param route; DELETE with a JSON body
+// (Express's json() body-parser applies regardless of method).
+campaignBestiaryRouter.delete('/bulk', requireRole('dm'), async (req, res) => {
+  const input = removeFromBestiarySchema.parse(req.body);
+  const result = await campaignBestiaryService.removeCampaignBestiaryEntries(pool, req.campaignId!, input.entryIds);
+  broadcastBestiaryUpdated(getIo(req.app), req.campaignId!);
+  res.json(result);
 });
 
 campaignBestiaryRouter.get('/:entryId', async (req, res) => {

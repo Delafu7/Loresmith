@@ -178,7 +178,7 @@ export async function listFeats(pool: Pool, query: EditionQuery) {
   return result.rows;
 }
 
-export async function listMonsters(pool: Pool, query: MonsterQuery) {
+export async function listMonsters(pool: Pool, query: MonsterQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
 
@@ -199,20 +199,27 @@ export async function listMonsters(pool: Pool, query: MonsterQuery) {
     clauses.push(`challenge_rating <= $${values.length}`);
   }
 
-  // Global (owning_campaign_id IS NULL) monsters are always included; a
-  // campaign's own homebrew rows are unioned in ONLY when campaignId is
-  // supplied — same additive-only pattern as listEffectDefinitions below.
-  // With no campaignId this clause is exactly `owning_campaign_id IS NULL`,
-  // so the no-campaignId case is unchanged from before homebrew existed —
-  // it must never leak a stray homebrew row.
+  // Global (owning_campaign_id IS NULL AND owning_user_id IS NULL) monsters
+  // are always included; a campaign's own homebrew rows are unioned in ONLY
+  // when campaignId is supplied — same additive-only pattern as
+  // listEffectDefinitions below. Iteration 2 "Shared bestiary": the caller's
+  // OWN user-library homebrew (owning_user_id = actorUserId) is unioned in
+  // unconditionally (not gated on campaignId) — "my library, reusable
+  // across every campaign I run" needs to show up whether or not the caller
+  // happens to be browsing from inside a specific campaign right now. With
+  // no campaignId and no library rows of the caller's own, this clause
+  // reduces to exactly `owning_campaign_id IS NULL AND owning_user_id IS
+  // NULL`, so a user with no homebrew sees unchanged pre-Iteration-2 results.
+  values.push(actorUserId);
+  const ownLibraryClause = `owning_user_id = $${values.length}`;
   if (query.campaignId !== undefined && query.homebrewOnly) {
     values.push(query.campaignId);
-    clauses.push(`(is_homebrew AND owning_campaign_id = $${values.length})`);
+    clauses.push(`((is_homebrew AND owning_campaign_id = $${values.length}) OR ${ownLibraryClause})`);
   } else if (query.campaignId !== undefined) {
     values.push(query.campaignId);
-    clauses.push(`(owning_campaign_id IS NULL OR owning_campaign_id = $${values.length})`);
+    clauses.push(`(owning_campaign_id IS NULL OR owning_campaign_id = $${values.length} OR ${ownLibraryClause})`);
   } else {
-    clauses.push(`owning_campaign_id IS NULL`);
+    clauses.push(`(owning_campaign_id IS NULL AND (owning_user_id IS NULL OR ${ownLibraryClause}))`);
   }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';

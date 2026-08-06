@@ -43,12 +43,12 @@ describe('performGrapple (integration, live DB, throwaway fixtures)', () => {
     );
     const characterId = charRes.rows[0]!.id;
 
-    const mediumMonster = await createHomebrewMonster(pool, campaignId, {
+    const mediumMonster = await createHomebrewMonster(pool, campaignId, dmUserId, {
       name: 'Grapple Test Medium Monster', size: 'medium', creatureType: 'beast', armorClass: 12, hitPointAverage: 10,
       hitDice: '2d8', speed: { walk: 30 }, str: 8, dex: 8, con: 10, int: 4, wis: 10, cha: 4,
       challengeRating: 1, xpValue: 200, actions: [{ name: 'Bite', description: '1d4 piercing.' }],
     });
-    const gargantuanMonster = await createHomebrewMonster(pool, campaignId, {
+    const gargantuanMonster = await createHomebrewMonster(pool, campaignId, dmUserId, {
       name: 'Grapple Test Gargantuan Monster', size: 'gargantuan', creatureType: 'beast', armorClass: 12, hitPointAverage: 100,
       hitDice: '10d20', speed: { walk: 30 }, str: 20, dex: 8, con: 20, int: 4, wis: 10, cha: 4,
       challengeRating: 10, xpValue: 5900, actions: [{ name: 'Bite', description: '4d6 piercing.' }],

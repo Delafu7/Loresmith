@@ -10,6 +10,13 @@ export const addToBestiarySchema = z.object({
 });
 export type AddToBestiaryInput = z.infer<typeof addToBestiarySchema>;
 
+// Iteration 2 "Shared bestiary" — bulk sibling of the single-entry DELETE
+// /:entryId route, mirroring the bulk-add shape above.
+export const removeFromBestiarySchema = z.object({
+  entryIds: z.array(z.string().uuid()).min(1).max(200),
+});
+export type RemoveFromBestiaryInput = z.infer<typeof removeFromBestiarySchema>;
+
 // statOverrides reuses updateHomebrewMonsterSchema wholesale (already a
 // no-`.default()` .partial() of every monsters column) rather than
 // duplicating a second copy of the same ~30-field shape — it stays in sync

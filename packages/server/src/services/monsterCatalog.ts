@@ -66,26 +66,38 @@ interface MonsterRow {
   id: string;
   is_homebrew: boolean;
   owning_campaign_id: string | null;
+  owning_user_id: string | null;
   [key: string]: unknown;
 }
 
-// Scoped by owning_campaign_id (not just id) so this 404s for: a monster
-// belonging to a DIFFERENT campaign's homebrew, AND a global/seeded monster
-// (owning_campaign_id IS NULL never equals a real campaignId) — never leaks
-// existence of another campaign's homebrew row, and never treats a global
-// row as "editable, just not by you." Global rows are unreachable via this
-// path regardless of role, full stop.
-async function fetchHomebrewMonsterOrThrow(pool: Pool, campaignId: string, monsterId: string): Promise<MonsterRow> {
+// Scoped by (owning_campaign_id = campaignId OR owning_user_id = actorUserId)
+// — a homebrew row is editable from within the campaign that owns it
+// (unchanged behavior) OR, new in Iteration 2, from any campaign context by
+// the user who owns it in their personal library. Never matches a global row
+// (owning_campaign_id/owning_user_id both NULL can't equal either
+// comparison) or another user's/campaign's homebrew — 404, never leaking
+// existence, same discipline as before.
+async function fetchHomebrewMonsterOrThrow(
+  pool: Pool,
+  campaignId: string,
+  actorUserId: string,
+  monsterId: string,
+): Promise<MonsterRow> {
   const result = await pool.query<MonsterRow>(
-    `SELECT * FROM monsters WHERE id = $1 AND owning_campaign_id = $2`,
-    [monsterId, campaignId],
+    `SELECT * FROM monsters WHERE id = $1 AND (owning_campaign_id = $2 OR owning_user_id = $3)`,
+    [monsterId, campaignId, actorUserId],
   );
   const row = result.rows[0];
   if (!row) throw notFound('Monster');
   return row;
 }
 
-export async function createHomebrewMonster(pool: Pool, campaignId: string, input: CreateHomebrewMonsterInput) {
+export async function createHomebrewMonster(
+  pool: Pool,
+  campaignId: string,
+  actorUserId: string,
+  input: CreateHomebrewMonsterInput,
+) {
   await validateArtAssetBelongsToCampaign(pool, campaignId, input.artAssetId);
   // Always the owning campaign's own edition, never caller-supplied: a
   // homebrew row is only ever visible inside that one campaign (listMonsters
@@ -97,6 +109,11 @@ export async function createHomebrewMonster(pool: Pool, campaignId: string, inpu
   // the campaign it lives in.
   const editionScope = await fetchCampaignEditionOrThrow(pool, campaignId);
   const slug = homebrewSlug(input.name);
+  // 'library' scopes the new row to the creating user (reusable across every
+  // campaign they run) instead of this one campaign — see the migration's
+  // header comment. Default matches every pre-existing caller unchanged.
+  const owningCampaignId = input.libraryScope === 'library' ? null : campaignId;
+  const owningUserId = input.libraryScope === 'library' ? actorUserId : null;
 
   const result = await pool.query(
     `INSERT INTO monsters (
@@ -104,11 +121,11 @@ export async function createHomebrewMonster(pool: Pool, campaignId: string, inpu
        hit_point_average, hit_dice, speed, str, dex, con, int, wis, cha,
        saving_throws, skills, damage_vulnerabilities, damage_resistances, damage_immunities,
        senses, languages, challenge_rating, xp_value, traits, actions, legendary_actions, reactions,
-       source, is_homebrew, owning_campaign_id, art_asset_id, is_unique, image_url
+       source, is_homebrew, owning_campaign_id, owning_user_id, art_asset_id, is_unique, image_url
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
        $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
-       $31, true, $32, $33, $34, $35
+       $31, true, $32, $33, $34, $35, $36
      )
      RETURNING *`,
     [
@@ -126,7 +143,7 @@ export async function createHomebrewMonster(pool: Pool, campaignId: string, inpu
       input.legendaryActions ? JSON.stringify(input.legendaryActions) : null,
       input.reactions ? JSON.stringify(input.reactions) : null,
       input.source ?? null,
-      campaignId, input.artAssetId ?? null, input.isUnique ?? false, input.imageUrl ?? null,
+      owningCampaignId, owningUserId, input.artAssetId ?? null, input.isUnique ?? false, input.imageUrl ?? null,
     ],
   );
   return result.rows[0];
@@ -174,10 +191,11 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
 export async function updateHomebrewMonster(
   pool: Pool,
   campaignId: string,
+  actorUserId: string,
   monsterId: string,
   input: UpdateHomebrewMonsterInput,
 ) {
-  await fetchHomebrewMonsterOrThrow(pool, campaignId, monsterId);
+  await fetchHomebrewMonsterOrThrow(pool, campaignId, actorUserId, monsterId);
   if (input.artAssetId !== undefined) {
     await validateArtAssetBelongsToCampaign(pool, campaignId, input.artAssetId);
   }
@@ -192,32 +210,40 @@ export async function updateHomebrewMonster(
     sets.push(`${column} = $${i++}`);
     values.push(JSONB_FIELDS.has(key) && value !== null ? JSON.stringify(value) : value);
   }
-  if (sets.length === 0) return fetchHomebrewMonsterOrThrow(pool, campaignId, monsterId);
+  if (sets.length === 0) return fetchHomebrewMonsterOrThrow(pool, campaignId, actorUserId, monsterId);
 
   sets.push('updated_at = now()');
-  values.push(monsterId, campaignId);
+  values.push(monsterId, campaignId, actorUserId);
   const result = await pool.query(
-    // Re-scoped by owning_campaign_id here too (defense in depth, matching
-    // monsters.ts's fetchScopedInstanceOrThrow-then-scoped-write pattern) —
-    // the fetch above already proved ownership, this just avoids a TOCTOU
-    // gap between the read and the write.
-    `UPDATE monsters SET ${sets.join(', ')} WHERE id = $${i} AND owning_campaign_id = $${i + 1} RETURNING *`,
+    // Re-scoped here too (defense in depth, matching monsters.ts's
+    // fetchScopedInstanceOrThrow-then-scoped-write pattern) — the fetch
+    // above already proved ownership, this just avoids a TOCTOU gap between
+    // the read and the write.
+    `UPDATE monsters SET ${sets.join(', ')}
+     WHERE id = $${i} AND (owning_campaign_id = $${i + 1} OR owning_user_id = $${i + 2})
+     RETURNING *`,
     values,
   );
   return result.rows[0];
 }
 
-export async function deleteHomebrewMonster(pool: Pool, campaignId: string, monsterId: string): Promise<void> {
-  await fetchHomebrewMonsterOrThrow(pool, campaignId, monsterId);
+export async function deleteHomebrewMonster(pool: Pool, campaignId: string, actorUserId: string, monsterId: string): Promise<void> {
+  await fetchHomebrewMonsterOrThrow(pool, campaignId, actorUserId, monsterId);
 
   // monster_instances.monster_id has no ON DELETE clause (1784269739666), so
   // a raw DELETE here would surface a confusing raw Postgres FK-violation
   // error to the client — check first and throw a clean CONFLICT instead.
-  // The check and the delete run inside one transaction with the monster row
-  // locked (FOR UPDATE), same concurrency-safety pattern as effects.ts's
-  // insertActiveEffect: without the lock, an instance could be spawned from
-  // this monster in the gap between the check and the DELETE, and the DELETE
-  // would then hit the FK constraint directly instead of the clean CONFLICT.
+  // Iteration 2 "Shared bestiary": a template can now be curated by MANY
+  // campaigns' campaign_bestiary_entries (not just its owning campaign), so
+  // this guard now checks across ALL campaigns, not just this one — deleting
+  // a shared template out from under another campaign's curated bestiary
+  // used to be an unguarded silent cascade (campaign_bestiary_entries.
+  // monster_id is ON DELETE CASCADE); this closes that gap. The check and
+  // the delete run inside one transaction with the monster row locked (FOR
+  // UPDATE), same concurrency-safety pattern as effects.ts's
+  // insertActiveEffect: without the lock, an instance or a new bestiary
+  // entry could be created from this monster in the gap between the check
+  // and the DELETE.
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -227,8 +253,15 @@ export async function deleteHomebrewMonster(pool: Pool, campaignId: string, mons
     if ((instances.rowCount ?? 0) > 0) {
       throw new AppError('CONFLICT', 'Cannot delete a creature that has active instances — delete the instances first');
     }
+    const bestiaryEntries = await client.query(`SELECT 1 FROM campaign_bestiary_entries WHERE monster_id = $1 LIMIT 1`, [monsterId]);
+    if ((bestiaryEntries.rowCount ?? 0) > 0) {
+      throw new AppError('CONFLICT', 'Cannot delete a creature that is in a campaign bestiary — remove it from every campaign bestiary first');
+    }
 
-    await client.query(`DELETE FROM monsters WHERE id = $1 AND owning_campaign_id = $2`, [monsterId, campaignId]);
+    await client.query(
+      `DELETE FROM monsters WHERE id = $1 AND (owning_campaign_id = $2 OR owning_user_id = $3)`,
+      [monsterId, campaignId, actorUserId],
+    );
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -269,7 +302,10 @@ export async function duplicateHomebrewMonster(pool: Pool, campaignId: string, s
     if (assetRes.rows[0]?.campaign_id !== campaignId) artAssetId = null;
   }
 
-  const omit = new Set(['id', 'slug', 'edition_scope', 'is_homebrew', 'owning_campaign_id', 'created_at', 'updated_at', 'art_asset_id']);
+  const omit = new Set([
+    'id', 'slug', 'edition_scope', 'is_homebrew', 'owning_campaign_id', 'owning_user_id',
+    'derived_from_template_id', 'created_at', 'updated_at', 'art_asset_id',
+  ]);
   const columns: string[] = ['art_asset_id'];
   const values: unknown[] = [artAssetId];
   for (const [col, val] of Object.entries(source)) {
@@ -282,15 +318,65 @@ export async function duplicateHomebrewMonster(pool: Pool, campaignId: string, s
   // createHomebrewMonster: a copy visible only inside this campaign must
   // carry this campaign's edition tag, not the source's (which could be an
   // official monster tagged for either edition, or another campaign running
-  // a different one).
+  // a different one). derived_from_template_id records provenance — new in
+  // Iteration 2, previously discarded entirely — so the UI can show "based
+  // on {name}" (see docs/rules or the plan for this iteration).
   const editionScope = await fetchCampaignEditionOrThrow(pool, campaignId);
-  columns.push('slug', 'edition_scope', 'is_homebrew', 'owning_campaign_id');
-  values.push(homebrewSlug(source.name as string), editionScope, true, campaignId);
+  columns.push('slug', 'edition_scope', 'is_homebrew', 'owning_campaign_id', 'derived_from_template_id');
+  values.push(homebrewSlug(source.name as string), editionScope, true, campaignId, sourceMonsterId);
 
   const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
   const result = await pool.query(
     `INSERT INTO monsters (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
     values,
+  );
+  return result.rows[0];
+}
+
+async function fetchUserLibraryMonsterOrThrow(pool: Pool, actorUserId: string, monsterId: string): Promise<MonsterRow> {
+  const result = await pool.query<MonsterRow>(
+    `SELECT * FROM monsters WHERE id = $1 AND owning_user_id = $2`,
+    [monsterId, actorUserId],
+  );
+  const row = result.rows[0];
+  if (!row) throw notFound('Monster');
+  return row;
+}
+
+// ---- Library scope conversion (Iteration 2 "Shared bestiary") ----
+//
+// In-place scope changes on the SAME row (not a copy — that's
+// duplicateHomebrewMonster above). Safe in both directions without touching
+// any other campaign's data: a campaign-owned row can only ever be
+// referenced by its own campaign's campaign_bestiary_entries (see
+// addToCampaignBestiary's ownership check, services/campaignBestiary.ts), so
+// promoting it never orphans another campaign's reference; a user-library
+// row's existing campaign_bestiary_entries (from however many campaigns
+// added it) are keyed by monster_id and are completely unaffected by who
+// currently authors the template.
+
+export async function promoteHomebrewMonsterToLibrary(pool: Pool, campaignId: string, actorUserId: string, monsterId: string) {
+  // Must currently be owned by THIS campaign specifically — a strict check
+  // (not the broadened OR-scoped fetchHomebrewMonsterOrThrow above, which
+  // would also match a row the actor already owns in their library, making
+  // "promote" a confusing no-op instead of a clean 404 on the wrong resource).
+  const result = await pool.query(
+    `UPDATE monsters SET owning_campaign_id = NULL, owning_user_id = $1, updated_at = now()
+     WHERE id = $2 AND owning_campaign_id = $3
+     RETURNING *`,
+    [actorUserId, monsterId, campaignId],
+  );
+  if (!result.rows[0]) throw notFound('Monster');
+  return result.rows[0];
+}
+
+export async function assignHomebrewMonsterToCampaign(pool: Pool, campaignId: string, actorUserId: string, monsterId: string) {
+  await fetchUserLibraryMonsterOrThrow(pool, actorUserId, monsterId);
+  const result = await pool.query(
+    `UPDATE monsters SET owning_user_id = NULL, owning_campaign_id = $1, updated_at = now()
+     WHERE id = $2 AND owning_user_id = $3
+     RETURNING *`,
+    [campaignId, monsterId, actorUserId],
   );
   return result.rows[0];
 }

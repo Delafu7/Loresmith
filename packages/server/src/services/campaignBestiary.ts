@@ -124,18 +124,23 @@ export async function addToCampaignBestiary(
   try {
     await client.query('BEGIN');
 
-    // Every requested monster must be either global (owning_campaign_id
-    // NULL) or this campaign's own homebrew — never another campaign's
-    // homebrew. Same posture as fetchHomebrewMonsterOrThrow: 404, not 403,
-    // so this never confirms another campaign's homebrew creature exists.
-    const monstersRes = await client.query<{ id: string; owning_campaign_id: string | null }>(
-      `SELECT id, owning_campaign_id FROM monsters WHERE id = ANY($1::uuid[])`,
+    // Every requested monster must be global, this campaign's own homebrew,
+    // OR (Iteration 2 "Shared bestiary") the calling user's own library
+    // homebrew — never another campaign's campaign-scoped homebrew (that
+    // tier is deliberately kept non-shared, the "named villain" case). Same
+    // posture as fetchHomebrewMonsterOrThrow: 404, not 403, so this never
+    // confirms another campaign's or another user's homebrew creature exists.
+    const monstersRes = await client.query<{ id: string; owning_campaign_id: string | null; owning_user_id: string | null }>(
+      `SELECT id, owning_campaign_id, owning_user_id FROM monsters WHERE id = ANY($1::uuid[])`,
       [monsterIds],
     );
     const found = new Map(monstersRes.rows.map((r) => [r.id, r]));
     for (const id of monsterIds) {
       const monster = found.get(id);
-      if (!monster || (monster.owning_campaign_id !== null && monster.owning_campaign_id !== campaignId)) {
+      const isGlobal = monster && monster.owning_campaign_id === null && monster.owning_user_id === null;
+      const isOwnCampaignHomebrew = monster && monster.owning_campaign_id === campaignId;
+      const isOwnUserLibrary = monster && monster.owning_user_id === actorUserId;
+      if (!monster || !(isGlobal || isOwnCampaignHomebrew || isOwnUserLibrary)) {
         throw notFound('Monster');
       }
     }
@@ -210,6 +215,20 @@ export async function updateCampaignBestiaryEntry(
 export async function removeCampaignBestiaryEntry(pool: Pool, campaignId: string, entryId: string): Promise<void> {
   const result = await pool.query(`DELETE FROM campaign_bestiary_entries WHERE id = $1 AND campaign_id = $2`, [entryId, campaignId]);
   if (result.rowCount === 0) throw notFound('Bestiary entry');
+}
+
+// Bulk sibling of the single-entry delete above (Iteration 2 "Shared
+// bestiary" — unassociating several shared templates from a campaign at
+// once). Silently ignores entryIds that don't belong to this campaign
+// (already-removed or never-existed), same "no-op on unknown ids" posture
+// as addToCampaignBestiary's ON CONFLICT DO NOTHING, rather than 404ing the
+// whole batch over one stale id.
+export async function removeCampaignBestiaryEntries(pool: Pool, campaignId: string, entryIds: string[]): Promise<{ removed: number }> {
+  const result = await pool.query(
+    `DELETE FROM campaign_bestiary_entries WHERE campaign_id = $1 AND id = ANY($2::uuid[])`,
+    [campaignId, entryIds],
+  );
+  return { removed: result.rowCount ?? 0 };
 }
 
 export { ENTITY_TYPE as BESTIARY_ENTITY_TYPE };

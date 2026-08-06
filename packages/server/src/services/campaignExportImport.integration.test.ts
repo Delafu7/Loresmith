@@ -128,7 +128,7 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
     });
     backgroundId = background.id as string;
 
-    await createHomebrewMonster(pool, campaignId, {
+    await createHomebrewMonster(pool, campaignId, dmUserId, {
       name: 'Export Test Monster', size: 'medium', creatureType: 'beast', armorClass: 12, hitPointAverage: 10,
       hitDice: '2d8', speed: { walk: 30 }, str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
       challengeRating: 1, xpValue: 200, actions: [{ name: 'Bite', description: '1d4 piercing.' }], artAssetId: assetId,
