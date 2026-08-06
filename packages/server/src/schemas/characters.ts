@@ -41,6 +41,12 @@ const sharedCharacterShape = {
   damageResistances: z.array(z.string().max(50)).optional(),
   damageVulnerabilities: z.array(z.string().max(50)).optional(),
   damageImmunities: z.array(z.string().max(50)).optional(),
+  // Iteration 2's one concrete GM-only field — accepted here but only ever
+  // actually written by a DM (services/characters.ts's updateCharacter
+  // drops it from any non-DM patch; it's also never included in
+  // insertCharacterRow's INSERT column list, so it can't be set at create
+  // time by anyone — only via a later PATCH).
+  gmNotes: z.string().max(20000).optional().nullable(),
 };
 
 export const createCharacterSchema = z.object(sharedCharacterShape).extend({
@@ -64,6 +70,19 @@ export type UpdateCharacterInput = z.infer<typeof updateCharacterSchema>;
 // campaign member.
 export const assignCharacterOwnerSchema = z.object({ email: z.string().email() });
 export type AssignCharacterOwnerInput = z.infer<typeof assignCharacterOwnerSchema>;
+
+// Iteration 2 "Character ownership vs. control" — DM-only action, mirrors
+// transitionDispositionSchema's shape (schemas/encounters.ts): only the
+// caller-supplied "to" side is here, the "from" is always read server-side
+// from the locked current row (services/characterControl.ts), never trusted
+// from the client.
+export const delegateControlSchema = z.object({
+  toUserId: z.string().uuid(),
+  reason: z.string().max(500).optional(),
+  encounterId: z.string().uuid().optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+export type DelegateControlInput = z.infer<typeof delegateControlSchema>;
 
 export const hpDeltaSchema = z.object({
   delta: z.number().int().default(0),

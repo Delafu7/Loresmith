@@ -18,7 +18,7 @@ export const updateCampaignSchema = createCampaignSchema.partial().extend({
 });
 export type UpdateCampaignInput = z.infer<typeof updateCampaignSchema>;
 
-export const campaignRoleEnum = z.enum(['dm', 'player']);
+export const campaignRoleEnum = z.enum(['dm', 'player', 'spectator']);
 
 export const addMemberSchema = z.object({
   email: z.string().email(),

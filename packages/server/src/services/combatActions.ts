@@ -10,6 +10,7 @@
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { authorizeParticipantAction } from './encounters.js';
+import type { CampaignRole } from './authz.js';
 import type { RecordActionInput } from '../schemas/combatActions.js';
 
 interface ParticipantEntity {
@@ -280,7 +281,7 @@ export async function isActionVisibleToPlayers(pool: Pool, encounterId: string, 
 export async function listActionsForEncounter(
   pool: Pool,
   encounterId: string,
-  viewerRole: 'dm' | 'player',
+  viewerRole: CampaignRole,
   pagination: { limit: number; offset: number },
 ): Promise<CombatActionView[]> {
   const res = await pool.query<ActionSelectRow>(

@@ -15,11 +15,31 @@ import { insertMembership } from './campaigns.js';
 import type { CreateInvitationInput } from '../schemas/campaignInvitations.js';
 
 export async function createInvitation(pool: Pool, campaignId: string, invitedByUserId: string, input: CreateInvitationInput) {
+  if (input.characterId !== undefined) {
+    // Must be an unclaimed PC belonging to THIS campaign — never leaks
+    // another campaign's character via a crafted id (404, not a validation
+    // error, same "don't confirm existence" posture used throughout this
+    // codebase), and never lets an invite silently steal an already-owned
+    // character out from under its current player.
+    const characterRes = await pool.query<{ campaign_id: string; is_pc: boolean; owner_user_id: string | null }>(
+      `SELECT campaign_id, is_pc, owner_user_id FROM characters WHERE id = $1`,
+      [input.characterId],
+    );
+    const character = characterRes.rows[0];
+    if (!character || character.campaign_id !== campaignId) throw notFound('Character');
+    if (!character.is_pc) {
+      throw new AppError('VALIDATION_ERROR', 'Only a player character can be claimed via invitation');
+    }
+    if (character.owner_user_id !== null) {
+      throw new AppError('CONFLICT', 'This character already has an owner');
+    }
+  }
+
   try {
     const result = await pool.query(
-      `INSERT INTO campaign_invitations (campaign_id, invited_email, invited_by_user_id, role)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [campaignId, input.email, invitedByUserId, input.role],
+      `INSERT INTO campaign_invitations (campaign_id, invited_email, invited_by_user_id, role, character_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [campaignId, input.email, invitedByUserId, input.role, input.characterId ?? null],
     );
     return result.rows[0];
   } catch (err) {
@@ -89,13 +109,32 @@ export async function acceptInvitation(pool: Pool, invitationId: string, actorId
 
     const member = await insertMembership(client, invitation.campaign_id, actorId, invitation.role);
 
+    // Claim the character in the SAME transaction as granting membership —
+    // both succeed or both roll back together. Re-checks owner_user_id IS
+    // NULL at accept-time (not just at invite-creation-time): the character
+    // could have been claimed by someone else, or assigned by the DM, in
+    // the window between the invite being sent and being accepted.
+    let claimedCharacter = null;
+    if (invitation.character_id !== null) {
+      const claimed = await client.query(
+        `UPDATE characters SET owner_user_id = $1, controller_user_id = NULL
+         WHERE id = $2 AND owner_user_id IS NULL
+         RETURNING *`,
+        [actorId, invitation.character_id],
+      );
+      claimedCharacter = claimed.rows[0];
+      if (!claimedCharacter) {
+        throw new AppError('CONFLICT', 'This character has already been claimed by someone else');
+      }
+    }
+
     const updated = await client.query(
       `UPDATE campaign_invitations SET status = 'accepted', responded_at = now() WHERE id = $1 RETURNING *`,
       [invitationId],
     );
 
     await client.query('COMMIT');
-    return { invitation: updated.rows[0], member };
+    return { invitation: updated.rows[0], member, character: claimedCharacter };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

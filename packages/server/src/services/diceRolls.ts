@@ -7,7 +7,7 @@
 
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
-import { requireOwnerOrDm, type CampaignRole } from './authz.js';
+import { requireControllerOrDm, type CampaignRole } from './authz.js';
 import { fetchCharacterOrThrow } from './characters.js';
 import type { CreateDiceRollInput, ListDiceRollsQuery } from '../schemas/diceRolls.js';
 
@@ -82,16 +82,17 @@ export async function rollDice(
 ): Promise<DiceRollRow> {
   // ---- characterId: must belong to THIS campaign; a player may only roll
   // as their own PC, never someone else's (or an NPC) — mirrors the
-  // ownership-scoping convention used everywhere else (e.g.
-  // services/characters.ts's authorizeCharacterMutation). Cross-campaign
-  // characterId 404s rather than 403s, same "don't leak existence of another
-  // campaign's row" convention as services/monsterCatalog.ts's
-  // fetchHomebrewMonsterOrThrow.
+  // Control-gated, not ownership-gated — rolling dice AS a character is
+  // "acting right now" (same reasoning as services/characters.ts's
+  // applyHpDelta/applyDamage, see authorizeCharacterAction's comment there).
+  // Cross-campaign characterId 404s rather than 403s, same "don't leak
+  // existence of another campaign's row" convention as
+  // services/monsterCatalog.ts's fetchHomebrewMonsterOrThrow.
   let characterId: string | null = null;
   if (input.characterId !== undefined) {
     const character = await fetchCharacterOrThrow(pool, input.characterId);
     if (character.campaign_id !== campaignId) throw notFound('Character');
-    requireOwnerOrDm(role, character.owner_user_id, actorId);
+    requireControllerOrDm(role, character.controller_user_id, character.owner_user_id, actorId);
     characterId = input.characterId;
   }
 

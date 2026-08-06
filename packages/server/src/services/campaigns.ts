@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
 import { findUserByEmail } from './users.js';
+import type { CampaignRole } from './authz.js';
 import type {
   AddMemberInput,
   CreateCampaignInput,
@@ -119,7 +120,7 @@ export async function insertMembership(
   pool: Pool | PoolClient,
   campaignId: string,
   userId: string,
-  role: 'dm' | 'player',
+  role: CampaignRole,
 ) {
   const existing = await pool.query(
     `SELECT id FROM campaign_members WHERE campaign_id = $1 AND user_id = $2`,

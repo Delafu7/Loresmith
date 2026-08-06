@@ -7,7 +7,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
-import { requireMembership, requireOwnerOrDm, type CampaignRole } from './authz.js';
+import { requireMembership, requireControllerOrDm, type CampaignRole } from './authz.js';
 import {
   computePathCost,
   computeReachableSet,
@@ -816,9 +816,9 @@ export async function setParticipantVisibility(
 // (battle mode, REVISION-PLAN.md §10.2): unlike every other combat_participants
 // mutation in this app (DM-only via requireEncounterDm in routes/encounters.ts),
 // a player must be able to spend their OWN character's action-economy slots.
-// Resolves campaign_id + the participant's owning character (if any) via a
-// single join, then applies the same "DM, or owner" shape as
-// services/characters.ts's authorizeCharacterMutation/requireOwnerOrDm —
+// Resolves campaign_id + the participant's owning/controlling character (if
+// any) via a single join, then applies the same "DM, or controller" shape as
+// services/characters.ts's authorizeCharacterAction/requireControllerOrDm —
 // pulled out as its own service function (rather than inlined in the route
 // middleware) so this authorization boundary is directly testable without
 // spinning up Express, matching this file's existing pure-function
@@ -829,8 +829,8 @@ export async function authorizeParticipantAction(
   encounterId: string,
   participantId: string,
 ): Promise<CampaignRole> {
-  const result = await pool.query<{ campaign_id: string; owner_user_id: string | null }>(
-    `SELECT e.campaign_id, c.owner_user_id
+  const result = await pool.query<{ campaign_id: string; owner_user_id: string | null; controller_user_id: string | null }>(
+    `SELECT e.campaign_id, c.owner_user_id, c.controller_user_id
        FROM combat_participants cp
        JOIN encounters e ON e.id = cp.encounter_id
        LEFT JOIN characters c ON c.id = cp.character_id
@@ -841,11 +841,16 @@ export async function authorizeParticipantAction(
   if (!row) throw notFound('Participant');
 
   const role = await requireMembership(pool, row.campaign_id, actorId);
-  // row.owner_user_id is NULL both for NPC characters (no owning player) and
-  // for monster-instance participants (the LEFT JOIN finds no characters
-  // row at all) — requireOwnerOrDm treats a null owner as "no non-DM may
-  // touch this", which is exactly right for both cases.
-  requireOwnerOrDm(role, row.owner_user_id, actorId);
+  // row.owner_user_id/controller_user_id are both NULL for NPC characters
+  // (no owning/controlling player) and for monster-instance participants
+  // (the LEFT JOIN finds no characters row at all) — requireControllerOrDm
+  // treats null-both as "no non-DM may touch this", exactly right for both
+  // cases. Iteration 2 "Character ownership vs. control": this is an "act
+  // right now" check (spend this participant's action economy/move its
+  // token), so it's control-gated, not ownership-gated — a player the DM
+  // has delegated this PC to for the scene can act for it even though they
+  // don't own it.
+  requireControllerOrDm(role, row.controller_user_id, row.owner_user_id, actorId);
   return role;
 }
 

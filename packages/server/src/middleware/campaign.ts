@@ -9,7 +9,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { pool } from '../db/pool.js';
 import { AppError } from './errors.js';
 import { isUuid } from '../domain/ids.js';
-import { requireMembership, requireDm, type CampaignRole } from '../services/authz.js';
+import { requireMembership, requireDm, requireNotSpectator, type CampaignRole } from '../services/authz.js';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -35,9 +35,10 @@ export function requireCampaignMember(paramName = 'id') {
   };
 }
 
-export function requireRole(role: 'dm') {
+export function requireRole(role: 'dm' | 'not-spectator') {
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (role === 'dm') requireDm(req.campaignRole!);
+    else requireNotSpectator(req.campaignRole!);
     next();
   };
 }

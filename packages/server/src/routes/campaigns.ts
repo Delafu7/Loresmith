@@ -75,7 +75,7 @@ campaignsRouter.get('/:id/export', requireCampaignMember(), requireRole('dm'), a
 // roll, not this endpoint — there's no in-progress-character row yet to
 // attach a "has already rolled" flag to, so enforcement here would need new
 // session-tracking state nobody asked for.
-campaignsRouter.post('/:id/roll-ability-scores', requireCampaignMember(), async (_req, res) => {
+campaignsRouter.post('/:id/roll-ability-scores', requireCampaignMember(), requireRole('not-spectator'), async (_req, res) => {
   res.json({ sets: rollAbilityScores() });
 });
 

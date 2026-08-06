@@ -5,6 +5,7 @@ import { requireCampaignMember } from '../middleware/campaign.js';
 import {
   assignCharacterOwnerSchema,
   createCharacterSchema,
+  delegateControlSchema,
   exhaustionSchema,
   hpDeltaSchema,
   replaceClassesSchema,
@@ -20,6 +21,7 @@ import { applyTargetEffectSchema } from '../schemas/effects.js';
 import { resourceAmountSchema } from '../schemas/resources.js';
 import { applyDamageSchema } from '../schemas/damage.js';
 import * as charactersService from '../services/characters.js';
+import * as characterControlService from '../services/characterControl.js';
 import * as characterItemsService from '../services/characterItems.js';
 import * as characterAttacksService from '../services/characterAttacks.js';
 import * as characterSpellsService from '../services/characterSpells.js';
@@ -112,6 +114,26 @@ charactersRouter.patch('/:id/assign-owner', async (req, res) => {
   const input = assignCharacterOwnerSchema.parse(req.body);
   const character = await charactersService.assignCharacterToPlayer(pool, req.user!.id, (req.params.id as string), input);
   res.json({ character });
+});
+
+// Iteration 2 "Character ownership vs. control" — DM-only, distinct from
+// assign-owner above: this changes who currently DRIVES the character
+// (action-economy spend, HP, resource pools, dice rolls), not who owns it.
+// See services/characterControl.ts's header comment.
+charactersRouter.post('/:id/delegate-control', async (req, res) => {
+  const input = delegateControlSchema.parse(req.body);
+  const { character, event } = await characterControlService.delegateControl(pool, (req.params.id as string), req.user!.id, input);
+  res.status(201).json({ character, event });
+});
+
+charactersRouter.post('/:id/revoke-control', async (req, res) => {
+  const { character, event } = await characterControlService.revokeControl(pool, (req.params.id as string), req.user!.id);
+  res.json({ character, event });
+});
+
+charactersRouter.get('/:id/control-delegations', async (req, res) => {
+  const events = await characterControlService.listControlDelegations(pool, req.user!.id, (req.params.id as string));
+  res.json({ events });
 });
 
 // GET counterparts to the replace-all PUTs below — added because there was

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
-import { requireCampaignMember } from '../middleware/campaign.js';
+import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
 import { createNoteSchema, updateNoteSchema } from '../schemas/notes.js';
 import * as notesService from '../services/notes.js';
 
@@ -14,7 +14,7 @@ notesRouter.get('/', async (req, res) => {
   res.json({ notes });
 });
 
-notesRouter.post('/', async (req, res) => {
+notesRouter.post('/', requireRole('not-spectator'), async (req, res) => {
   const input = createNoteSchema.parse(req.body);
   const note = await notesService.createNote(pool, req.campaignId!, req.user!.id, req.campaignRole!, input);
   res.status(201).json({ note });
@@ -25,18 +25,18 @@ notesRouter.get('/:noteId', async (req, res) => {
   res.json({ note });
 });
 
-notesRouter.patch('/:noteId', async (req, res) => {
+notesRouter.patch('/:noteId', requireRole('not-spectator'), async (req, res) => {
   const input = updateNoteSchema.parse(req.body);
   const note = await notesService.updateNote(pool, req.campaignId!, (req.params.noteId as string), req.user!.id, req.campaignRole!, input);
   res.json({ note });
 });
 
-notesRouter.delete('/:noteId', async (req, res) => {
+notesRouter.delete('/:noteId', requireRole('not-spectator'), async (req, res) => {
   await notesService.deleteNote(pool, req.campaignId!, (req.params.noteId as string), req.user!.id, req.campaignRole!);
   res.status(204).send();
 });
 
-notesRouter.post('/:noteId/duplicate', async (req, res) => {
+notesRouter.post('/:noteId/duplicate', requireRole('not-spectator'), async (req, res) => {
   const note = await notesService.duplicateNote(pool, req.campaignId!, (req.params.noteId as string), req.user!.id, req.campaignRole!);
   res.status(201).json({ note });
 });

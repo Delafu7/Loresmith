@@ -6,7 +6,7 @@
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership } from './authz.js';
-import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
+import { authorizeCharacterAction, fetchCharacterOrThrow } from './characters.js';
 import type { ResourceAmountInput } from '../schemas/resources.js';
 
 export async function listResourcePools(pool: Pool, actorId: string, characterId: string) {
@@ -34,7 +34,7 @@ export async function spendResource(
   input: ResourceAmountInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await authorizeCharacterMutation(pool, actorId, character);
+  await authorizeCharacterAction(pool, actorId, character);
 
   const result = await pool.query(
     `UPDATE character_resource_pools
@@ -68,7 +68,7 @@ export async function recoverResource(
   input: ResourceAmountInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await authorizeCharacterMutation(pool, actorId, character);
+  await authorizeCharacterAction(pool, actorId, character);
 
   const result = await pool.query(
     `UPDATE character_resource_pools

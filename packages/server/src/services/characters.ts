@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
-import { requireMembership, requireDm, requireOwnerOrDm, getMembership, type CampaignRole } from './authz.js';
+import { requireMembership, requireDm, requireOwnerOrDm, requireControllerOrDm, getMembership, type CampaignRole } from './authz.js';
 import { applyHpDeltaWithTempAbsorption, type HpState } from './hp.js';
 import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
@@ -26,6 +26,10 @@ interface CharacterRow {
   campaign_id: string;
   is_pc: boolean;
   owner_user_id: string | null;
+  // Iteration 2 "Character ownership vs. control" — NULL defers to
+  // owner_user_id (see requireControllerOrDm in services/authz.ts).
+  controller_user_id: string | null;
+  gm_notes: string | null;
   str: number;
   dex: number;
   con: number;
@@ -60,19 +64,46 @@ export async function authorizeCharacterMutation(
   return role;
 }
 
+/**
+ * Iteration 2 "Character ownership vs. control" — sibling of
+ * authorizeCharacterMutation for "act right now" endpoints (spend HP,
+ * resource pools, roll dice as this character) as opposed to sheet-editing
+ * endpoints (update/delete/duplicate, spells/items/attacks replace,
+ * armor-class-mode — those stay on authorizeCharacterMutation/ownership,
+ * per the plan's explicit split: ownership gates the sheet, control gates
+ * acting). Delegating control never grants sheet-edit rights.
+ */
+export async function authorizeCharacterAction(
+  pool: Pool,
+  actorId: string,
+  character: CharacterRow,
+): Promise<CampaignRole> {
+  const role = await requireMembership(pool, character.campaign_id, actorId);
+  requireControllerOrDm(role, character.controller_user_id, character.owner_user_id, actorId);
+  return role;
+}
+
 // HP and every other character field are always visible to the whole
 // campaign now (hide/reveal was removed) — this is a plain read for every
 // role, `role` is kept only because callers already have it from the
 // membership check and other sibling functions share the signature shape.
-export async function listCharacters(pool: Pool, campaignId: string, _role: CampaignRole) {
+// Iteration 2's one concrete GM-only field — stripped from every read a
+// non-DM viewer receives, regardless of ownership (an owning player still
+// doesn't see the DM's private notes on their own character).
+function redactGmNotes<T extends { gm_notes?: unknown }>(character: T, role: CampaignRole): T {
+  if (role === 'dm') return character;
+  return { ...character, gm_notes: undefined };
+}
+
+export async function listCharacters(pool: Pool, campaignId: string, role: CampaignRole) {
   const result = await pool.query<CharacterRow>(`SELECT * FROM characters WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
-  return result.rows;
+  return result.rows.map((row) => redactGmNotes(row, role));
 }
 
 export async function getCharacter(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId); // any role may read
-  return character;
+  const role = await requireMembership(pool, character.campaign_id, actorId); // any role may read
+  return redactGmNotes(character, role);
 }
 
 async function insertCharacterRow(
@@ -170,6 +201,15 @@ export async function createCharacter(
     }
   }
 
+  // Iteration 2: a spectator falls through past the 'player' branch above
+  // with no explicit case of its own — without this check it would silently
+  // hit the DM path below and be allowed to create arbitrary characters,
+  // which is exactly the "any non-player role is treated as DM" bug this
+  // guard closes now that CampaignRole has a third value.
+  if (role === 'spectator') {
+    throw new AppError('FORBIDDEN_ROLE', 'Spectators cannot create characters');
+  }
+
   // DM: a PC may be created unassigned (owner attached later by email, see
   // assignCharacterToPlayer) — characters_check no longer forces a
   // non-null owner on every PC (1784269776666_relax-characters-owner-check.ts).
@@ -202,6 +242,9 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
   damageResistances: 'damage_resistances',
   damageVulnerabilities: 'damage_vulnerabilities',
   damageImmunities: 'damage_immunities',
+  // Iteration 2's one concrete GM-only field — DM-settable only, see the
+  // role check in updateCharacter dropping it for non-DM patches.
+  gmNotes: 'gm_notes',
 };
 
 export interface UpdateCharacterResult {
@@ -230,6 +273,9 @@ export async function updateCharacter(
     // a client that round-trips the full object doesn't get spuriously blocked.
     delete patch.isPc;
     delete patch.ownerUserId;
+  }
+  if (role !== 'dm') {
+    delete patch.gmNotes;
   }
   if ('hitDiceRemaining' in patch) {
     // JSONB column needs an explicit column + serialization; handled separately below.
@@ -353,9 +399,16 @@ export async function assignCharacterToPlayer(
   if (!targetRole) {
     throw new AppError('VALIDATION_ERROR', 'That user is not a member of this campaign');
   }
+  if (targetRole === 'spectator') {
+    throw new AppError('VALIDATION_ERROR', 'Spectators cannot own characters');
+  }
 
+  // Reassigning ownership also clears any stale control delegation — the
+  // new owner is the default controller until a fresh delegation says
+  // otherwise, same "ownership change resets control" rule
+  // services/characterControl.ts documents for its own revoke path.
   const result = await pool.query<CharacterRow>(
-    `UPDATE characters SET owner_user_id = $1 WHERE id = $2 RETURNING *`,
+    `UPDATE characters SET owner_user_id = $1, controller_user_id = NULL WHERE id = $2 RETURNING *`,
     [user.id, characterId],
   );
   return result.rows[0]!;
@@ -377,7 +430,10 @@ export async function duplicateCharacter(pool: Pool, actorId: string, characterI
   const source = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, source);
 
-  const omit = new Set(['id', 'created_at', 'updated_at']);
+  // controller_user_id excluded — a duplicated character is a brand-new
+  // resource nobody has delegated control of yet, regardless of whether the
+  // source currently has an active delegation.
+  const omit = new Set(['id', 'created_at', 'updated_at', 'controller_user_id']);
   const columns: string[] = [];
   const values: unknown[] = [];
   for (const [col, val] of Object.entries(source)) {
@@ -424,7 +480,9 @@ export async function applyHpDelta(
   input: HpDeltaInput,
 ): Promise<ApplyHpDeltaResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await authorizeCharacterMutation(pool, actorId, character);
+  // Control-gated, not ownership-gated — spending HP is "acting right now,"
+  // not sheet-editing. See authorizeCharacterAction's own comment.
+  await authorizeCharacterAction(pool, actorId, character);
 
   const client = await pool.connect();
   try {
@@ -495,7 +553,8 @@ export async function applyDamage(
   input: ApplyDamageInput,
 ): Promise<ApplyDamageResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await authorizeCharacterMutation(pool, actorId, character);
+  // Control-gated, not ownership-gated — same reasoning as applyHpDelta above.
+  await authorizeCharacterAction(pool, actorId, character);
 
   const client = await pool.connect();
   try {
