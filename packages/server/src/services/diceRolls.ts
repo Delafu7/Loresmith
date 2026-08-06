@@ -37,6 +37,42 @@ export function rollDie(sides: number): number {
   return 1 + Math.floor(Math.random() * sides);
 }
 
+// Exported for services/spawn.ts's "rolled" HP-on-spawn strategy — parses a
+// stat-block hit-dice string like "2d8+2" (monsters.hit_dice) into its three
+// components. Never used for player-facing input (nothing in this codebase
+// accepts a free-text dice expression from a client — schemas/diceRolls.ts's
+// CreateDiceRollInput always supplies diceSides/diceCount/modifier as
+// separate numbers), only for parsing this app's own catalog data, so a
+// malformed row is a data problem worth surfacing as an error rather than
+// silently defaulting.
+export interface ParsedHitDice {
+  count: number;
+  sides: number;
+  modifier: number;
+}
+
+export function parseHitDice(hitDice: string): ParsedHitDice {
+  const match = /^(\d+)d(\d+)\s*([+-]\s*\d+)?$/i.exec(hitDice.trim());
+  if (!match) {
+    throw new AppError('VALIDATION_ERROR', `Cannot parse hit dice expression "${hitDice}"`);
+  }
+  return {
+    count: Number(match[1]),
+    sides: Number(match[2]),
+    modifier: match[3] ? Number(match[3].replace(/\s+/g, '')) : 0,
+  };
+}
+
+// Rolls `count` dice of `sides` and adds `modifier`, floored at 1 — a
+// creature's hit-dice roll (unlike a raw damage roll) can never sensibly
+// resolve to 0 or negative HP for a freshly-spawned instance.
+export function rollHitDice(hitDice: string): number {
+  const { count, sides, modifier } = parseHitDice(hitDice);
+  let total = modifier;
+  for (let i = 0; i < count; i++) total += rollDie(sides);
+  return Math.max(1, total);
+}
+
 export async function rollDice(
   pool: Pool,
   campaignId: string,

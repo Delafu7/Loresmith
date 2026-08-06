@@ -36,6 +36,28 @@ export const addParticipantSchema = z
   });
 export type AddParticipantInput = z.infer<typeof addParticipantSchema>;
 
+// Iteration 2 §"Fast add/spawn UX" — batches what used to be `quantity`
+// sequential POST /monster-instances + POST /participants round-trips into
+// one transactional request. `hpStrategy` follows the dnd-rules-confirmed
+// convention: 'average' reuses the catalog's hit_point_average for every
+// instance (today's only behavior, kept as the default so existing callers
+// see no change), 'rolled' rolls the monster's hit_dice independently per
+// instance, 'same' rolls once and reuses that single result for the whole
+// batch. `groupInitiative` defaults to true because the SRD treats a group
+// of identical creatures rolling one shared initiative as core procedure in
+// both editions, not an optional variant (see docs/rules/monster-spawning.md).
+export const hpStrategyEnum = z.enum(['average', 'rolled', 'same']);
+export const namingSchemeEnum = z.enum(['numeric', 'alpha']);
+export const spawnParticipantsSchema = z.object({
+  monsterId: z.string().uuid(),
+  quantity: z.number().int().min(1).max(20),
+  hpStrategy: hpStrategyEnum.default('average'),
+  groupInitiative: z.boolean().default(true),
+  customBaseName: z.string().trim().min(1).max(100).optional(),
+  namingScheme: namingSchemeEnum.default('numeric'),
+});
+export type SpawnParticipantsInput = z.infer<typeof spawnParticipantsSchema>;
+
 export const rollInitiativeSchema = z.object({
   force: z.boolean().default(false),
 });

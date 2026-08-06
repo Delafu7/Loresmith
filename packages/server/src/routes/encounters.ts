@@ -16,6 +16,7 @@ import {
   setParticipantFactionSchema,
   setParticipantPositionSchema,
   setParticipantVisibilitySchema,
+  spawnParticipantsSchema,
   transitionDispositionSchema,
   updateEncounterSchema,
   upsertCellOverrideSchema,
@@ -25,6 +26,7 @@ import { performShoveSchema } from '../schemas/shove.js';
 import { performGrappleSchema } from '../schemas/grapple.js';
 import { recordActionSchema } from '../schemas/combatActions.js';
 import * as encountersService from '../services/encounters.js';
+import * as spawnService from '../services/spawn.js';
 import { performShove } from '../services/shove.js';
 import { performGrapple } from '../services/grapple.js';
 import * as entityFieldRevealService from '../services/entityFieldReveal.js';
@@ -232,6 +234,21 @@ encountersRouter.post('/:id/participants', requireEncounterDm, async (req, res) 
   broadcastParticipantJoined(io, encounter, participant);
   await pushEncounterRoomJoinForOwner(io, pool, encounter.id, encounter.campaign_id, participant.character_id);
   res.status(201).json({ participant });
+});
+
+// Iteration 2 "Fast add/spawn UX" — batched sibling of POST /:id/participants
+// above: one request creates N monster_instances + N combat_participants
+// instead of the client driving N sequential create+seat round-trips. A
+// single FULL_STATE_SYNC push (not a new granular socket event) tells every
+// connected client about the whole batch at once — mirrors how
+// PARTICIPANT_JOINED's own minimal payload already can't carry display
+// name/HP/AC, so useEncounterLive.ts just resyncs on receipt anyway; pushing
+// the resync directly here skips that extra client round-trip.
+encountersRouter.post('/:id/spawn', requireEncounterDm, async (req, res) => {
+  const input = spawnParticipantsSchema.parse(req.body);
+  const { encounter, participants } = await spawnService.spawnParticipants(pool, (req.params.id as string), input);
+  await broadcastFullStateResync(getIo(req.app), encounter.id as string, encounter.campaign_id as string);
+  res.status(201).json({ participants });
 });
 
 encountersRouter.delete('/:id/participants/:pid', requireEncounterDm, async (req, res) => {

@@ -1523,16 +1523,23 @@ async function rollAndReorderInitiative(client: PoolClient, encounterId: string,
     );
   }
 
-  // Re-sort turn_order by the (possibly just-updated) initiative ranking:
-  // highest roll first, dex-mod tiebreak, then id for a stable final tiebreak.
-  // This intentionally reassigns turn_order to EVERY participant, including
-  // ones already mid-combat — safe (unlike the old dense-index scheme) only
-  // because whoever's actually active is tracked by active_participant_id,
-  // an id, not a position; syncActiveParticipantTurnIndex (called by every
-  // caller of this function) re-derives current_turn_index from that id's
-  // freshly-assigned turn_order right after, so a mid-combat re-roll or a
-  // latecomer's insertion can never leave current_turn_index pointing at the
-  // wrong participant.
+  await reorderTurnOrderByInitiative(client, encounterId);
+}
+
+// Re-sort turn_order by the current initiative ranking: highest roll first,
+// dex-mod tiebreak, then id for a stable final tiebreak. Reassigns
+// turn_order to EVERY participant, including ones already mid-combat — safe
+// (unlike the old dense-index scheme) only because whoever's actually active
+// is tracked by active_participant_id, an id, not a position;
+// syncActiveParticipantTurnIndex (called by every caller of this function)
+// re-derives current_turn_index from that id's freshly-assigned turn_order
+// right after, so a mid-combat re-roll, a latecomer's insertion, or a batch
+// spawn can never leave current_turn_index pointing at the wrong
+// participant. Exported for services/spawn.ts, which rolls real initiative
+// values for newly-spawned participants directly (no UNROLLED_INITIATIVE
+// sentinel involved) and then needs this same resequencing step without
+// going through rollAndReorderInitiative's own dice-rolling pass.
+export async function reorderTurnOrderByInitiative(client: PoolClient, encounterId: string): Promise<void> {
   const reordered = await client.query<ParticipantRow>(
     `SELECT * FROM combat_participants WHERE encounter_id = $1
      ORDER BY initiative_roll DESC, initiative_tiebreak DESC NULLS LAST, id ASC`,
@@ -1548,7 +1555,7 @@ async function rollAndReorderInitiative(client: PoolClient, encounterId: string,
 // turn_order values (rollAndReorderInitiative) or moved the active pointer
 // itself. No-op when the encounter isn't active or has no active participant
 // yet (e.g. before startCombat has ever run).
-async function syncActiveParticipantTurnIndex(client: PoolClient, encounterId: string): Promise<void> {
+export async function syncActiveParticipantTurnIndex(client: PoolClient, encounterId: string): Promise<void> {
   await client.query(
     `UPDATE encounters e
      SET current_turn_index = cp.turn_order
