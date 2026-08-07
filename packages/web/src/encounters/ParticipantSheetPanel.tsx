@@ -17,6 +17,7 @@
 // monster weaknesses stay DM-only exactly as entity_field_reveals already
 // enforces server-side (GET .../reveals 403s a player outright).
 
+import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Character, CharacterItem, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
@@ -218,9 +219,14 @@ function TakeActionSection({
   activeParticipantId: string | null;
 }) {
   const { t } = useLocale();
+  // A player controlling more than one seated character (own PC + a
+  // delegated one) used to have the second one silently invisible here —
+  // .find() always resolved to whichever came first in participant order.
+  const myParticipants = allParticipants.filter((p) => p.characterId != null && myCharacterIds.has(p.characterId));
+  const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
   const actingParticipant = isDm
     ? allParticipants.find((p) => p.participantId === activeParticipantId)
-    : allParticipants.find((p) => p.characterId != null && myCharacterIds.has(p.characterId));
+    : (myParticipants.find((p) => p.participantId === selectedActorId) ?? myParticipants[0]);
 
   if (!actingParticipant || actingParticipant.participantId === target.participantId) return null;
 
@@ -232,6 +238,22 @@ function TakeActionSection({
       <h4 className="text-[11px] uppercase tracking-wide text-amber-500">
         {t('encounters.sheet.takeActionTitle', { actor: actingParticipant.name, target: target.name })}
       </h4>
+      {!isDm && myParticipants.length > 1 && (
+        <label className="flex items-center gap-2 text-[11px] text-stone-400">
+          {t('encounters.sheet.actingAsLabel')}
+          <select
+            value={actingParticipant.participantId}
+            onChange={(e) => setSelectedActorId(e.target.value)}
+            className="min-h-8 rounded border border-stone-700 bg-stone-800 text-stone-200 text-xs px-1.5"
+          >
+            {myParticipants.map((p) => (
+              <option key={p.participantId} value={p.participantId}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {actingCharacter ? (
         <CharacterAttackRoller
           characterId={actingCharacter.id}

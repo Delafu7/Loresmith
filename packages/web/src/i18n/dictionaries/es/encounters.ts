@@ -176,6 +176,7 @@ export const encounters = {
     detailDmOnly: 'Las estadísticas completas solo son visibles para el DJ.',
     equipmentTitle: 'Equipo',
     takeActionTitle: '{actor} → {target}',
+    actingAsLabel: 'Actuando como',
     factionLabel: 'Facción',
     manageButton: 'Gestionar',
     logButton: 'Registro',

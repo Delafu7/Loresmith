@@ -12,7 +12,7 @@ import type {
 } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
-import { useCharacterEditMode } from './useCharacterEditMode';
+import { useCharacterEditMode, useCharacterCanAct } from './useCharacterEditMode';
 import {
   useAbilityScoresCatalog,
   useBackgroundsCatalog,
@@ -101,6 +101,9 @@ export function CharacterSheetPage() {
   useBreadcrumb(2, character ? [{ label: character.name }] : []);
   const editMode = useCharacterEditMode(character, role, user?.id);
   const editable = editMode !== 'read';
+  // Separate CONTROL gate (delegated controller, not just the owner/DM) for
+  // "act right now" controls — see useCharacterCanAct's own comment.
+  const canAct = useCharacterCanAct(character, role, user?.id);
 
   // ---- Core stats (abilities/AC/speed) edit form ----
   const [editingCore, setEditingCore] = useState(false);
@@ -323,7 +326,7 @@ export function CharacterSheetPage() {
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">{t('characters.sheet.hitPoints')}</h3>
         <HPBar current={character.hp_current} max={character.hp_max} temp={character.hp_temp} />
-        {editable && (
+        {canAct && (
           <HpAdjustForm
             disabled={hpMutation.isPending}
             onApply={(delta, tempDelta) => hpMutation.mutate({ delta, tempDelta })}
@@ -431,6 +434,7 @@ export function CharacterSheetPage() {
             proficientAbilityScoreIds={proficientAbilityScoreIds}
             proficiencyBonus={proficiencyBonus}
             editable={editable}
+            canAct={canAct}
             onToggle={toggleSavingThrow}
             characterId={characterId}
           />
@@ -460,6 +464,7 @@ export function CharacterSheetPage() {
           proficiencyBySkillId={skillProficiencyMap}
           proficiencyBonus={proficiencyBonus}
           editable={editable}
+          canAct={canAct}
           onChange={changeSkill}
           characterId={characterId}
         />
@@ -472,6 +477,7 @@ export function CharacterSheetPage() {
           characterClasses={classesQuery.data?.classes ?? []}
           classesCatalog={classesCatalog.data.classes}
           editable={editable}
+          canAct={canAct}
         />
       )}
 
@@ -488,7 +494,7 @@ export function CharacterSheetPage() {
         armorClassMode={character.armor_class_mode}
       />
 
-      <ResourcePoolPanel characterId={characterId} campaignId={campaignId} editable={editable} isDm={role === 'dm'} />
+      <ResourcePoolPanel characterId={characterId} campaignId={campaignId} editable={canAct} isDm={role === 'dm'} />
 
       <CharacterEffectsPanel characterId={characterId} campaignId={campaignId} isDm={role === 'dm'} />
 

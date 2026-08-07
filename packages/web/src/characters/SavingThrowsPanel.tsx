@@ -25,6 +25,7 @@ export function SavingThrowsPanel({
   proficientAbilityScoreIds,
   proficiencyBonus,
   editable,
+  canAct,
   onToggle,
   characterId,
 }: {
@@ -33,9 +34,10 @@ export function SavingThrowsPanel({
   proficientAbilityScoreIds: Set<string>;
   proficiencyBonus: number;
   editable: boolean;
+  // CONTROL gate (useCharacterCanAct) — separate from `editable` (ownership).
+  // Governs the roll trigger only; proficiency toggling stays on `editable`.
+  canAct: boolean;
   onToggle: (abilityScoreId: string) => void;
-  // Same reuse of `editable` as the roll-trigger gate as SkillsPanel — see
-  // its comment for the reasoning.
   characterId: string;
 }) {
   const { t } = useLocale();
@@ -69,7 +71,7 @@ export function SavingThrowsPanel({
               />
               <span className="text-stone-300 flex-1">{a.name}</span>
               <span className="font-medium text-stone-100">{formatModifier(mod)}</span>
-              {editable && (
+              {canAct && (
                 <DiceRoller
                   rollType="saving_throw"
                   rollContext={t('characters.savingThrows.saveRollContext', { name: a.name })}

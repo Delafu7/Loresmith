@@ -200,7 +200,7 @@ function decodeCursor(cursor: string): DecodedCursor {
       typeof parsed !== 'object' ||
       parsed === null ||
       typeof (parsed as Record<string, unknown>).createdAt !== 'string' ||
-      typeof (parsed as Record<string, unknown>).id !== 'number'
+      typeof (parsed as Record<string, unknown>).id !== 'string'
     ) {
       throw new Error('malformed cursor shape');
     }

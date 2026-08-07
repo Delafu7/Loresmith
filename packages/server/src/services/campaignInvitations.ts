@@ -12,6 +12,7 @@ import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
 import { insertMembership } from './campaigns.js';
+import { redactGmNotes } from './characters.js';
 import type { CreateInvitationInput } from '../schemas/campaignInvitations.js';
 
 export async function createInvitation(pool: Pool, campaignId: string, invitedByUserId: string, input: CreateInvitationInput) {
@@ -126,6 +127,12 @@ export async function acceptInvitation(pool: Pool, invitationId: string, actorId
       if (!claimedCharacter) {
         throw new AppError('CONFLICT', 'This character has already been claimed by someone else');
       }
+      // The claiming user is whatever role this invitation granted — same
+      // GM-notes leak class as services/characters.ts's mutation return
+      // sites: an accepted invitation is a mutation response, not a GET, but
+      // still must never hand a non-DM claimant the DM's private notes on
+      // the character they just claimed.
+      claimedCharacter = redactGmNotes(claimedCharacter, invitation.role);
     }
 
     const updated = await client.query(

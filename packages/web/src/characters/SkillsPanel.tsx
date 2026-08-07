@@ -22,6 +22,7 @@ export function SkillsPanel({
   proficiencyBySkillId,
   proficiencyBonus,
   editable,
+  canAct,
   onChange,
   characterId,
 }: {
@@ -31,14 +32,12 @@ export function SkillsPanel({
   proficiencyBySkillId: Map<string, ProficiencyLevel>;
   proficiencyBonus: number;
   editable: boolean;
+  // CONTROL gate (useCharacterCanAct) — separate from `editable` (ownership).
+  // Governs the roll trigger only; proficiency toggling stays on `editable`.
+  // A player delegated control of a PC they don't own can now roll skill
+  // checks even though they can't touch proficiency.
+  canAct: boolean;
   onChange: (skillId: string, next: ProficiencyLevel) => void;
-  // `editable` (from useCharacterEditMode) is reused as the roll-trigger
-  // gate too, not just the proficiency-toggle gate: it's already exactly
-  // "DM, or the player who owns this PC" — the same population the server
-  // allows to attach this characterId to a roll (see POST
-  // /campaigns/:id/dice-rolls's ownership check). Rolling isn't editing, but
-  // this app has no separate "can view but not roll for a different
-  // player's PC" state to distinguish, so the existing gate covers it.
   characterId: string;
 }) {
   const { t } = useLocale();
@@ -67,7 +66,7 @@ export function SkillsPanel({
               <span className="text-stone-300 flex-1">{skill.name}</span>
               {ability && <span className="text-xs text-stone-600 uppercase w-8">{ability.index_key}</span>}
               <span className="font-medium text-stone-100 w-8 text-right">{formatModifier(mod)}</span>
-              {editable && (
+              {canAct && (
                 <DiceRoller
                   rollType="skill_check"
                   rollContext={skill.name}

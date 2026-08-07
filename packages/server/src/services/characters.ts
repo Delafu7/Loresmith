@@ -90,10 +90,18 @@ export async function authorizeCharacterAction(
 // Iteration 2's one concrete GM-only field — stripped from every read a
 // non-DM viewer receives, regardless of ownership (an owning player still
 // doesn't see the DM's private notes on their own character).
-function redactGmNotes<T extends { gm_notes?: unknown }>(character: T, role: CampaignRole): T {
+export function redactGmNotes<T extends { gm_notes?: unknown }>(character: T, role: CampaignRole): T {
   if (role === 'dm') return character;
   return { ...character, gm_notes: undefined };
 }
+
+// Blocker fix: every function below that returns a character row as a side
+// effect of a mutation (not just the two read paths above) MUST also redact
+// — a non-DM caller mutating their own character (HP, an item toggle, an
+// armor-class-mode flip, ...) was previously getting the raw row back,
+// gm_notes included, even though they can never read it via GET. Centralized
+// here so a future mutation can't reintroduce the leak by forgetting to call
+// redactGmNotes directly.
 
 export async function listCharacters(pool: Pool, campaignId: string, role: CampaignRole) {
   const result = await pool.query<CharacterRow>(`SELECT * FROM characters WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
@@ -290,7 +298,7 @@ export async function updateCharacter(
   const hasAnyUpdatableField =
     Object.entries(patch).some(([key, value]) => value !== undefined && UPDATABLE_COLUMNS[key]) ||
     input.hitDiceRemaining !== undefined;
-  if (!hasAnyUpdatableField) return { character, armorClassSync: null };
+  if (!hasAnyUpdatableField) return { character: redactGmNotes(character, role), armorClassSync: null };
 
   // Needs a transaction now that a dex (or other auto-relevant) change can
   // trigger an AC recompute-and-write-back in the same atomic unit as the
@@ -340,7 +348,7 @@ export async function updateCharacter(
     if (sets.length === 0) {
       const current = await client.query(`SELECT * FROM characters WHERE id = $1`, [characterId]);
       await client.query('COMMIT');
-      return { character: current.rows[0], armorClassSync: null };
+      return { character: redactGmNotes(current.rows[0], role), armorClassSync: null };
     }
 
     sets.push(`updated_at = now()`);
@@ -359,7 +367,7 @@ export async function updateCharacter(
     }
 
     await client.query('COMMIT');
-    return { character: updated, armorClassSync };
+    return { character: redactGmNotes(updated, role), armorClassSync };
   } catch (err) {
     await client.query('ROLLBACK');
     if (isCheckViolation(err)) {
@@ -428,12 +436,16 @@ export async function deleteCharacter(pool: Pool, actorId: string, characterId: 
 // character regardless of the source's current state.
 export async function duplicateCharacter(pool: Pool, actorId: string, characterId: string) {
   const source = await fetchCharacterOrThrow(pool, characterId);
-  await authorizeCharacterMutation(pool, actorId, source);
+  const role = await authorizeCharacterMutation(pool, actorId, source);
 
   // controller_user_id excluded — a duplicated character is a brand-new
   // resource nobody has delegated control of yet, regardless of whether the
-  // source currently has an active delegation.
-  const omit = new Set(['id', 'created_at', 'updated_at', 'controller_user_id']);
+  // source currently has an active delegation. gm_notes excluded too: a
+  // player-owner duplicating their own PC (server allows it) must never have
+  // the DM's private notes silently copied onto the new row — the response
+  // redaction below stops the read leak, this stops it from persisting into
+  // a fresh row in the first place.
+  const omit = new Set(['id', 'created_at', 'updated_at', 'controller_user_id', 'gm_notes']);
   const columns: string[] = [];
   const values: unknown[] = [];
   for (const [col, val] of Object.entries(source)) {
@@ -452,7 +464,7 @@ export async function duplicateCharacter(pool: Pool, actorId: string, characterI
     `INSERT INTO characters (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
     values,
   );
-  return result.rows[0];
+  return redactGmNotes(result.rows[0], role);
 }
 
 // One character can (rarely) be a live combat_participants row in more than
@@ -482,7 +494,7 @@ export async function applyHpDelta(
   const character = await fetchCharacterOrThrow(pool, characterId);
   // Control-gated, not ownership-gated — spending HP is "acting right now,"
   // not sheet-editing. See authorizeCharacterAction's own comment.
-  await authorizeCharacterAction(pool, actorId, character);
+  const role = await authorizeCharacterAction(pool, actorId, character);
 
   const client = await pool.connect();
   try {
@@ -514,7 +526,7 @@ export async function applyHpDelta(
     );
 
     await client.query('COMMIT');
-    return { character: result.rows[0], encounterSyncs: encounterSyncs.rows };
+    return { character: redactGmNotes(result.rows[0], role), encounterSyncs: encounterSyncs.rows };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -554,7 +566,7 @@ export async function applyDamage(
 ): Promise<ApplyDamageResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
   // Control-gated, not ownership-gated — same reasoning as applyHpDelta above.
-  await authorizeCharacterAction(pool, actorId, character);
+  const role = await authorizeCharacterAction(pool, actorId, character);
 
   const client = await pool.connect();
   try {
@@ -612,7 +624,7 @@ export async function applyDamage(
 
     await client.query('COMMIT');
     return {
-      character: result.rows[0],
+      character: redactGmNotes(result.rows[0], role),
       encounterSyncs: encounterSyncs.rows,
       diceRoll: { diceTotal, rolls },
       rawTotal: applied.rawTotal,
@@ -803,7 +815,7 @@ export async function updateArmorClassMode(
   input: UpdateArmorClassModeInput,
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await authorizeCharacterMutation(pool, actorId, character);
+  const role = await authorizeCharacterMutation(pool, actorId, character);
 
   if (input.mode === 'manual') {
     // Switching to manual just flips the mode column — armor_class is left
@@ -812,7 +824,10 @@ export async function updateArmorClassMode(
       `UPDATE characters SET armor_class_mode = $1, updated_at = now() WHERE id = $2 RETURNING *`,
       [input.mode, characterId],
     );
-    return { character: result.rows[0], armorClassSync: null as { encounterSyncs: ArmorClassEncounterSync[] } | null };
+    return {
+      character: redactGmNotes(result.rows[0], role),
+      armorClassSync: null as { encounterSyncs: ArmorClassEncounterSync[] } | null,
+    };
   }
 
   // Switching TO 'auto' triggers an immediate recompute-and-write-back in
@@ -824,7 +839,7 @@ export async function updateArmorClassMode(
     const acResult = await recomputeAndApplyCharacterArmorClass(client, characterId);
     await client.query('COMMIT');
     return {
-      character: acResult.character,
+      character: redactGmNotes(acResult.character, role),
       armorClassSync: acResult.changed ? { encounterSyncs: acResult.encounterSyncs } : null,
     };
   } catch (err) {

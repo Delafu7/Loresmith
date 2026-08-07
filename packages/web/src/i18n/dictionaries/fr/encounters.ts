@@ -176,6 +176,7 @@ export const encounters = {
     detailDmOnly: 'Les statistiques complètes ne sont visibles que par le MJ.',
     equipmentTitle: 'Équipement',
     takeActionTitle: '{actor} → {target}',
+    actingAsLabel: 'Agit en tant que',
     factionLabel: 'Faction',
     manageButton: 'Gérer',
     logButton: 'Journal',

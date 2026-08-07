@@ -45,12 +45,17 @@ export function SpellcastingPanel({
   characterClasses,
   classesCatalog,
   editable,
+  canAct,
 }: {
   characterId: string;
   edition: '2014' | '2024' | 'both';
   characterClasses: CharacterClass[];
   classesCatalog: ClassCatalog[];
   editable: boolean;
+  // CONTROL gate (useCharacterCanAct) — separate from `editable` (ownership).
+  // Governs slot spend/recover only (SlotMeter); learn/prepare/unlearn stay
+  // on `editable`.
+  canAct: boolean;
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
@@ -141,7 +146,7 @@ export function SpellcastingPanel({
               <SlotMeter
                 key={pool.resource_key}
                 pool={pool}
-                editable={editable}
+                canAct={canAct}
                 tone="slot"
                 onSpend={() => spend.mutate({ resourceKey: pool.resource_key })}
                 onRecover={() => recover.mutate({ resourceKey: pool.resource_key })}
@@ -161,7 +166,7 @@ export function SpellcastingPanel({
               <SlotMeter
                 key={pool.resource_key}
                 pool={pool}
-                editable={editable}
+                canAct={canAct}
                 tone="pact"
                 onSpend={() => spend.mutate({ resourceKey: pool.resource_key })}
                 onRecover={() => recover.mutate({ resourceKey: pool.resource_key })}
@@ -266,13 +271,13 @@ const TONE_FILLED: Record<'slot' | 'pact', string> = {
 
 function SlotMeter({
   pool,
-  editable,
+  canAct,
   tone,
   onSpend,
   onRecover,
 }: {
   pool: ResourcePool;
-  editable: boolean;
+  canAct: boolean;
   tone: 'slot' | 'pact';
   onSpend: () => void;
   onRecover: () => void;
@@ -290,7 +295,7 @@ function SlotMeter({
             <button
               key={i}
               type="button"
-              disabled={!editable}
+              disabled={!canAct}
               title={filled ? t('characters.spells.useSlot') : t('characters.spells.restoreSlot')}
               aria-label={
                 filled
@@ -300,7 +305,7 @@ function SlotMeter({
               onClick={() => (filled ? onSpend() : onRecover())}
               className={`h-3 w-3 rounded-full border flex-shrink-0 ${
                 filled ? TONE_FILLED[tone] : 'bg-transparent border-stone-600'
-              } ${editable ? 'cursor-pointer' : 'cursor-default'}`}
+              } ${canAct ? 'cursor-pointer' : 'cursor-default'}`}
             />
           );
         })}

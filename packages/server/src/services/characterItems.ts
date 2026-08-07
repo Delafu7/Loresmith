@@ -11,7 +11,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership } from './authz.js';
-import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
+import { authorizeCharacterMutation, fetchCharacterOrThrow, redactGmNotes } from './characters.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
 import { computeEncumbrance, type EncumbranceResult } from './encumbrance.js';
 import type { CreateCharacterItemInput, UpdateCharacterItemInput } from '../schemas/characterItems.js';
@@ -122,7 +122,7 @@ export async function addCharacterItem(
   input: CreateCharacterItemInput,
 ): Promise<UpdateCharacterItemResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await authorizeCharacterMutation(pool, actorId, character);
+  const role = await authorizeCharacterMutation(pool, actorId, character);
 
   // Runs in a transaction because a newly-added item can be created
   // pre-equipped (input.isEquipped=true) — same AC recompute-atomicity
@@ -172,7 +172,7 @@ export async function addCharacterItem(
     }
 
     await client.query('COMMIT');
-    return { item: row, character: currentCharacter, armorClassSync };
+    return { item: row, character: redactGmNotes(currentCharacter, role), armorClassSync };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -189,7 +189,7 @@ export async function updateCharacterItem(
   input: UpdateCharacterItemInput,
 ): Promise<UpdateCharacterItemResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await authorizeCharacterMutation(pool, actorId, character);
+  const role = await authorizeCharacterMutation(pool, actorId, character);
 
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -205,7 +205,7 @@ export async function updateCharacterItem(
     const existing = await pool.query(`SELECT * FROM character_items WHERE id = $1 AND character_id = $2`, [characterItemId, characterId]);
     const row = existing.rows[0];
     if (!row) throw notFound('Character item');
-    return { item: row, character, armorClassSync: null };
+    return { item: row, character: redactGmNotes(character, role), armorClassSync: null };
   }
 
   // The equip toggle needs to be atomic with an AC recompute-and-write-back
@@ -242,7 +242,7 @@ export async function updateCharacterItem(
     }
 
     await client.query('COMMIT');
-    return { item: row, character: currentCharacter, armorClassSync };
+    return { item: row, character: redactGmNotes(currentCharacter, role), armorClassSync };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

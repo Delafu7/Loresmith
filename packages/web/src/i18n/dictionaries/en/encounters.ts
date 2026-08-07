@@ -181,6 +181,7 @@ export const encounters = {
     detailDmOnly: 'Full stats are only visible to the DM.',
     equipmentTitle: 'Equipment',
     takeActionTitle: '{actor} → {target}',
+    actingAsLabel: 'Acting as',
     factionLabel: 'Faction',
     manageButton: 'Manage',
     logButton: 'Log',

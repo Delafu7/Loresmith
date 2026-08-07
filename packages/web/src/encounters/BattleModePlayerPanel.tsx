@@ -8,7 +8,7 @@
 // turn — only the action-spend buttons themselves gate on "is it my turn".
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../lib/api';
 import { abilityModifier } from '../lib/dnd-math';
 import type { Character, CharacterItem } from '../lib/types';
@@ -45,22 +45,49 @@ export function BattleModePlayerPanel({
   setShowDiceRoller,
 }: BattleModePlayerPanelProps) {
   const { t } = useLocale();
-  const participant = live.participants.find((p) => p.characterId != null && myCharacterIds.has(p.characterId));
+  // A player can control more than one seated character (own PC + a
+  // delegated one, or two PCs) — .find() silently hid every character past
+  // the first match. Track which one is showing and offer a switcher when
+  // there's more than one candidate.
+  const myParticipants = live.participants.filter((p) => p.characterId != null && myCharacterIds.has(p.characterId));
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const participant =
+    myParticipants.find((p) => p.participantId === selectedParticipantId) ?? myParticipants[0];
 
   if (!participant) {
     return <EmptyState message={t('encounters.tracker.noCharacterYet')} />;
   }
 
   return (
-    <PlayerPanelBody
-      encounterId={encounterId}
-      participant={participant}
-      allParticipants={live.participants}
-      isMyTurn={participant.participantId === live.activeParticipantId}
-      character={characters?.find((c) => c.id === participant.characterId)}
-      showDiceRoller={showDiceRoller}
-      setShowDiceRoller={setShowDiceRoller}
-    />
+    <div className="space-y-3">
+      {myParticipants.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {myParticipants.map((p) => (
+            <button
+              key={p.participantId}
+              type="button"
+              onClick={() => setSelectedParticipantId(p.participantId)}
+              className={`rounded-md border px-2 py-1 text-xs font-medium ${
+                p.participantId === participant.participantId
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400'
+                  : 'border-stone-700 bg-stone-800 text-stone-300 hover:bg-stone-700'
+              }`}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <PlayerPanelBody
+        encounterId={encounterId}
+        participant={participant}
+        allParticipants={live.participants}
+        isMyTurn={participant.participantId === live.activeParticipantId}
+        character={characters?.find((c) => c.id === participant.characterId)}
+        showDiceRoller={showDiceRoller}
+        setShowDiceRoller={setShowDiceRoller}
+      />
+    </div>
   );
 }
 
