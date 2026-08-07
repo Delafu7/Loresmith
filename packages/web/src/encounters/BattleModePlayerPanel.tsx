@@ -8,7 +8,7 @@
 // turn — only the action-spend buttons themselves gate on "is it my turn".
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useState } from 'react';
 import { api } from '../lib/api';
 import { abilityModifier } from '../lib/dnd-math';
 import type { Character, CharacterItem } from '../lib/types';
@@ -18,22 +18,30 @@ import type { EncounterLiveState } from './useEncounterLive';
 import { HPBar } from '../components/HPBar';
 import { EmptyState, ErrorBanner, errorMessage } from '../components/Feedback';
 import { DiceRoller } from '../components/DiceRoller';
-import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { TurnTorch } from '../components/TurnTorch';
 import { useLocale } from '../i18n/LocaleContext';
 import { EconomyPip } from './ActionEconomyPanel';
 import { actionDescription, actionLabel } from './actionLabels';
 import { ACTION_REGISTRY, type ActionSlot } from './actionEconomy';
-import { ActionButton } from './CombatTracker';
 import { CastPanel } from './CastPanel';
+
+// UX finding #2 (Iteration 3 audit, live-confirmed) — a player clicking
+// Dodge/Help/Hide here only spends the action slot (and, where
+// applicable, rolls a check); nothing in the UI used to say so, so the
+// button looked exactly as "real" as every other action. Dodge's actual
+// condition is applied separately from the DM's own copy of this button
+// (see ActionEconomyPanel.tsx's applyDodgeMutation — "conditions are a DM
+// tool"); Help/Hide have no automatic effect anywhere in this codebase at
+// all, ever — always narratively adjudicated. Shove/Grab don't need this
+// marker: their labels already say "(freeform)" and their descriptions
+// already explain they apply nothing.
+const DECLARES_INTENT_ONLY_KEYS = new Set(['dodge', 'help', 'hide']);
 
 export interface BattleModePlayerPanelProps {
   encounterId: string;
   live: EncounterLiveState;
   myCharacterIds: Set<string>;
   characters: Character[] | undefined;
-  showDiceRoller: boolean;
-  setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
 }
 
 export function BattleModePlayerPanel({
@@ -41,8 +49,6 @@ export function BattleModePlayerPanel({
   live,
   myCharacterIds,
   characters,
-  showDiceRoller,
-  setShowDiceRoller,
 }: BattleModePlayerPanelProps) {
   const { t } = useLocale();
   // A player can control more than one seated character (own PC + a
@@ -84,8 +90,6 @@ export function BattleModePlayerPanel({
         allParticipants={live.participants}
         isMyTurn={participant.participantId === live.activeParticipantId}
         character={characters?.find((c) => c.id === participant.characterId)}
-        showDiceRoller={showDiceRoller}
-        setShowDiceRoller={setShowDiceRoller}
       />
     </div>
   );
@@ -100,16 +104,12 @@ function PlayerPanelBody({
   allParticipants,
   isMyTurn,
   character,
-  showDiceRoller,
-  setShowDiceRoller,
 }: {
   encounterId: string;
   participant: EncounterLiveState['participants'][number];
   allParticipants: EncounterLiveState['participants'];
   isMyTurn: boolean;
   character: Character | undefined;
-  showDiceRoller: boolean;
-  setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
 }) {
   const { t } = useLocale();
   const { campaign } = useCampaignShell();
@@ -169,16 +169,27 @@ function PlayerPanelBody({
                   ? participant.bonusActionUsed
                   : participant.reactionUsed;
             const modifier = action.rollTrigger && abilityScores ? abilityModifier(abilityScores[action.rollTrigger.ability]) : 0;
+            const declaresIntentOnly = DECLARES_INTENT_ONLY_KEYS.has(action.key);
+            const tooltip = !isMyTurn
+              ? t('encounters.actionEconomy.notYourTurn')
+              : declaresIntentOnly
+                ? `${actionDescription(t, action.key)} ${t('encounters.playerPanel.declaresIntentOnlyHint')}`
+                : actionDescription(t, action.key);
             return (
               <div key={action.key} className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  title={!isMyTurn ? t('encounters.actionEconomy.notYourTurn') : actionDescription(t, action.key)}
+                  title={tooltip}
                   disabled={used || !isMyTurn || spendMutation.isPending}
                   onClick={() => spendMutation.mutate({ spend: action.slot, dash: action.isDash })}
                   className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs px-2 py-1"
                 >
                   {actionLabel(t, action.key)}
+                  {declaresIntentOnly && (
+                    <span className="ml-1 text-stone-500" aria-hidden="true">
+                      *
+                    </span>
+                  )}
                 </button>
                 {action.rollTrigger && abilityScores && (
                   <DiceRoller
@@ -194,6 +205,7 @@ function PlayerPanelBody({
             );
           })}
         </div>
+        <p className="text-[10px] text-stone-600">{t('encounters.playerPanel.declaresIntentOnlyLegend')}</p>
         {spendMutation.isError && <ErrorBanner message={errorMessage(spendMutation.error)} />}
         {participant.characterId && (
           <CastPanel encounterId={encounterId} casterCharacterId={participant.characterId} participants={allParticipants} />
@@ -222,12 +234,6 @@ function PlayerPanelBody({
         </ul>
       </div>
 
-      <div className="flex gap-2">
-        <ActionButton onClick={() => setShowDiceRoller((s) => !s)} variant={showDiceRoller ? 'primary' : 'secondary'}>
-          {showDiceRoller ? t('encounters.tracker.hideDice') : t('encounters.tracker.rollDice')}
-        </ActionButton>
-      </div>
-      {showDiceRoller && <QuickDiceRoller encounterId={encounterId} characterId={participant.characterId ?? undefined} />}
     </div>
   );
 }

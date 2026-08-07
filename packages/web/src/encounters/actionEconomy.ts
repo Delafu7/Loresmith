@@ -56,18 +56,29 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
     description: 'Doubles your remaining movement this turn.',
   },
   {
+    // UX finding #1 (Iteration 3 audit, live-confirmed) — this used to be
+    // labeled plain "Shove"/"Grab (Grapple)," identical or near-identical
+    // to ActionEconomyPanel's separate, DM-only "Shove NPC:"/"Grapple NPC:"
+    // section that actually resolves the contested check and applies the
+    // outcome (push/prone/grappled). This button only ever spends the
+    // action slot and rolls an ad-hoc Athletics check — it never touches a
+    // target, condition, or position. "(freeform)" in the label is the fix:
+    // it now reads unambiguously as "roll for the table, DM narrates/
+    // resolves it," not as a second way to actually shove/grapple someone.
     key: 'grab',
-    label: 'Grab (Grapple)',
+    label: 'Grapple (freeform)',
     slot: 'action',
     rollTrigger: { rollContext: 'Grapple (Athletics)', ability: 'str' },
-    description: "Contested Athletics check against the target's Athletics or Acrobatics.",
+    description:
+      "Rolls a contested Athletics check and spends the action slot only — it does NOT move, knock prone, or grapple anyone. For an actual resolved grapple against a specific NPC (which does), use the DM's \"Grapple NPC\" section below instead.",
   },
   {
     key: 'shove',
-    label: 'Shove',
+    label: 'Shove (freeform)',
     slot: 'action',
     rollTrigger: { rollContext: 'Shove (Athletics)', ability: 'str' },
-    description: "Contested Athletics check to knock a target prone or push it 5 ft.",
+    description:
+      "Rolls a contested Athletics check and spends the action slot only — it does NOT move, knock prone, or push anyone. For an actual resolved shove against a specific NPC (which does), use the DM's \"Shove NPC\" section below instead.",
   },
   {
     key: 'throw',

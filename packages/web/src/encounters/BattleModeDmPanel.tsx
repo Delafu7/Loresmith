@@ -16,7 +16,6 @@ import { HpAdjustForm } from '../components/HpAdjustForm';
 import { EffectBadge } from '../components/EffectBadge';
 import { EffectApplyDialog } from '../components/EffectApplyDialog';
 import { EmptyState } from '../components/Feedback';
-import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { TurnTorch } from '../components/TurnTorch';
 import { DispositionControl } from './DispositionPanel';
 import { useLocale } from '../i18n/LocaleContext';
@@ -52,8 +51,6 @@ export interface BattleModeDmPanelProps {
   monsters: MonsterCatalogEntry[] | undefined;
   expandedParticipantId: string | null;
   setExpandedParticipantId: Dispatch<SetStateAction<string | null>>;
-  showDiceRoller: boolean;
-  setShowDiceRoller: Dispatch<SetStateAction<boolean>>;
   startMutation: MutationLike<void>;
   endMutation: MutationLike<void>;
   startCombatMutation: MutationLike<void>;
@@ -78,8 +75,6 @@ export function BattleModeDmPanel({
   monsters,
   expandedParticipantId,
   setExpandedParticipantId,
-  showDiceRoller,
-  setShowDiceRoller,
   startMutation,
   endMutation,
   startCombatMutation,
@@ -299,12 +294,8 @@ export function BattleModeDmPanel({
       </div>
 
       <div className="flex gap-2 items-center justify-between">
-        <ActionButton onClick={() => setShowDiceRoller((s) => !s)} variant={showDiceRoller ? 'primary' : 'secondary'}>
-          {showDiceRoller ? t('encounters.tracker.hideDice') : t('encounters.tracker.rollDice')}
-        </ActionButton>
         <ResetRevealsButton encounterId={encounterId} />
       </div>
-      {showDiceRoller && <QuickDiceRoller encounterId={encounterId} />}
     </div>
   );
 }

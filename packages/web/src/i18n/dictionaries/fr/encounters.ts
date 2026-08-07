@@ -67,6 +67,8 @@ export const encounters = {
   playerPanel: {
     actionsTitle: 'Actions',
     notYourTurnHint: 'Ce n’est pas votre tour — les actions sont désactivées jusqu’à votre tour.',
+    declaresIntentOnlyHint: "Ceci ne fait que dépenser l'action (et lancer les dés, le cas échéant) — votre MJ applique ou arbitre l'effet réel séparément.",
+    declaresIntentOnlyLegend: "* Dépense uniquement l'action — votre MJ applique/arbitre l'effet.",
     inventoryTitle: 'Inventaire',
     noItems: 'Aucun objet.',
     equipped: 'Équipé',
@@ -116,10 +118,13 @@ export const encounters = {
     actions: {
       dash: { label: 'Foncer', description: 'Double votre mouvement restant ce tour-ci.' },
       grab: {
-        label: 'Agripper (Empoignade)',
-        description: 'Test d’Athlétisme opposé à l’Athlétisme ou aux Acrobaties de la cible.',
+        label: 'Empoignade (libre)',
+        description: "Lance un test d'Athlétisme opposé et dépense l'action, rien de plus — ne déplace ni n'agrippe personne. Pour une prise réellement résolue contre un PNJ précis, utilisez « Agripper un PNJ » ci-dessous.",
       },
-      shove: { label: 'Bousculer', description: 'Test d’Athlétisme opposé pour mettre une cible à terre ou la repousser de 5 pi.' },
+      shove: {
+        label: 'Bousculade (libre)',
+        description: "Lance un test d'Athlétisme opposé et dépense l'action, rien de plus — ne déplace, ne renverse ni ne repousse personne. Pour une bousculade réellement résolue contre un PNJ précis, utilisez « Bousculer un PNJ » ci-dessous.",
+      },
       throw: {
         label: 'Lancer',
         description: 'Attaque à distance avec une arme ou un objet de lancer — utilisez les boutons Attaque/Dégâts de cette arme pour le jet.',
@@ -257,6 +262,10 @@ export const encounters = {
     minimize: 'Réduire',
     forceFullscreen: 'Ramener tout le monde en plein écran',
     switchSession: 'Changer de session',
+    roleDm: 'MJ',
+    rolePlayer: 'Joueur',
+    roleSpectator: 'Spectateur',
+    playingAs: 'Joue en tant que {name}',
   },
   disposition: {
     label: 'Disposition',

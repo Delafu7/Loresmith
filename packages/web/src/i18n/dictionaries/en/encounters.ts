@@ -72,6 +72,8 @@ export const encounters = {
   playerPanel: {
     actionsTitle: 'Actions',
     notYourTurnHint: 'Not your turn — actions are disabled until it is.',
+    declaresIntentOnlyHint: "This only spends the action (and rolls, if applicable) — your GM applies or adjudicates the actual effect separately.",
+    declaresIntentOnlyLegend: '* Spends the action only — your GM applies/adjudicates the effect.',
     inventoryTitle: 'Inventory',
     noItems: 'No items.',
     equipped: 'Equipped',
@@ -121,10 +123,13 @@ export const encounters = {
     actions: {
       dash: { label: 'Dash', description: 'Doubles your remaining movement this turn.' },
       grab: {
-        label: 'Grab (Grapple)',
-        description: "Contested Athletics check against the target's Athletics or Acrobatics.",
+        label: 'Grapple (freeform)',
+        description: "Rolls a contested Athletics check and spends the action slot only — doesn't move or grapple anyone. For a resolved grapple against a specific NPC, use \"Grapple NPC\" below.",
       },
-      shove: { label: 'Shove', description: 'Contested Athletics check to knock a target prone or push it 5 ft.' },
+      shove: {
+        label: 'Shove (freeform)',
+        description: "Rolls a contested Athletics check and spends the action slot only — doesn't move, knock prone, or push anyone. For a resolved shove against a specific NPC, use \"Shove NPC\" below.",
+      },
       throw: {
         label: 'Throw',
         description: "Ranged attack with a thrown weapon or object — use that weapon's own Attack/Damage buttons for the roll.",
@@ -262,6 +267,10 @@ export const encounters = {
     minimize: 'Minimize',
     forceFullscreen: 'Bring everyone to fullscreen',
     switchSession: 'Switch session',
+    roleDm: 'DM',
+    rolePlayer: 'Player',
+    roleSpectator: 'Spectator',
+    playingAs: 'Playing as {name}',
   },
   disposition: {
     label: 'Disposition',

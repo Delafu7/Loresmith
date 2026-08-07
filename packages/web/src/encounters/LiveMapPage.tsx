@@ -11,13 +11,14 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Campaign, CampaignRole, Encounter, EncounterWithParticipants } from '../lib/types';
+import type { Campaign, CampaignRole, Character, Encounter, EncounterWithParticipants } from '../lib/types';
 import { RequireAuth } from '../auth/RequireAuth';
 import { useAuth } from '../auth/AuthContext';
 import { CampaignShellContext } from '../campaigns/CampaignShell';
 import { useJoinCampaign } from '../lib/useJoinCampaign';
 import { isUuid } from '../lib/ids';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
+import { Badge } from '../components/ui/Badge';
 import { useLocale } from '../i18n/LocaleContext';
 import { useEncounterSessionData } from './useEncounterSessionData';
 import { SessionScreen } from './SessionScreen';
@@ -37,9 +38,24 @@ function LiveMapPageInner() {
   const encounterId = params.encounterId ?? '';
   const navigate = useNavigate();
   const { t } = useLocale();
-  const { roleForCampaign } = useAuth();
+  const { user, roleForCampaign } = useAuth();
 
   useJoinCampaign(campaignId);
+
+  // UX finding #3 (Iteration 3 audit) — this fullscreen view (the one
+  // screen the whole table spends the most time in) had zero header chrome
+  // by design and carried no "you are the DM" / "playing as [Character]"
+  // signal anywhere. Same ['characters', campaignId] query key
+  // useEncounterSessionData's own charactersQuery uses — shares its cache
+  // once that hook mounts too, no extra request.
+  const charactersQuery = useQuery({
+    queryKey: ['characters', campaignId],
+    queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${campaignId}/characters`),
+    enabled: isUuid(campaignId),
+  });
+  const myCharacterNames = (charactersQuery.data?.characters ?? [])
+    .filter((c) => (c.controller_user_id ?? c.owner_user_id) === user?.id)
+    .map((c) => c.name);
 
   const campaignQuery = useQuery({
     queryKey: ['campaign', campaignId],
@@ -127,7 +143,17 @@ function LiveMapPageInner() {
     <CampaignShellContext.Provider value={{ campaignId, campaign: campaignQuery.data.campaign, role }}>
       <div className="flex h-dvh flex-col bg-stone-950 text-stone-100 overflow-hidden">
         <div className="flex flex-shrink-0 items-center justify-between gap-2 px-2 py-1 pt-[max(0.25rem,env(safe-area-inset-top))]">
-          <span className="truncate text-xs text-stone-500">{campaignQuery.data.campaign.name}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-xs text-stone-500">{campaignQuery.data.campaign.name}</span>
+            <Badge variant="outline" className="uppercase flex-shrink-0">
+              {role === 'dm' ? t('encounters.live.roleDm') : role === 'spectator' ? t('encounters.live.roleSpectator') : t('encounters.live.rolePlayer')}
+            </Badge>
+            {role !== 'dm' && myCharacterNames.length > 0 && (
+              <span className="truncate text-[11px] text-stone-500">
+                {t('encounters.live.playingAs', { name: myCharacterNames.join(', ') })}
+              </span>
+            )}
+          </div>
           <div className="flex flex-shrink-0 items-center gap-1.5">
             {(encountersListQuery.data?.encounters.length ?? 0) > 1 && (
               <select

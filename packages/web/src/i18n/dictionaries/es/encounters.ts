@@ -67,6 +67,8 @@ export const encounters = {
   playerPanel: {
     actionsTitle: 'Acciones',
     notYourTurnHint: 'No es tu turno — las acciones están deshabilitadas hasta que lo sea.',
+    declaresIntentOnlyHint: 'Esto solo gasta la acción (y tira dados, si aplica) — tu DJ aplica o adjudica el efecto real por separado.',
+    declaresIntentOnlyLegend: '* Solo gasta la acción — tu DJ aplica/adjudica el efecto.',
     inventoryTitle: 'Inventario',
     noItems: 'Sin objetos.',
     equipped: 'Equipado',
@@ -116,10 +118,13 @@ export const encounters = {
     actions: {
       dash: { label: 'Correr', description: 'Duplica tu movimiento restante este turno.' },
       grab: {
-        label: 'Agarrar (Presa)',
-        description: 'Prueba enfrentada de Atletismo contra el Atletismo o las Acrobacias del objetivo.',
+        label: 'Presa (libre)',
+        description: 'Tira una prueba enfrentada de Atletismo y gasta la acción, sin más — no mueve ni derriba a nadie. Para una presa resuelta contra un PNJ concreto, usa «Agarrar PNJ» más abajo.',
       },
-      shove: { label: 'Empujar', description: 'Prueba enfrentada de Atletismo para derribar a un objetivo o empujarlo 5 pies.' },
+      shove: {
+        label: 'Empujar (libre)',
+        description: 'Tira una prueba enfrentada de Atletismo y gasta la acción, sin más — no mueve, derriba ni empuja a nadie. Para un empujón resuelto contra un PNJ concreto, usa «Empujar PNJ» más abajo.',
+      },
       throw: {
         label: 'Lanzar',
         description: 'Ataque a distancia con un arma u objeto arrojadizo — usa los botones de Ataque/Daño de esa arma para la tirada.',
@@ -257,6 +262,10 @@ export const encounters = {
     minimize: 'Minimizar',
     forceFullscreen: 'Llevar a todos a pantalla completa',
     switchSession: 'Cambiar de sesión',
+    roleDm: 'DJ',
+    rolePlayer: 'Jugador',
+    roleSpectator: 'Espectador',
+    playingAs: 'Jugando como {name}',
   },
   disposition: {
     label: 'Disposición',
