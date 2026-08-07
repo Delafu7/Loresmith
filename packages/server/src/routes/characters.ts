@@ -44,19 +44,21 @@ import type { ArmorClassEncounterSync } from '../services/armorClass.js';
 // call's transaction has already committed (this app's universal broadcast
 // discipline), and the caller already only invokes this when the service
 // reported an actual AC change (a non-null armorClassSync).
-function broadcastArmorClassSyncs(
+async function broadcastArmorClassSyncs(
   io: Server,
   characterId: string,
   armorClass: number,
   encounterSyncs: ArmorClassEncounterSync[],
-): void {
-  for (const sync of encounterSyncs) {
-    broadcastArmorClassChanged(
-      io,
-      { encounter_id: sync.encounter_id, campaign_id: sync.campaign_id, sync_seq: sync.sync_seq },
-      { participantId: sync.participant_id, characterId, armorClass },
-    );
-  }
+): Promise<void> {
+  await Promise.all(
+    encounterSyncs.map((sync) =>
+      broadcastArmorClassChanged(
+        io,
+        { encounter_id: sync.encounter_id, campaign_id: sync.campaign_id, sync_seq: sync.sync_seq },
+        { participantId: sync.participant_id, characterId, armorClass },
+      ),
+    ),
+  );
 }
 
 // Mounted at /campaigns/:id/characters
@@ -87,7 +89,7 @@ charactersRouter.patch('/:id', async (req, res) => {
   const input = updateCharacterSchema.parse(req.body);
   const { character, armorClassSync } = await charactersService.updateCharacter(pool, req.user!.id, (req.params.id as string), input);
   if (armorClassSync) {
-    broadcastArmorClassSyncs(
+    await broadcastArmorClassSyncs(
       getIo(req.app),
       (req.params.id as string),
       armorClassSync.character.armor_class as number,
@@ -184,20 +186,22 @@ charactersRouter.patch('/:id/hp', async (req, res) => {
   const input = hpDeltaSchema.parse(req.body);
   const { character, encounterSyncs } = await charactersService.applyHpDelta(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
-  for (const sync of encounterSyncs) {
-    broadcastHpChanged(io, {
-      encounterId: sync.encounter_id,
-      campaignId: sync.campaign_id,
-      seq: sync.sync_seq,
-      participantId: sync.participant_id,
-      characterId: (req.params.id as string),
-      monsterInstanceId: null,
-      hpCurrent: character.hp_current as number,
-      hpMax: character.hp_max as number,
-      hpTemp: character.hp_temp as number,
-      delta: input.delta,
-    });
-  }
+  await Promise.all(
+    encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: (req.params.id as string),
+        monsterInstanceId: null,
+        hpCurrent: character.hp_current as number,
+        hpMax: character.hp_max as number,
+        hpTemp: character.hp_temp as number,
+        delta: input.delta,
+      }),
+    ),
+  );
   res.json({ character });
 });
 
@@ -209,20 +213,22 @@ charactersRouter.post('/:id/apply-damage', async (req, res) => {
   const input = applyDamageSchema.parse(req.body);
   const result = await charactersService.applyDamage(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
-  for (const sync of result.encounterSyncs) {
-    broadcastHpChanged(io, {
-      encounterId: sync.encounter_id,
-      campaignId: sync.campaign_id,
-      seq: sync.sync_seq,
-      participantId: sync.participant_id,
-      characterId: (req.params.id as string),
-      monsterInstanceId: null,
-      hpCurrent: result.character.hp_current as number,
-      hpMax: result.character.hp_max as number,
-      hpTemp: result.character.hp_temp as number,
-      delta: -result.appliedDamage,
-    });
-  }
+  await Promise.all(
+    result.encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: (req.params.id as string),
+        monsterInstanceId: null,
+        hpCurrent: result.character.hp_current as number,
+        hpMax: result.character.hp_max as number,
+        hpTemp: result.character.hp_temp as number,
+        delta: -result.appliedDamage,
+      }),
+    ),
+  );
   res.json({
     character: result.character,
     diceRoll: result.diceRoll,
@@ -242,7 +248,7 @@ charactersRouter.patch('/:id/armor-class-mode', async (req, res) => {
   const input = updateArmorClassModeSchema.parse(req.body);
   const { character, armorClassSync } = await charactersService.updateArmorClassMode(pool, req.user!.id, (req.params.id as string), input);
   if (armorClassSync) {
-    broadcastArmorClassSyncs(getIo(req.app), (req.params.id as string), character.armor_class as number, armorClassSync.encounterSyncs);
+    await broadcastArmorClassSyncs(getIo(req.app), (req.params.id as string), character.armor_class as number, armorClassSync.encounterSyncs);
   }
   res.json({ character });
 });
@@ -322,7 +328,7 @@ charactersRouter.post('/:id/items', async (req, res) => {
     pool, req.user!.id, (req.params.id as string), input,
   );
   if (armorClassSync) {
-    broadcastArmorClassSyncs(
+    await broadcastArmorClassSyncs(
       getIo(req.app),
       (req.params.id as string),
       armorClassSync.character.armor_class as number,
@@ -338,7 +344,7 @@ charactersRouter.patch('/:id/items/:itemId', async (req, res) => {
     pool, req.user!.id, (req.params.id as string), (req.params.itemId as string), input,
   );
   if (armorClassSync) {
-    broadcastArmorClassSyncs(
+    await broadcastArmorClassSyncs(
       getIo(req.app),
       (req.params.id as string),
       armorClassSync.character.armor_class as number,

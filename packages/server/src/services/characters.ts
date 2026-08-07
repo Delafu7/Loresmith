@@ -6,7 +6,7 @@ import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
 import { computeAppliedDamage } from './damage.js';
-import { rollDie } from './diceRolls.js';
+import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
 import { findUserByEmail } from './users.js';
 import type {
   AssignCharacterOwnerInput,
@@ -568,6 +568,10 @@ export async function applyDamage(
   // Control-gated, not ownership-gated — same reasoning as applyHpDelta above.
   const role = await authorizeCharacterAction(pool, actorId, character);
 
+  // M3: re-derived from the actual stored roll, never trusted from
+  // input.isCritical — see deriveIsCriticalFromAttackRoll's own comment.
+  const isCritical = await deriveIsCriticalFromAttackRoll(pool, character.campaign_id, input.attackRollId);
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -584,12 +588,12 @@ export async function applyDamage(
     // Dice doubling is a rolling-time concern (docs/rules/
     // attacks-and-damage.md §1.2/§2.2) — roll double the dice count when
     // this was a critical hit, never double the flat modifier.
-    const diceCount = input.isCritical ? input.diceCount * 2 : input.diceCount;
+    const diceCount = isCritical ? input.diceCount * 2 : input.diceCount;
     const rolls = Array.from({ length: diceCount }, () => rollDie(input.diceSides));
     const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
 
     const applied = computeAppliedDamage(
-      { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical: input.isCritical },
+      { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical },
       { resistances: row.damage_resistances, vulnerabilities: row.damage_vulnerabilities, immunities: row.damage_immunities },
     );
 

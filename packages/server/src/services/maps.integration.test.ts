@@ -172,4 +172,38 @@ describe('campaign map library (integration, live DB, throwaway fixtures)', () =
     const encounterRow = await pool.query<{ active_map_id: string | null }>(`SELECT active_map_id FROM encounters WHERE id = $1`, [encounterAId]);
     expect(encounterRow.rows[0]!.active_map_id).toBeNull();
   });
+
+  // Regression test for Iteration 3 security major M5 — deleting a map that
+  // was the active map of a live encounter used to bump no sync_seq and
+  // return nothing to broadcast, unlike every sibling map-mutating action
+  // (unlink/setActiveMap/cell-overrides), so connected players kept
+  // rendering the deleted map until an unrelated event forced a resync.
+  it('deleting the active map of one or more encounters bumps each affected encounter\'s sync_seq and returns them to broadcast', async () => {
+    const map = await createMap(pool, campaignId, { name: 'M5 regression test map' });
+    const beforeA = await setActiveMap(pool, encounterAId, map.id);
+    const beforeB = await setActiveMap(pool, encounterBId, map.id);
+
+    const affected = await deleteMap(pool, campaignId, map.id);
+    expect(affected).toHaveLength(2);
+    expect(affected.map((a) => a.encounter_id).sort()).toEqual([encounterAId, encounterBId].sort());
+    for (const a of affected) expect(a.campaign_id).toBe(campaignId);
+
+    const encounterARow = await pool.query<{ sync_seq: number }>(`SELECT sync_seq FROM encounters WHERE id = $1`, [encounterAId]);
+    const encounterBRow = await pool.query<{ sync_seq: number }>(`SELECT sync_seq FROM encounters WHERE id = $1`, [encounterBId]);
+    expect(encounterARow.rows[0]!.sync_seq).toBeGreaterThan(beforeA.encounter.sync_seq);
+    expect(encounterBRow.rows[0]!.sync_seq).toBeGreaterThan(beforeB.encounter.sync_seq);
+  });
+
+  it('deleting a map that is linked but not active for any encounter returns no affected encounters', async () => {
+    const activeMap = await createMap(pool, campaignId, { name: 'M5 stays active' });
+    const linkedOnlyMap = await createMap(pool, campaignId, { name: 'M5 linked, never active' });
+    await setActiveMap(pool, encounterAId, activeMap.id);
+    await linkMapToEncounter(pool, encounterAId, linkedOnlyMap.id);
+
+    const affected = await deleteMap(pool, campaignId, linkedOnlyMap.id);
+    expect(affected).toHaveLength(0);
+
+    const encounterRow = await pool.query<{ active_map_id: string | null }>(`SELECT active_map_id FROM encounters WHERE id = $1`, [encounterAId]);
+    expect(encounterRow.rows[0]!.active_map_id).toBe(activeMap.id); // untouched
+  });
 });

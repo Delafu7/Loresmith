@@ -370,8 +370,31 @@ export async function promoteHomebrewMonsterToLibrary(pool: Pool, campaignId: st
   return result.rows[0];
 }
 
+// M4 fix: converting a shared user-library monster into a specific
+// campaign's homebrew used to have no guard at all, unlike
+// deleteHomebrewMonster's own cross-campaign check just above — a template
+// still curated by OTHER campaigns' campaign_bestiary_entries could be
+// silently reassigned out from under them. Those entries survive the
+// conversion (they're keyed by monster_id, not by owner), but the OTHER
+// campaigns would then need the GET /:id shared-bestiary bypass just to
+// keep reading a row they no longer have any ownership claim to — blocking
+// the conversion instead is the same "ask the DM to remove it from every
+// other campaign's bestiary first" discipline delete already uses, applied
+// here before scope changes rather than after data loss.
 export async function assignHomebrewMonsterToCampaign(pool: Pool, campaignId: string, actorUserId: string, monsterId: string) {
   await fetchUserLibraryMonsterOrThrow(pool, actorUserId, monsterId);
+
+  const otherCampaignEntries = await pool.query(
+    `SELECT 1 FROM campaign_bestiary_entries WHERE monster_id = $1 AND campaign_id != $2 LIMIT 1`,
+    [monsterId, campaignId],
+  );
+  if ((otherCampaignEntries.rowCount ?? 0) > 0) {
+    throw new AppError(
+      'CONFLICT',
+      'This creature is still curated in another campaign\'s bestiary — remove it there first before assigning it to a specific campaign',
+    );
+  }
+
   const result = await pool.query(
     `UPDATE monsters SET owning_user_id = NULL, owning_campaign_id = $1, updated_at = now()
      WHERE id = $2 AND owning_user_id = $3

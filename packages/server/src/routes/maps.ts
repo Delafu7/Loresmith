@@ -15,6 +15,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
 import { createMapSchema, updateMapSchema } from '../schemas/maps.js';
 import * as mapsService from '../services/maps.js';
+import { getIo, broadcastFullStateResync } from '../sockets/broadcast.js';
 
 export const campaignMapsRouter = Router({ mergeParams: true });
 campaignMapsRouter.use(requireAuth, requireCampaignMember(), requireRole('dm'));
@@ -42,6 +43,13 @@ campaignMapsRouter.patch('/:mapId', async (req, res) => {
 });
 
 campaignMapsRouter.delete('/:mapId', async (req, res) => {
-  await mapsService.deleteMap(pool, req.campaignId!, req.params.mapId as string);
+  const affected = await mapsService.deleteMap(pool, req.campaignId!, req.params.mapId as string);
+  // M5 fix — this map may have been the ACTIVE map of one or more live
+  // encounters; a full state resync per affected encounter (same precedent
+  // as the encounter-scoped unlink route) tells any connected client its
+  // map field is now null, instead of silently rendering a deleted map
+  // until an unrelated event forces a resync.
+  const io = getIo(req.app);
+  await Promise.all(affected.map((a) => broadcastFullStateResync(io, a.encounter_id, a.campaign_id)));
   res.status(204).send();
 });

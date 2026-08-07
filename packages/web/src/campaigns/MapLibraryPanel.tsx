@@ -118,7 +118,15 @@ function MapLibraryContent({
                 <button
                   type="button"
                   onClick={() => {
-                    if (confirm(t('mapSection.library.confirmDelete', { name: map.name }))) deleteMutation.mutate(map.id);
+                    // M5 — deleting the currently-active map now clears it
+                    // live for anyone connected to this encounter, not just
+                    // silently until some unrelated event forces a resync;
+                    // the confirm text says so up front instead of leaving
+                    // the DM to discover it live.
+                    const message = isActive
+                      ? t('mapSection.library.confirmDeleteActive', { name: map.name })
+                      : t('mapSection.library.confirmDelete', { name: map.name });
+                    if (confirm(message)) deleteMutation.mutate(map.id);
                   }}
                   className="text-red-400 hover:text-red-300 px-1"
                   aria-label={`${t('mapSection.library.delete')} ${map.name}`}

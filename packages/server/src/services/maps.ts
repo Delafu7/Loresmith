@@ -119,13 +119,55 @@ export async function updateMap(pool: Pool, campaignId: string, mapId: string, i
   return result.rows[0]!;
 }
 
-// ON DELETE CASCADE (encounter_maps_link) / ON DELETE SET NULL
-// (encounters.active_map_id) handle cleanup — no blocking guard against
-// deleting a currently-linked/active map, matching this schema's general
-// cascade-don't-block precedent (e.g. campaign_assets deletion).
-export async function deleteMap(pool: Pool, campaignId: string, mapId: string): Promise<void> {
-  const result = await pool.query(`DELETE FROM maps WHERE id = $1 AND campaign_id = $2`, [mapId, campaignId]);
-  if (result.rowCount === 0) throw notFound('Map');
+export interface DeleteMapAffectedEncounter {
+  encounter_id: string;
+  campaign_id: string;
+}
+
+// M5 fix: ON DELETE CASCADE (encounter_maps_link) / ON DELETE SET NULL
+// (encounters.active_map_id) still handle the cleanup itself — no blocking
+// guard against deleting a currently-linked/active map, matching this
+// schema's general cascade-don't-block precedent (e.g. campaign_assets
+// deletion) — but unlike every sibling map-mutating action
+// (unlinkMapFromEncounter/setActiveMap/upsertMapCellOverride/
+// deleteMapCellOverride), this used to leave any LIVE encounter's sync_seq
+// untouched and broadcast nothing, so connected players silently kept
+// rendering a map that no longer exists server-side until some unrelated
+// event happened to force a resync. Finds every encounter this map was
+// active for BEFORE the delete (the FK SET NULL only tells the caller "it's
+// gone now", not "which encounters it used to belong to"), then bumps each
+// one's sync_seq inside the same transaction as the delete itself.
+export async function deleteMap(pool: Pool, campaignId: string, mapId: string): Promise<DeleteMapAffectedEncounter[]> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const activeFor = await client.query<{ id: string }>(
+      `SELECT id FROM encounters WHERE campaign_id = $1 AND active_map_id = $2`,
+      [campaignId, mapId],
+    );
+
+    const result = await client.query(`DELETE FROM maps WHERE id = $1 AND campaign_id = $2`, [mapId, campaignId]);
+    if (result.rowCount === 0) throw notFound('Map');
+
+    const affected: DeleteMapAffectedEncounter[] = [];
+    for (const row of activeFor.rows) {
+      const bumped = await client.query<{ id: string; campaign_id: string }>(
+        `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING id, campaign_id`,
+        [row.id],
+      );
+      const encounter = bumped.rows[0];
+      if (encounter) affected.push({ encounter_id: encounter.id, campaign_id: encounter.campaign_id });
+    }
+
+    await client.query('COMMIT');
+    return affected;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listMapsForEncounter(pool: Pool, encounterId: string): Promise<MapRow[]> {

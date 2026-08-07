@@ -11,6 +11,7 @@ export const mapSection = {
     activating: 'Cambiando…',
     delete: 'Eliminar',
     confirmDelete: '¿Eliminar el mapa "{name}"? Esto lo quitará de todos los encuentros donde esté vinculado.',
+    confirmDeleteActive: '¿Eliminar el mapa "{name}"? Es el mapa activo de este encuentro — quienes estén conectados ahora lo perderán en directo.',
     namePlaceholder: 'Nombre del nuevo mapa (p. ej. "El Valle Sin Sol — Entrada")',
     create: 'Crear mapa',
     creating: 'Creando…',

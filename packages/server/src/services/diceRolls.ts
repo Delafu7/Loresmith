@@ -7,7 +7,7 @@
 
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
-import { requireControllerOrDm, type CampaignRole } from './authz.js';
+import { requireControllerOrDm, requireNotSpectator, type CampaignRole } from './authz.js';
 import { fetchCharacterOrThrow } from './characters.js';
 import type { CreateDiceRollInput, ListDiceRollsQuery } from '../schemas/diceRolls.js';
 
@@ -80,6 +80,16 @@ export async function rollDice(
   role: CampaignRole,
   input: CreateDiceRollInput,
 ): Promise<DiceRollRow> {
+  // Security major M1 — a "bare" roll (neither characterId nor
+  // monsterInstanceId) was the only branch of this function with no role
+  // check at all: the characterId branch rejects a spectator via
+  // requireControllerOrDm, and the monsterInstanceId branch is DM-only, but
+  // a spectator supplying neither could still insert a roll row and have it
+  // broadcast, violating the "spectator is strictly read-only" contract.
+  if (input.characterId === undefined && input.monsterInstanceId === undefined) {
+    requireNotSpectator(role);
+  }
+
   // ---- characterId: must belong to THIS campaign; a player may only roll
   // as their own PC, never someone else's (or an NPC) — mirrors the
   // Control-gated, not ownership-gated — rolling dice AS a character is
@@ -170,6 +180,39 @@ export async function rollDice(
     ],
   );
   return result.rows[0]!;
+}
+
+// Security major M3 — services/characters.ts's applyDamage and
+// services/monsters.ts's applyMonsterInstanceDamage used to trust a plain
+// client-supplied `isCritical` boolean to decide whether to double the
+// damage dice, letting any authorized caller request double damage
+// regardless of what was actually rolled. This re-derives criticality from
+// the ACTUAL stored d20 roll the damage claims to follow from — the kept
+// die (never the discarded one under disadvantage, matching docs/rules/
+// attacks-and-damage.md §1.5/§3, same logic as the frontend's own
+// keptDieIndex in components/DiceRoller.tsx) must be a natural 20 on a d20
+// roll belonging to the SAME campaign as the actor. A missing/foreign/
+// non-d20 roll id is never a critical, not an error — the caller may
+// legitimately have no attack roll to reference (a DM's manual correction).
+export async function deriveIsCriticalFromAttackRoll(
+  pool: Pool,
+  campaignId: string,
+  attackRollId: string | undefined,
+): Promise<boolean> {
+  if (!attackRollId) return false;
+  const res = await pool.query<Pick<DiceRollRow, 'd20_rolls' | 'keep' | 'dice_sides'>>(
+    `SELECT d20_rolls, keep, dice_sides FROM dice_rolls WHERE id = $1 AND campaign_id = $2`,
+    [attackRollId, campaignId],
+  );
+  const row = res.rows[0];
+  if (!row || row.dice_sides !== 20 || row.d20_rolls.length === 0) return false;
+  const keptIndex =
+    row.d20_rolls.length <= 1
+      ? 0
+      : row.keep === 'disadvantage'
+        ? row.d20_rolls.indexOf(Math.min(...row.d20_rolls))
+        : row.d20_rolls.indexOf(Math.max(...row.d20_rolls));
+  return row.d20_rolls[keptIndex] === 20;
 }
 
 // ---- GET /campaigns/:id/dice-rolls — keyset (cursor) pagination ----

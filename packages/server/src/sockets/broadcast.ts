@@ -82,6 +82,68 @@ async function splitSocketsByRole(
   return { dmSocketIds, playerSocketIds };
 }
 
+// Security major M2 — buildFullStateSyncPayload/broadcastFullStateResync
+// correctly filter out a hidden (visible_to_players = false) participant,
+// but every OTHER per-participant broadcast below used to be a plain
+// room-wide emit with no such check, so an ambush's position/HP/effects/AC/
+// action-economy/faction leaked to player sockets in real time even though
+// the participant row itself was correctly withheld from FULL_STATE_SYNC.
+// This also caused a real staleness bug: an effect applied to a hidden
+// participant was dropped client-side (no matching participant row to
+// attach it to) and never appeared once the participant was revealed,
+// because the original EFFECT_APPLIED never reached the player at all.
+//
+// Two lookups below (by participant id, and by encounter+target for the
+// effect events which don't carry a participant id) rather than one shared
+// shape, since the two callers have different data on hand.
+export async function isParticipantIdVisibleToPlayers(poolOrClient: Pool | PoolClient, participantId: string): Promise<boolean> {
+  const res = await poolOrClient.query<{ visible_to_players: boolean }>(
+    `SELECT visible_to_players FROM combat_participants WHERE id = $1`,
+    [participantId],
+  );
+  // Missing row (already removed) defaults to visible — never the wrong
+  // direction to fail in, since the alternative silently hides a legitimate
+  // event with no participant left to reveal it later.
+  return res.rows[0]?.visible_to_players !== false;
+}
+
+export async function isEncounterTargetVisibleToPlayers(
+  poolOrClient: Pool | PoolClient,
+  encounterId: string,
+  characterId: string | null,
+  monsterInstanceId: string | null,
+): Promise<boolean> {
+  if (characterId == null && monsterInstanceId == null) return true;
+  const res = await poolOrClient.query<{ visible_to_players: boolean }>(
+    `SELECT visible_to_players FROM combat_participants
+     WHERE encounter_id = $1 AND (character_id = $2 OR monster_instance_id = $3)
+     LIMIT 1`,
+    [encounterId, characterId, monsterInstanceId],
+  );
+  // No matching participant row (e.g. an outside-combat effect on a
+  // character that isn't currently seated anywhere) — nothing to hide.
+  return res.rows[0]?.visible_to_players !== false;
+}
+
+// Splits room sockets by role and emits the SAME payload to both — the DM
+// side is unconditional, the player side is skipped entirely when
+// `visibleToPlayers` is false. Every event in this file that targets a
+// specific combat participant (as opposed to encounter-wide state like
+// MAP_UPDATED/MODE_CHANGED, which was never participant-hidden info) routes
+// through this rather than a bare `io.to(room).emit(...)`.
+async function emitToEncounterRespectingVisibility(
+  io: Server,
+  campaignId: string,
+  encounterId: string,
+  event: string,
+  payload: Record<string, unknown>,
+  visibleToPlayers: boolean,
+): Promise<void> {
+  const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, campaignId, encounterRoom(encounterId));
+  if (dmSocketIds.length > 0) io.to(dmSocketIds).emit(event, payload);
+  if (visibleToPlayers && playerSocketIds.length > 0) io.to(playerSocketIds).emit(event, payload);
+}
+
 // ---- Events with no visibility split (identical payload for DM + players) ----
 
 export function broadcastCombatStarted(io: Server, encounter: EncounterLike): void {
@@ -100,21 +162,33 @@ export function broadcastCombatEnded(io: Server, encounter: EncounterLike): void
   void io.in(room).socketsLeave(room);
 }
 
-export function broadcastInitiativeRolled(
+// M2: rolling initiative for the whole encounter can include a hidden
+// (ambush) participant — that participant's row (and thus its position in
+// the turn order) must not reach player sockets. Two payloads, same
+// "compute per-role server-side" discipline as buildFullStateSyncPayload,
+// rather than the single shared payload this used to be.
+export async function broadcastInitiativeRolled(
   io: Server,
   encounter: EncounterLike,
-  participants: Array<{ id: string; initiative_roll: number; initiative_tiebreak: number | null; turn_order: number }>,
-): void {
-  io.to(encounterRoom(encounter.id)).emit('INITIATIVE_ROLLED', {
+  participants: Array<{ id: string; initiative_roll: number; initiative_tiebreak: number | null; turn_order: number; visible_to_players?: boolean }>,
+): Promise<void> {
+  const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, encounter.campaign_id, encounterRoom(encounter.id));
+  const toWire = (list: typeof participants) => ({
     ...envelope(encounter),
     // no HP in payload, per PLAN.md §5.2
-    participants: participants.map((p) => ({
+    participants: list.map((p) => ({
       participantId: p.id,
       initiativeRoll: p.initiative_roll,
       initiativeTiebreak: p.initiative_tiebreak,
       turnOrder: p.turn_order,
     })),
   });
+
+  if (dmSocketIds.length > 0) io.to(dmSocketIds).emit('INITIATIVE_ROLLED', toWire(participants));
+  if (playerSocketIds.length > 0) {
+    const visible = participants.filter((p) => p.visible_to_players !== false);
+    io.to(playerSocketIds).emit('INITIATIVE_ROLLED', toWire(visible));
+  }
 }
 
 export function broadcastTurnAdvanced(
@@ -131,21 +205,33 @@ export function broadcastTurnAdvanced(
   });
 }
 
-export function broadcastParticipantJoined(
+// M2: gated the same as every other per-participant event even though
+// today's addParticipant/spawn schemas always create a row visible=true (no
+// create-time hidden option exists yet) — structural consistency so a
+// future hidden-at-spawn capability can't reintroduce this leak by having to
+// remember to add the check here.
+export async function broadcastParticipantJoined(
   io: Server,
   encounter: EncounterLike,
-  participant: { id: string; character_id: string | null; monster_instance_id: string | null; initiative_roll: number; turn_order: number },
-): void {
-  io.to(encounterRoom(encounter.id)).emit('PARTICIPANT_JOINED', {
-    ...envelope(encounter),
-    participant: {
-      participantId: participant.id,
-      characterId: participant.character_id,
-      monsterInstanceId: participant.monster_instance_id,
-      initiativeRoll: participant.initiative_roll,
-      turnOrder: participant.turn_order,
+  participant: { id: string; character_id: string | null; monster_instance_id: string | null; initiative_roll: number; turn_order: number; visible_to_players?: boolean },
+): Promise<void> {
+  await emitToEncounterRespectingVisibility(
+    io,
+    encounter.campaign_id,
+    encounter.id,
+    'PARTICIPANT_JOINED',
+    {
+      ...envelope(encounter),
+      participant: {
+        participantId: participant.id,
+        characterId: participant.character_id,
+        monsterInstanceId: participant.monster_instance_id,
+        initiativeRoll: participant.initiative_roll,
+        turnOrder: participant.turn_order,
+      },
     },
-  });
+    participant.visible_to_players !== false,
+  );
 }
 
 /**
@@ -220,17 +306,25 @@ export function broadcastMapUpdated(io: Server, encounter: EncounterLike, map: E
   });
 }
 
-export function broadcastTokenMoved(
+// M2: position is exactly the kind of thing an ambush needs hidden — a
+// player's client silently rendering a moving token for a participant that
+// was never supposed to appear in their roster defeats the whole point of
+// visible_to_players. Looked up fresh by participant id since the callers
+// (movement/teleport routes) don't already have the flag on hand.
+export async function broadcastTokenMoved(
   io: Server,
   encounter: EncounterLike,
   participant: { id: string; pos_x: number | null; pos_y: number | null },
-): void {
-  io.to(encounterRoom(encounter.id)).emit('TOKEN_MOVED', {
-    ...envelope(encounter),
-    participantId: participant.id,
-    x: participant.pos_x,
-    y: participant.pos_y,
-  });
+): Promise<void> {
+  const visible = await isParticipantIdVisibleToPlayers(pool, participant.id);
+  await emitToEncounterRespectingVisibility(
+    io,
+    encounter.campaign_id,
+    encounter.id,
+    'TOKEN_MOVED',
+    { ...envelope(encounter), participantId: participant.id, x: participant.pos_x, y: participant.pos_y },
+    visible,
+  );
 }
 
 // Exploration/combat mode toggle — the one genuinely new realtime event this
@@ -264,16 +358,23 @@ export function broadcastDispositionChanged(
 
 // REFACTOR-PLAN.md §3 — same no-visibility-split shape as TOKEN_MOVED above
 // (faction isn't HP-sensitive info).
-export function broadcastParticipantFactionChanged(
+// M2: a hidden ambusher's faction (e.g. flipped from 'neutral' to 'enemy'
+// right before the DM reveals it) must not tip a player off before the
+// reveal itself does.
+export async function broadcastParticipantFactionChanged(
   io: Server,
   encounter: EncounterLike,
   participant: { id: string; faction: 'player' | 'ally' | 'enemy' | 'neutral' },
-): void {
-  io.to(encounterRoom(encounter.id)).emit('PARTICIPANT_FACTION_CHANGED', {
-    ...envelope(encounter),
-    participantId: participant.id,
-    faction: participant.faction,
-  });
+): Promise<void> {
+  const visible = await isParticipantIdVisibleToPlayers(pool, participant.id);
+  await emitToEncounterRespectingVisibility(
+    io,
+    encounter.campaign_id,
+    encounter.id,
+    'PARTICIPANT_FACTION_CHANGED',
+    { ...envelope(encounter), participantId: participant.id, faction: participant.faction },
+    visible,
+  );
 }
 
 // ---- ACTION_ECONOMY_CHANGED (Phase 3.6) ----
@@ -281,7 +382,10 @@ export function broadcastParticipantFactionChanged(
 // Same "no DM/player visibility split" reasoning as MAP_UPDATED/TOKEN_MOVED
 // just above — whether a participant has spent their action this turn isn't
 // HP-sensitive info, so this is a plain room-wide broadcast too.
-export function broadcastActionEconomyChanged(
+// M2: whether a hidden participant has spent its action/bonus/reaction this
+// turn is exactly the kind of tell an ambush must not leak before the DM
+// reveals it.
+export async function broadcastActionEconomyChanged(
   io: Server,
   encounter: EncounterLike,
   participant: {
@@ -293,17 +397,25 @@ export function broadcastActionEconomyChanged(
     movement_used_ft: number;
     object_interaction_used: boolean;
   },
-): void {
-  io.to(encounterRoom(encounter.id)).emit('ACTION_ECONOMY_CHANGED', {
-    ...envelope(encounter),
-    participantId: participant.id,
-    actionUsed: participant.action_used,
-    bonusActionUsed: participant.bonus_action_used,
-    reactionUsed: participant.reaction_used,
-    dashUsed: participant.dash_used,
-    movementUsedFt: participant.movement_used_ft,
-    objectInteractionUsed: participant.object_interaction_used,
-  });
+): Promise<void> {
+  const visible = await isParticipantIdVisibleToPlayers(pool, participant.id);
+  await emitToEncounterRespectingVisibility(
+    io,
+    encounter.campaign_id,
+    encounter.id,
+    'ACTION_ECONOMY_CHANGED',
+    {
+      ...envelope(encounter),
+      participantId: participant.id,
+      actionUsed: participant.action_used,
+      bonusActionUsed: participant.bonus_action_used,
+      reactionUsed: participant.reaction_used,
+      dashUsed: participant.dash_used,
+      movementUsedFt: participant.movement_used_ft,
+      objectInteractionUsed: participant.object_interaction_used,
+    },
+    visible,
+  );
 }
 
 // ---- PARTICIPANT_AC_CHANGED (Phase 3.5) ----
@@ -328,27 +440,43 @@ export interface ArmorClassSyncTarget {
   sync_seq: number;
 }
 
-export function broadcastArmorClassChanged(
+// M2: an ambusher's AC recompute (e.g. its controlling player toggling
+// auto-AC on their delegated PC) must not leak before the DM reveals it —
+// same reasoning as every other per-participant event in this file, AC's
+// own "not sensitive info" framing above only ever applied to a VISIBLE
+// participant's AC.
+export async function broadcastArmorClassChanged(
   io: Server,
   sync: ArmorClassSyncTarget,
   participant: { participantId: string; characterId: string; armorClass: number },
-): void {
-  io.to(encounterRoom(sync.encounter_id)).emit('PARTICIPANT_AC_CHANGED', {
-    encounterId: sync.encounter_id,
-    campaignId: sync.campaign_id,
-    seq: sync.sync_seq,
-    serverTimestamp: Date.now(),
-    participantId: participant.participantId,
-    characterId: participant.characterId,
-    armorClass: participant.armorClass,
-  });
+): Promise<void> {
+  const visible = await isParticipantIdVisibleToPlayers(pool, participant.participantId);
+  await emitToEncounterRespectingVisibility(
+    io,
+    sync.campaign_id,
+    sync.encounter_id,
+    'PARTICIPANT_AC_CHANGED',
+    {
+      encounterId: sync.encounter_id,
+      campaignId: sync.campaign_id,
+      seq: sync.sync_seq,
+      serverTimestamp: Date.now(),
+      participantId: participant.participantId,
+      characterId: participant.characterId,
+      armorClass: participant.armorClass,
+    },
+    visible,
+  );
 }
 
 // ---- HP_CHANGED ----
 //
-// HP is always visible to every campaign member (the DM/player visibility
-// split this event used to carry — exact/banded/hidden per participant —
-// was removed along with hp_visibility; see the "remove hide/reveal" work).
+// HP is always visible to every campaign member ONCE a participant row is
+// visible at all (the old per-field exact/banded/hidden hp_visibility was
+// removed along with the rest of hide/reveal). M2: that's a narrower claim
+// than the comment used to make — a currently-hidden (visible_to_players =
+// false) participant's HP must still not reach a player socket, same as
+// every other per-participant event in this file.
 
 export interface HpChangeTarget {
   encounterId: string;
@@ -363,18 +491,26 @@ export interface HpChangeTarget {
   delta: number;
 }
 
-export function broadcastHpChanged(io: Server, target: HpChangeTarget): void {
-  io.to(encounterRoom(target.encounterId)).emit('HP_CHANGED', {
-    encounterId: target.encounterId,
-    campaignId: target.campaignId,
-    seq: target.seq,
-    serverTimestamp: Date.now(),
-    participantId: target.participantId,
-    characterId: target.characterId,
-    monsterInstanceId: target.monsterInstanceId,
-    changeType: target.delta > 0 ? 'heal' : target.delta < 0 ? 'damage' : 'none',
-    hp: { hpCurrent: target.hpCurrent, hpMax: target.hpMax, hpTemp: target.hpTemp },
-  });
+export async function broadcastHpChanged(io: Server, target: HpChangeTarget): Promise<void> {
+  const visible = await isParticipantIdVisibleToPlayers(pool, target.participantId);
+  await emitToEncounterRespectingVisibility(
+    io,
+    target.campaignId,
+    target.encounterId,
+    'HP_CHANGED',
+    {
+      encounterId: target.encounterId,
+      campaignId: target.campaignId,
+      seq: target.seq,
+      serverTimestamp: Date.now(),
+      participantId: target.participantId,
+      characterId: target.characterId,
+      monsterInstanceId: target.monsterInstanceId,
+      changeType: target.delta > 0 ? 'heal' : target.delta < 0 ? 'damage' : 'none',
+      hp: { hpCurrent: target.hpCurrent, hpMax: target.hpMax, hpTemp: target.hpTemp },
+    },
+    visible,
+  );
 }
 
 // ---- REVEAL_CHANGED ----
@@ -477,17 +613,38 @@ function effectPayloadBase(sync: EffectSyncTarget, effect: EffectBroadcastRow, n
   };
 }
 
-export function broadcastEffectApplied(io: Server, sync: EffectSyncTarget, effect: EffectBroadcastRow, effectDefinitionName: string): void {
-  io.to(encounterRoom(sync.encounter_id)).emit('EFFECT_APPLIED', effectPayloadBase(sync, effect, effectDefinitionName));
+// M2: this was the concrete staleness bug the audit caught, not just a
+// theoretical leak — an effect applied to a hidden participant used to
+// still broadcast room-wide, so a player's client (which has no row for
+// that participant) just silently dropped it, and it never appeared even
+// once the participant was later revealed (FULL_STATE_SYNC on reveal
+// carries the participant's CURRENT effects, but the player never got the
+// APPLIED event that would have shown it arriving). Gating this on
+// visibility fixes both problems at once: no leak while hidden, and a
+// correct APPLIED/EXPIRED history once the reveal's FULL_STATE_SYNC
+// resync exposes the participant. Looked up by encounter + target
+// (character_id/monster_instance_id) since neither EffectSyncTarget nor
+// EffectBroadcastRow carries a participant id.
+export async function broadcastEffectApplied(io: Server, sync: EffectSyncTarget, effect: EffectBroadcastRow, effectDefinitionName: string): Promise<void> {
+  const visible = await isEncounterTargetVisibleToPlayers(pool, sync.encounter_id, effect.character_id, effect.monster_instance_id);
+  await emitToEncounterRespectingVisibility(
+    io,
+    sync.campaign_id,
+    sync.encounter_id,
+    'EFFECT_APPLIED',
+    effectPayloadBase(sync, effect, effectDefinitionName),
+    visible,
+  );
 }
 
-export function broadcastEffectExpired(io: Server, sync: EffectSyncTarget, effect: EffectBroadcastRow, effectDefinitionName: string): void {
+export async function broadcastEffectExpired(io: Server, sync: EffectSyncTarget, effect: EffectBroadcastRow, effectDefinitionName: string): Promise<void> {
   // durationRemaining is forced to 0 here regardless of the row's stored
   // duration_value — "expired" means zero remaining by definition, whether
   // it got there via the automatic per-round decrement or a DM manually
   // removing an effect early (whose duration_value may still be positive).
+  const visible = await isEncounterTargetVisibleToPlayers(pool, sync.encounter_id, effect.character_id, effect.monster_instance_id);
   const payload = { ...effectPayloadBase(sync, effect, effectDefinitionName), durationRemaining: 0 };
-  io.to(encounterRoom(sync.encounter_id)).emit('EFFECT_EXPIRED', payload);
+  await emitToEncounterRespectingVisibility(io, sync.campaign_id, sync.encounter_id, 'EFFECT_EXPIRED', payload, visible);
 }
 
 // ---- FULL_STATE_SYNC — always a fresh DB read, never cached ----

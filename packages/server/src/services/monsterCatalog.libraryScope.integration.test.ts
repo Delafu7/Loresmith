@@ -147,6 +147,30 @@ describe('monster library scope (integration, live DB, throwaway fixtures)', () 
     });
   });
 
+  // Regression test for Iteration 3 security major M4 — assignHomebrewMonsterToCampaign
+  // used to have no guard at all, unlike deleteHomebrewMonster's own
+  // cross-campaign check just above: a shared library monster still
+  // curated by another campaign's bestiary could be silently converted into
+  // a specific campaign's homebrew out from under it.
+  it('blocks assigning a library monster to a campaign while another campaign still curates it in its bestiary', async () => {
+    const monster = await createHomebrewMonster(pool, campaignAId, dmAId, {
+      ...homebrewInput('Assign Guard Test'),
+      libraryScope: 'library',
+    });
+    await addToCampaignBestiary(pool, campaignBId, dmAId, [monster.id as string]);
+
+    await expect(assignHomebrewMonsterToCampaign(pool, campaignAId, dmAId, monster.id as string)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+
+    // Removing the other campaign's bestiary entry clears the way, same
+    // "remove it from every other campaign's bestiary first" resolution
+    // deleteHomebrewMonster's own guard expects.
+    await pool.query(`DELETE FROM campaign_bestiary_entries WHERE monster_id = $1`, [monster.id]);
+    const assigned = await assignHomebrewMonsterToCampaign(pool, campaignAId, dmAId, monster.id as string);
+    expect(assigned.owning_campaign_id).toBe(campaignAId);
+  });
+
   it('duplicateHomebrewMonster records provenance via derived_from_template_id', async () => {
     const source = await createHomebrewMonster(pool, campaignAId, dmAId, homebrewInput('Fork Source'));
     const fork = await duplicateHomebrewMonster(pool, campaignBId, source.id as string);

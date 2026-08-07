@@ -11,6 +11,7 @@ export const mapSection = {
     activating: 'Changement…',
     delete: 'Supprimer',
     confirmDelete: 'Supprimer la carte « {name} » ? Elle sera retirée de toutes les rencontres où elle est liée.',
+    confirmDeleteActive: 'Supprimer la carte « {name} » ? C\'est la carte active de cette rencontre — les personnes connectées la perdront en direct.',
     namePlaceholder: 'Nom de la nouvelle carte (ex. « La Vallée Sans Soleil — Entrée »)',
     create: 'Créer la carte',
     creating: 'Création…',

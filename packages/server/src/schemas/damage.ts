@@ -12,10 +12,25 @@ export const applyDamageSchema = z.object({
   modifier: z.number().int().default(0),
   // null/omitted = untyped damage, never resisted/vulnerable/immune.
   damageType: z.string().max(50).optional().nullable(),
-  // Doubles diceCount server-side before rolling (docs/rules/
-  // attacks-and-damage.md §1.2/§2.2 — dice doubling is a rolling-time
-  // concern, not a post-roll multiplier).
+  // Security major M3 fix: this field is no longer trusted. It used to
+  // drive dice-count doubling directly (docs/rules/attacks-and-damage.md
+  // §1.2/§2.2), which let any authorized caller request double damage dice
+  // regardless of what was actually rolled — undermining the "RNG lives
+  // here and only here" invariant. Left in the schema (default false,
+  // silently ignored) only so an old client payload that still sends it
+  // doesn't fail validation; services/characters.ts's applyDamage and
+  // services/monsters.ts's applyMonsterInstanceDamage now derive
+  // criticality themselves from attackRollId below.
   isCritical: z.boolean().default(false),
+  // The dice_rolls row id of the attack roll (POST .../dice-rolls) this
+  // damage application follows from, if any — the server looks up that
+  // row's actual d20_rolls/keep and re-derives whether it was a critical
+  // hit (kept die === 20), rather than trusting a client-asserted boolean.
+  // Omitted entirely for damage with no backing attack roll (a DM's manual
+  // correction, an environmental/save-based effect) — those can never be
+  // critical, matching docs/rules/attacks-and-damage.md §1.6 ("save-based
+  // effects never crit").
+  attackRollId: z.string().uuid().optional(),
   rollContext: z.string().min(1).max(200).optional().nullable(),
   encounterId: z.string().uuid().optional(),
 });

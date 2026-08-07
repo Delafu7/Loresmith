@@ -5,7 +5,7 @@ import { applyHpDeltaWithTempAbsorption } from './hp.js';
 import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { MONSTER_INSTANCE_STAT_BLOCK_SQL } from '../domain/revealFields.js';
 import { computeAppliedDamage } from './damage.js';
-import { rollDie } from './diceRolls.js';
+import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
 import type {
   CreateMonsterInstanceInput,
   MonsterInstanceHpDeltaInput,
@@ -371,6 +371,10 @@ export async function applyMonsterInstanceDamage(
   const role = await requireMembership(pool, instance.campaign_id, actorId);
   requireDm(role);
 
+  // M3: re-derived from the actual stored roll, never trusted from
+  // input.isCritical — see deriveIsCriticalFromAttackRoll's own comment.
+  const isCritical = await deriveIsCriticalFromAttackRoll(pool, instance.campaign_id, input.attackRollId);
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -391,12 +395,12 @@ export async function applyMonsterInstanceDamage(
     );
     const row = locked.rows[0]!;
 
-    const diceCount = input.isCritical ? input.diceCount * 2 : input.diceCount;
+    const diceCount = isCritical ? input.diceCount * 2 : input.diceCount;
     const rolls = Array.from({ length: diceCount }, () => rollDie(input.diceSides));
     const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
 
     const applied = computeAppliedDamage(
-      { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical: input.isCritical },
+      { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical },
       {
         resistances: row.damage_resistances ?? [],
         vulnerabilities: row.damage_vulnerabilities ?? [],

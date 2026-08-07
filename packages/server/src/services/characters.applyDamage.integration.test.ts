@@ -90,7 +90,46 @@ describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
     expect(result.appliedDamage).toBe(result.rawTotal);
   });
 
+  // Security major M3 regression: isCritical used to be trusted directly
+  // from the client — sending isCritical:true with no backing roll at all
+  // used to double the dice unconditionally. The server now re-derives
+  // criticality from the referenced attackRollId's actual stored roll.
+  it('isCritical alone, with no attackRollId, no longer doubles the dice', async () => {
+    const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+      diceSides: 4,
+      diceCount: 1,
+      modifier: 0,
+      damageType: null,
+      isCritical: true,
+    } as Parameters<typeof applyDamage>[3]);
+    expect(result.diceRoll.rolls.length).toBe(1); // still 1d4, not 2d4
+  });
+
+  it('an attackRollId pointing at a non-critical roll does not double the dice', async () => {
+    const nonCritRoll = await pool.query<{ id: string }>(
+      `INSERT INTO dice_rolls (campaign_id, user_id, roll_type, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+       VALUES ($1, $2, 'attack', ARRAY[15], 'normal', 20, 1, 0, 15) RETURNING id`,
+      [campaignId, dmUserId],
+    );
+    const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+      diceSides: 4,
+      diceCount: 1,
+      modifier: 0,
+      damageType: null,
+      isCritical: true, // asserted by the client, but the referenced roll wasn't a nat 20
+      attackRollId: nonCritRoll.rows[0]!.id,
+    } as Parameters<typeof applyDamage>[3]);
+    expect(result.diceRoll.rolls.length).toBe(1);
+  });
+
   it('a critical hit doubles the dice count actually rolled, not just a post-hoc multiplier', async () => {
+    // Simulates a real attack roll landing a nat 20 — the only way the
+    // server will now treat a damage application as critical.
+    const critRoll = await pool.query<{ id: string }>(
+      `INSERT INTO dice_rolls (campaign_id, user_id, roll_type, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+       VALUES ($1, $2, 'attack', ARRAY[20], 'normal', 20, 1, 0, 20) RETURNING id`,
+      [campaignId, dmUserId],
+    );
     // diceCount=1 non-crit always totals within [1,4]; critical doubles to
     // 2d4, whose minimum possible total is 2 and maximum is 8 — assert the
     // roll landed in the range only reachable by 2 dice, proving the server
@@ -104,8 +143,8 @@ describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
         diceCount: 1,
         modifier: 0,
         damageType: null,
-        isCritical: true,
-      });
+        attackRollId: critRoll.rows[0]!.id,
+      } as Parameters<typeof applyDamage>[3]);
       rolls.push(result.diceRoll.diceTotal);
       expect(result.diceRoll.rolls.length).toBe(2); // 2d4, not 1d4
     }
@@ -113,6 +152,38 @@ describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
     // (the max a single d4 could ever produce) — proves real doubling, not
     // a fluke of always rolling low.
     expect(rolls.some((t) => t > 4)).toBe(true);
+  });
+
+  it('an advantage roll only counts as critical if the KEPT (higher) die is a nat 20', async () => {
+    const advRoll = await pool.query<{ id: string }>(
+      `INSERT INTO dice_rolls (campaign_id, user_id, roll_type, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+       VALUES ($1, $2, 'attack', ARRAY[20, 5], 'advantage', 20, 1, 0, 20) RETURNING id`,
+      [campaignId, dmUserId],
+    );
+    const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+      diceSides: 4,
+      diceCount: 1,
+      modifier: 0,
+      damageType: null,
+      attackRollId: advRoll.rows[0]!.id,
+    } as Parameters<typeof applyDamage>[3]);
+    expect(result.diceRoll.rolls.length).toBe(2);
+  });
+
+  it('a disadvantage roll ignores a discarded nat 20 — the KEPT (lower) die decides criticality', async () => {
+    const disadvRoll = await pool.query<{ id: string }>(
+      `INSERT INTO dice_rolls (campaign_id, user_id, roll_type, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+       VALUES ($1, $2, 'attack', ARRAY[20, 5], 'disadvantage', 20, 1, 0, 5) RETURNING id`,
+      [campaignId, dmUserId],
+    );
+    const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+      diceSides: 4,
+      diceCount: 1,
+      modifier: 0,
+      damageType: null,
+      attackRollId: disadvRoll.rows[0]!.id,
+    } as Parameters<typeof applyDamage>[3]);
+    expect(result.diceRoll.rolls.length).toBe(1); // discarded nat-20 must not count
   });
 
   it('untyped damage (no damageType) is never resisted even against a resistant target', async () => {

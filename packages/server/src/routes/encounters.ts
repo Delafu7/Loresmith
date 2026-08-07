@@ -231,7 +231,7 @@ encountersRouter.post('/:id/participants', requireEncounterDm, async (req, res) 
   const input = addParticipantSchema.parse(req.body);
   const { encounter, participant } = await encountersService.addParticipant(pool, (req.params.id as string), input);
   const io = getIo(req.app);
-  broadcastParticipantJoined(io, encounter, participant);
+  await broadcastParticipantJoined(io, encounter, participant);
   await pushEncounterRoomJoinForOwner(io, pool, encounter.id, encounter.campaign_id, participant.character_id);
   res.status(201).json({ participant });
 });
@@ -270,7 +270,7 @@ encountersRouter.patch('/:id/participants/:pid/initiative', requireEncounterDm, 
 encountersRouter.post('/:id/roll-initiative', requireEncounterDm, async (req, res) => {
   const input = rollInitiativeSchema.parse(req.body ?? {});
   const result = await encountersService.rollInitiative(pool, (req.params.id as string), input.force);
-  broadcastInitiativeRolled(getIo(req.app), result.encounter, result.participants);
+  await broadcastInitiativeRolled(getIo(req.app), result.encounter, result.participants);
   res.json(result);
 });
 
@@ -342,7 +342,7 @@ encountersRouter.patch('/:id/participants/:pid/position', requireOwnParticipantO
   const { encounter, participant } = await encountersService.setParticipantPosition(
     pool, (req.params.id as string), (req.params.pid as string), input, req.participantActionRole!,
   );
-  broadcastTokenMoved(getIo(req.app), encounter, participant);
+  await broadcastTokenMoved(getIo(req.app), encounter, participant);
   res.json({ participant });
 });
 
@@ -431,7 +431,7 @@ encountersRouter.patch('/:id/participants/:pid/faction', requireEncounterDm, asy
   const { encounter, participant } = await encountersService.setParticipantFaction(
     pool, (req.params.id as string), (req.params.pid as string), input,
   );
-  broadcastParticipantFactionChanged(getIo(req.app), encounter, participant);
+  await broadcastParticipantFactionChanged(getIo(req.app), encounter, participant);
   res.json({ participant });
 });
 
@@ -481,7 +481,7 @@ encountersRouter.patch('/:id/participants/:pid/action-economy', requireOwnPartic
   const { encounter, participant } = await encountersService.applyActionEconomy(
     pool, (req.params.id as string), (req.params.pid as string), input,
   );
-  broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
+  await broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
   res.json({ participant });
 });
 
@@ -492,7 +492,7 @@ encountersRouter.post('/:id/participants/:pid/action-economy/undo', requireEncou
   const { encounter, participant } = await encountersService.undoActionEconomy(
     pool, (req.params.id as string), (req.params.pid as string),
   );
-  broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
+  await broadcastActionEconomyChanged(getIo(req.app), encounter, participant);
   res.json({ participant });
 });
 
@@ -503,7 +503,7 @@ encountersRouter.post('/:id/participants/:pid/shove', requireEncounterDm, async 
   const input = performShoveSchema.parse(req.body);
   const shove = await performShove(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
   const io = getIo(req.app);
-  broadcastActionEconomyChanged(io, shove.encounter, shove.participant);
+  await broadcastActionEconomyChanged(io, shove.encounter, shove.participant);
   await broadcastDiceRolled(io, shove.encounter.campaign_id, shove.attackerRoll);
   if (shove.defenderRoll) {
     await broadcastDiceRolled(io, shove.encounter.campaign_id, shove.defenderRoll);
@@ -546,15 +546,17 @@ encountersRouter.post('/:id/participants/:pid/grapple', requireEncounterDm, asyn
   const input = performGrappleSchema.parse(req.body);
   const grapple = await performGrapple(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
   const io = getIo(req.app);
-  broadcastActionEconomyChanged(io, grapple.encounter, grapple.participant);
+  await broadcastActionEconomyChanged(io, grapple.encounter, grapple.participant);
   await broadcastDiceRolled(io, grapple.encounter.campaign_id, grapple.attackerRoll);
   if (grapple.defenderRoll) {
     await broadcastDiceRolled(io, grapple.encounter.campaign_id, grapple.defenderRoll);
   }
   if (grapple.appliedEffect) {
-    for (const sync of grapple.appliedEffect.encounterSyncs) {
-      broadcastEffectApplied(io, sync, grapple.appliedEffect.effect, grapple.appliedEffect.effectDefinitionName);
-    }
+    await Promise.all(
+      grapple.appliedEffect.encounterSyncs.map((sync) =>
+        broadcastEffectApplied(io, sync, grapple.appliedEffect!.effect, grapple.appliedEffect!.effectDefinitionName),
+      ),
+    );
   }
   const grappleAction = await combatActionsService.recordAction(pool, req.user!.id, (req.params.id as string), {
     actorParticipantId: (req.params.pid as string),

@@ -11,6 +11,7 @@ export const mapSection = {
     activating: 'Switching…',
     delete: 'Delete',
     confirmDelete: 'Delete map "{name}"? This removes it from every encounter it\'s linked to.',
+    confirmDeleteActive: 'Delete map "{name}"? It\'s the active map for this encounter — anyone connected right now will lose it live.',
     namePlaceholder: 'New map name (e.g. "The Sunless Vale — Entrance")',
     create: 'Create map',
     creating: 'Creating…',

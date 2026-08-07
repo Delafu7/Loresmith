@@ -18,7 +18,7 @@ import * as monstersService from '../services/monsters.js';
 import * as monsterCatalogService from '../services/monsterCatalog.js';
 import * as effectsService from '../services/effects.js';
 import * as entityFieldRevealService from '../services/entityFieldReveal.js';
-import { requireMembership } from '../services/authz.js';
+import { requireMembership, getMembership } from '../services/authz.js';
 import { getIo, broadcastHpChanged, broadcastEffectApplied, broadcastEffectExpired, broadcastRevealChanged } from '../sockets/broadcast.js';
 
 // Mounted at /catalog/monsters (bestiary browse)
@@ -52,7 +52,24 @@ monsterCatalogRouter.get('/:id', async (req, res) => {
   const owningCampaignId = monster.owning_campaign_id as string | null;
   const owningUserId = monster.owning_user_id as string | null;
   if (owningCampaignId !== null) {
-    await requireMembership(pool, owningCampaignId, req.user!.id);
+    // M4 fix: a campaign-owned homebrew row can be curated into OTHER
+    // campaigns' bestiaries too (Iteration 2 "Shared bestiary" didn't
+    // restrict campaign_bestiary_entries to the owning campaign) — the list
+    // view (services/catalog.ts's listMonsters) already unions those in,
+    // but this detail route used to require membership in the OWNING
+    // campaign specifically, so a member of a campaign that still curates
+    // the monster got a confusing NOT_CAMPAIGN_MEMBER on the detail view
+    // right after seeing it fine in the list.
+    const isOwningMember = await getMembership(pool, owningCampaignId, req.user!.id);
+    if (!isOwningMember) {
+      const sharedRes = await pool.query(
+        `SELECT 1 FROM campaign_bestiary_entries cbe
+         JOIN campaign_members cm ON cm.campaign_id = cbe.campaign_id
+         WHERE cbe.monster_id = $1 AND cm.user_id = $2 LIMIT 1`,
+        [monster.id, req.user!.id],
+      );
+      if ((sharedRes.rowCount ?? 0) === 0) throw notFound('Monster');
+    }
   } else if (owningUserId !== null && owningUserId !== req.user!.id) {
     const sharedRes = await pool.query(
       `SELECT 1 FROM campaign_bestiary_entries cbe
@@ -160,20 +177,22 @@ monsterInstancesRouter.patch('/:id/hp', async (req, res) => {
     pool, req.user!.id, (req.params.id as string), input,
   );
   const io = getIo(req.app);
-  for (const sync of encounterSyncs) {
-    broadcastHpChanged(io, {
-      encounterId: sync.encounter_id,
-      campaignId: sync.campaign_id,
-      seq: sync.sync_seq,
-      participantId: sync.participant_id,
-      characterId: null,
-      monsterInstanceId: (req.params.id as string),
-      hpCurrent: monsterInstance.hp_current as number,
-      hpMax: (monsterInstance.hp_max_override as number | null) ?? (monsterInstance.hit_point_average as number),
-      hpTemp: monsterInstance.hp_temp as number,
-      delta: input.delta,
-    });
-  }
+  await Promise.all(
+    encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: null,
+        monsterInstanceId: (req.params.id as string),
+        hpCurrent: monsterInstance.hp_current as number,
+        hpMax: (monsterInstance.hp_max_override as number | null) ?? (monsterInstance.hit_point_average as number),
+        hpTemp: monsterInstance.hp_temp as number,
+        delta: input.delta,
+      }),
+    ),
+  );
   res.json({ monsterInstance });
 });
 
@@ -183,20 +202,22 @@ monsterInstancesRouter.post('/:id/apply-damage', async (req, res) => {
   const input = applyDamageSchema.parse(req.body);
   const result = await monstersService.applyMonsterInstanceDamage(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
-  for (const sync of result.encounterSyncs) {
-    broadcastHpChanged(io, {
-      encounterId: sync.encounter_id,
-      campaignId: sync.campaign_id,
-      seq: sync.sync_seq,
-      participantId: sync.participant_id,
-      characterId: null,
-      monsterInstanceId: (req.params.id as string),
-      hpCurrent: result.monsterInstance.hp_current as number,
-      hpMax: (result.monsterInstance.hp_max_override as number | null) ?? (result.monsterInstance.hit_point_average as number),
-      hpTemp: result.monsterInstance.hp_temp as number,
-      delta: -result.appliedDamage,
-    });
-  }
+  await Promise.all(
+    result.encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: null,
+        monsterInstanceId: (req.params.id as string),
+        hpCurrent: result.monsterInstance.hp_current as number,
+        hpMax: (result.monsterInstance.hp_max_override as number | null) ?? (result.monsterInstance.hit_point_average as number),
+        hpTemp: result.monsterInstance.hp_temp as number,
+        delta: -result.appliedDamage,
+      }),
+    ),
+  );
   res.json({
     monsterInstance: result.monsterInstance,
     diceRoll: result.diceRoll,

@@ -196,10 +196,12 @@ function AttackRow({
         diceCount: parsedDamage.count,
         modifier: parsedDamage.modifier,
         damageType: attack.damageType ?? null,
-        // Save-based effects never crit (docs/rules/attacks-and-damage.md
-        // §1.6) — this component never sends isCritical:true for one,
-        // regardless of what a prior attack roll happened to be.
-        isCritical: isSaveBased ? false : isCritical,
+        // Security major M3 — the server no longer trusts a client-asserted
+        // isCritical; it re-derives criticality itself from the referenced
+        // attack roll's actual stored d20. Save-based effects never crit
+        // (docs/rules/attacks-and-damage.md §1.6), so no roll is sent for
+        // those regardless of what a prior attack roll happened to be.
+        attackRollId: !isSaveBased ? (lastAttackRoll?.id ?? undefined) : undefined,
         rollContext: `${attack.name}${target ? ` → ${target.name}` : ''}`,
         encounterId,
       });
