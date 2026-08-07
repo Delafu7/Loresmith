@@ -118,6 +118,13 @@ export function DiceRoller({
           type="button"
           disabled={rollMutation.isPending}
           onClick={() => rollMutation.mutate()}
+          // UX finding #8 (Iteration 3 audit) — icon-only trigger labels
+          // ("⚄", "🎲") had no accessible name anywhere in combat, unlike
+          // every other icon-only control in the same panels (👁/🙈/▾/▸/✕
+          // all correctly carry aria-label). Derived from rollContext (e.g.
+          // "Stealth", "STR Save"), which every real call site already
+          // passes for exactly this display purpose.
+          aria-label={rollContext ? t('dice.rollerTriggerAria', { context: rollContext }) : t('dice.rollerRollButton')}
           className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-2 py-1 text-xs"
         >
           {rollMutation.isPending ? '…' : effectiveTriggerLabel}

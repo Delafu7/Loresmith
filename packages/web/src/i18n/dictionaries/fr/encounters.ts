@@ -35,6 +35,7 @@ export const encounters = {
     currentTurn: 'Tour actuel',
     you: 'Vous',
     removeParticipant: 'Retirer {name} de la rencontre',
+    removeParticipantConfirm: 'Retirer {name} de cette rencontre ? Ses PV, sa position et ses effets actuels seront perdus — cette action est irréversible.',
     hideFromPlayers: 'Cacher {name} aux joueurs',
     revealToPlayers: 'Révéler {name} aux joueurs',
     hideDice: 'Masquer les dés',

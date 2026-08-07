@@ -12,6 +12,7 @@ export const sessionLog = {
   session: 'Session {number}',
   edit: 'Edit',
   delete: 'Delete',
+  deleteConfirm: 'Delete session {number}? This recap will be permanently removed and cannot be recovered.',
   played: 'Played {date}',
   createdUpdated: 'Created {created} · Updated {updated}',
   editModalTitle: 'Edit session log entry',

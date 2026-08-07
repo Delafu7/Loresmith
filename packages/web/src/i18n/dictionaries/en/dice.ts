@@ -24,6 +24,7 @@ export const dice = {
   rollerAdvantage: 'Adv',
   rollerRollModeLabel: 'Roll mode',
   rollerRollButton: 'Roll',
+  rollerTriggerAria: 'Roll {context}',
   rollerKept: 'Kept',
   rollerNotKept: 'Not kept',
   // QuickDiceRoller.tsx

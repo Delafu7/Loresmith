@@ -38,6 +38,7 @@ export const monsters = {
     heading: 'Instances de monstres',
     empty: "Aucune instance de monstre pour l'instant — générez-en une depuis le bestiaire ci-dessus.",
     deleteAria: "Supprimer l'instance",
+    deleteConfirm: 'Supprimer « {name} » ? Cette action est irréversible.',
     attackLabel: '⚄ Attaque',
     damageLabel: '🩸 Dégâts',
   },

@@ -303,6 +303,7 @@ export function InventoryPanel({
               proficiencyBonus={proficiencyBonus}
               onUpdate={(patch) => updateMutation.mutate({ itemRowId: item.id, patch })}
               onRemove={() => removeMutation.mutate(item.id)}
+              removePending={removeMutation.isPending}
             />
           ))}
         </div>
@@ -334,6 +335,7 @@ function ItemCard({
   proficiencyBonus,
   onUpdate,
   onRemove,
+  removePending,
 }: {
   item: CharacterItem;
   catalogEntry: ItemCatalogEntry | undefined;
@@ -344,6 +346,10 @@ function ItemCard({
   proficiencyBonus: number;
   onUpdate: (patch: UpdateCharacterItemBody) => void;
   onRemove: () => void;
+  // UX finding #9 (Iteration 3 audit) — missing double-submit guard, same
+  // sweep as SessionLogPage's delete button and the remove-participant
+  // button above.
+  removePending: boolean;
 }) {
   const { t } = useLocale();
   const [editingNotes, setEditingNotes] = useState(false);
@@ -376,8 +382,9 @@ function ItemCard({
           <button
             type="button"
             onClick={onRemove}
+            disabled={removePending}
             aria-label={t('characters.inventory.removeItem', { name })}
-            className="text-red-400 hover:text-red-300 text-sm px-1 flex-shrink-0"
+            className="text-red-400 hover:text-red-300 text-sm px-1 flex-shrink-0 disabled:opacity-50"
           >
             ✕
           </button>

@@ -436,8 +436,16 @@ export function MonstersPage() {
                   <span className="text-xs uppercase text-stone-500">{mi.status}</span>
                   <button
                     type="button"
-                    onClick={() => deleteInstanceMutation.mutate(mi.id)}
-                    className="text-red-400 hover:text-red-300 text-xs"
+                    // UX finding #9 (Iteration 3 audit) — missing confirm
+                    // and double-submit guard, same sweep as the other
+                    // destructive-action fixes in this increment.
+                    onClick={() => {
+                      if (window.confirm(t('monsters.instances.deleteConfirm', { name: mi.custom_name || mi.monster_name || '' }))) {
+                        deleteInstanceMutation.mutate(mi.id);
+                      }
+                    }}
+                    disabled={deleteInstanceMutation.isPending}
+                    className="text-red-400 hover:text-red-300 text-xs disabled:opacity-50"
                     aria-label={t('monsters.instances.deleteAria')}
                   >
                     ✕

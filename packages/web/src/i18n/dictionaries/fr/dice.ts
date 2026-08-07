@@ -24,6 +24,7 @@ export const dice = {
   rollerAdvantage: 'Av',
   rollerRollModeLabel: 'Mode de lancer',
   rollerRollButton: 'Lancer',
+  rollerTriggerAria: 'Lancer {context}',
   rollerKept: 'Conservé',
   rollerNotKept: 'Non conservé',
   quickHeading: 'Lancer des dés',

@@ -38,6 +38,7 @@ export const monsters = {
     heading: 'Instancias de monstruos',
     empty: 'Aún no hay instancias de monstruos — genera una desde el bestiario de arriba.',
     deleteAria: 'Eliminar instancia',
+    deleteConfirm: '¿Eliminar «{name}»? Esto no se puede deshacer.',
     attackLabel: '⚄ Ataque',
     damageLabel: '🩸 Daño',
   },

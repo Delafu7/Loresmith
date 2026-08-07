@@ -187,8 +187,27 @@ export function BattleModeDmPanel({
                   </button>
                   <button
                     type="button"
-                    onClick={() => removeParticipantMutation.mutate(p.participantId)}
-                    className="inline-flex h-6 w-6 items-center justify-center text-red-400 hover:text-red-300"
+                    // UX finding #7 (Iteration 3 audit) + this app's
+                    // confirm/undo rule (docs/rules/actions.md-adjacent —
+                    // see this file's own header for the fuller version):
+                    // prefer an undo toast when the reversal is lossless
+                    // (the add-flow's own undo re-removes a row that was
+                    // JUST created with no accumulated state to lose); use a
+                    // confirm dialog when the action would discard state a
+                    // plain re-add can't restore. A seated participant can
+                    // carry current HP, position, effects, and faction — a
+                    // naive "undo via re-add" would silently resurrect them
+                    // at full HP with no position/effects/faction, which is
+                    // wrong, not helpful. Confirm is the honest choice here,
+                    // matching every other destructive action in this app
+                    // (delete-character, delete-map, remove-member, ...).
+                    onClick={() => {
+                      if (window.confirm(t('encounters.tracker.removeParticipantConfirm', { name: p.name }))) {
+                        removeParticipantMutation.mutate(p.participantId);
+                      }
+                    }}
+                    disabled={removeParticipantMutation.isPending}
+                    className="inline-flex h-6 w-6 items-center justify-center text-red-400 hover:text-red-300 disabled:opacity-50"
                     aria-label={t('encounters.tracker.removeParticipant', { name: p.name })}
                   >
                     ✕

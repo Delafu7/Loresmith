@@ -153,8 +153,19 @@ export function SessionLogPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => deleteMutation.mutate(session.id)}
-                      className="min-h-11 px-1 text-red-400 hover:text-red-300 text-xs"
+                      // UX finding #9 (Iteration 3 audit) + this app's
+                      // confirm/undo rule (see BattleModeDmPanel.tsx's
+                      // remove-participant comment for the fuller version):
+                      // deleting a full session recap is irreversible and
+                      // was missing both a confirm and a pending guard,
+                      // unlike every sibling delete in this app.
+                      onClick={() => {
+                        if (window.confirm(t('sessionLog.deleteConfirm', { number: session.session_number }))) {
+                          deleteMutation.mutate(session.id);
+                        }
+                      }}
+                      disabled={deleteMutation.isPending}
+                      className="min-h-11 px-1 text-red-400 hover:text-red-300 text-xs disabled:opacity-50"
                     >
                       {t('sessionLog.delete')}
                     </button>

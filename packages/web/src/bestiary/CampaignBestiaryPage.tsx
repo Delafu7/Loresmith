@@ -198,6 +198,7 @@ export function CampaignBestiaryPage() {
                         entry={entry}
                         isDm={isDm}
                         onUpdate={(body) => updateMutation.mutate({ entryId: entry.id, body })}
+                        savePending={updateMutation.isPending}
                         onAttachTag={(name) => attachTagMutation.mutate({ entryId: entry.id, name })}
                         onDetachTag={(categoryId) => detachTagMutation.mutate({ entryId: entry.id, categoryId })}
                       />
@@ -238,12 +239,16 @@ function BestiaryEntryDetail({
   entry,
   isDm,
   onUpdate,
+  savePending,
   onAttachTag,
   onDetachTag,
 }: {
   entry: CampaignBestiaryEntry;
   isDm: boolean;
   onUpdate: (body: Record<string, unknown>) => void;
+  // UX finding #9 (Iteration 3 audit) — missing double-submit guard, same
+  // sweep as the other destructive/mutating-action fixes in this increment.
+  savePending: boolean;
   onAttachTag: (name: string) => void;
   onDetachTag: (categoryId: string) => void;
 }) {
@@ -341,7 +346,7 @@ function BestiaryEntryDetail({
                 </Badge>
               ))}
             </div>
-            <Button variant="primary" size="sm" onClick={saveDetails}>
+            <Button variant="primary" size="sm" onClick={saveDetails} disabled={savePending}>
               {t('campaignBestiary.detail.save')}
             </Button>
           </div>

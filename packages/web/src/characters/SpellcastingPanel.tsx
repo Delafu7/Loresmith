@@ -233,7 +233,8 @@ export function SpellcastingPanel({
                     <button
                       type="button"
                       onClick={() => unlearnMutation.mutate({ spellId: row.spell_id, classId: row.class_id })}
-                      className="text-red-400 hover:text-red-300 text-sm px-1"
+                      disabled={unlearnMutation.isPending}
+                      className="text-red-400 hover:text-red-300 text-sm px-1 disabled:opacity-50"
                       aria-label={t('characters.spells.unlearnAria', { name: spell?.name ?? t('characters.spells.spellFallback') })}
                     >
                       ✕

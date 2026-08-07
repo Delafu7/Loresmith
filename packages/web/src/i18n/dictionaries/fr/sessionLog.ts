@@ -12,6 +12,7 @@ export const sessionLog = {
   session: 'Session {number}',
   edit: 'Modifier',
   delete: 'Supprimer',
+  deleteConfirm: 'Supprimer la session {number} ? Ce résumé sera définitivement supprimé et ne pourra pas être récupéré.',
   played: 'Jouée le {date}',
   createdUpdated: 'Créée le {created} · Mise à jour le {updated}',
   editModalTitle: "Modifier l'entrée de session",

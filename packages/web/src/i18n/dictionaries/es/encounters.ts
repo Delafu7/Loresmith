@@ -35,6 +35,7 @@ export const encounters = {
     currentTurn: 'Turno actual',
     you: 'Tú',
     removeParticipant: 'Eliminar a {name} del encuentro',
+    removeParticipantConfirm: '¿Eliminar a {name} de este encuentro? Se perderán sus PG, posición y efectos actuales — esto no se puede deshacer.',
     hideFromPlayers: 'Ocultar a {name} de los jugadores',
     revealToPlayers: 'Revelar a {name} a los jugadores',
     hideDice: 'Ocultar dados',

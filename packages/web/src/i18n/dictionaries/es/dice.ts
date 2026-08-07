@@ -18,6 +18,7 @@ export const dice = {
   rollerAdvantage: 'Vent',
   rollerRollModeLabel: 'Modo de tirada',
   rollerRollButton: 'Tirar',
+  rollerTriggerAria: 'Tirar {context}',
   rollerKept: 'Conservada',
   rollerNotKept: 'Descartada',
   quickHeading: 'Tirar dados',

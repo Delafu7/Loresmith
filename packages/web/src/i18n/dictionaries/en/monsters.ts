@@ -42,6 +42,7 @@ export const monsters = {
     heading: 'Monster instances',
     empty: 'No monster instances yet — spawn one from the bestiary above.',
     deleteAria: 'Delete instance',
+    deleteConfirm: 'Delete "{name}"? This cannot be undone.',
     attackLabel: '⚄ Attack',
     damageLabel: '🩸 Damage',
   },

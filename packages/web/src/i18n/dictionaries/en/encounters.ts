@@ -40,6 +40,7 @@ export const encounters = {
     currentTurn: 'Current turn',
     you: 'You',
     removeParticipant: 'Remove {name} from encounter',
+    removeParticipantConfirm: 'Remove {name} from this encounter? Their current HP, position, and effects will be lost — this cannot be undone.',
     hideFromPlayers: 'Hide {name} from players',
     revealToPlayers: 'Reveal {name} to players',
     hideDice: 'Hide dice',
