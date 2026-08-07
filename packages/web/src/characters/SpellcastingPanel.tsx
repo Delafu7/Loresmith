@@ -147,6 +147,7 @@ export function SpellcastingPanel({
                 key={pool.resource_key}
                 pool={pool}
                 canAct={canAct}
+                mutationPending={spend.isPending || recover.isPending}
                 tone="slot"
                 onSpend={() => spend.mutate({ resourceKey: pool.resource_key })}
                 onRecover={() => recover.mutate({ resourceKey: pool.resource_key })}
@@ -167,6 +168,7 @@ export function SpellcastingPanel({
                 key={pool.resource_key}
                 pool={pool}
                 canAct={canAct}
+                mutationPending={spend.isPending || recover.isPending}
                 tone="pact"
                 onSpend={() => spend.mutate({ resourceKey: pool.resource_key })}
                 onRecover={() => recover.mutate({ resourceKey: pool.resource_key })}
@@ -272,12 +274,21 @@ const TONE_FILLED: Record<'slot' | 'pact', string> = {
 function SlotMeter({
   pool,
   canAct,
+  mutationPending,
   tone,
   onSpend,
   onRecover,
 }: {
   pool: ResourcePool;
   canAct: boolean;
+  // M10: SlotMeter had no isPending guard at all, unlike the structurally
+  // identical ResourcePoolPanel two files over — a rapid double-click could
+  // fire two spend requests before the first's response updated
+  // pool.current_value client-side. The server's atomic UPDATE ... WHERE
+  // current_value - $1 >= 0 still prevents going negative, but the double
+  // request itself (and its out-of-order-response potential) is still worth
+  // closing at the UI layer, same as every other resource mutation control.
+  mutationPending: boolean;
   tone: 'slot' | 'pact';
   onSpend: () => void;
   onRecover: () => void;
@@ -285,6 +296,7 @@ function SlotMeter({
   const { t } = useLocale();
   const level = slotLevel(pool.resource_key);
   const pips = Array.from({ length: pool.max_value });
+  const interactive = canAct && !mutationPending;
   return (
     <div className="rounded-md border border-stone-700 bg-stone-950 px-3 py-2 min-w-[4.5rem] text-center">
       <div className="text-[10px] uppercase text-stone-500">{t('characters.spells.levelAbbrev', { level })}</div>
@@ -295,7 +307,7 @@ function SlotMeter({
             <button
               key={i}
               type="button"
-              disabled={!canAct}
+              disabled={!interactive}
               title={filled ? t('characters.spells.useSlot') : t('characters.spells.restoreSlot')}
               aria-label={
                 filled
@@ -305,7 +317,7 @@ function SlotMeter({
               onClick={() => (filled ? onSpend() : onRecover())}
               className={`h-3 w-3 rounded-full border flex-shrink-0 ${
                 filled ? TONE_FILLED[tone] : 'bg-transparent border-stone-600'
-              } ${canAct ? 'cursor-pointer' : 'cursor-default'}`}
+              } ${interactive ? 'cursor-pointer' : 'cursor-default'}`}
             />
           );
         })}

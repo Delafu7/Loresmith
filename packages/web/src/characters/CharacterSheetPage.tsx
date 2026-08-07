@@ -150,9 +150,15 @@ export function CharacterSheetPage() {
   // updateCharacterMutation above) so saving it never incidentally closes an
   // in-progress ability-score edit via that mutation's setEditingCore(false).
   const [gmNotesDraft, setGmNotesDraft] = useState('');
+  // M9 fix: this reset effect had no "I'm mid-edit" guard, unlike the
+  // adjacent coreDraft effect above (which correctly checks !editingCore) —
+  // any sibling mutation on this page that refreshed the character cache
+  // (HP adjust, item toggle, ...) silently wiped an in-progress, unsaved GM
+  // note. Same guard shape as coreDraft/editingCore.
+  const [editingGmNotes, setEditingGmNotes] = useState(false);
   useEffect(() => {
-    setGmNotesDraft(character?.gm_notes ?? '');
-  }, [character?.gm_notes]);
+    if (!editingGmNotes) setGmNotesDraft(character?.gm_notes ?? '');
+  }, [character?.gm_notes, editingGmNotes]);
   const gmNotesMutation = useMutation({
     mutationFn: (gmNotes: string) => api.patch<{ character: Character }>(`/characters/${characterId}`, { gmNotes }),
     onSuccess: (data) => {
@@ -297,7 +303,12 @@ export function CharacterSheetPage() {
               </p>
             </div>
           </div>
-          {editMode === 'edit-full' && (
+          {/* Resolved decision (Iteration 3 plan): relax to match the server's
+              own owner-or-DM authorization (authorizeCharacterMutation) —
+              editMode === 'edit-full' used to hide these from a player who
+              owns this PC, even though the server has always allowed the
+              owner to duplicate/delete their own character. */}
+          {editable && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -433,7 +444,12 @@ export function CharacterSheetPage() {
             abilities={character}
             proficientAbilityScoreIds={proficientAbilityScoreIds}
             proficiencyBonus={proficiencyBonus}
-            editable={editable}
+            // M8: disabled while the previous toggle's PUT is still in
+            // flight — the toggle handlers below build their next-state
+            // payload from the query cache, which is still stale mid-request,
+            // so a second rapid toggle would silently overwrite the first
+            // (lost update) rather than compound with it.
+            editable={editable && !savingThrowsMutation.isPending}
             canAct={canAct}
             onToggle={toggleSavingThrow}
             characterId={characterId}
@@ -463,7 +479,8 @@ export function CharacterSheetPage() {
           abilities={character}
           proficiencyBySkillId={skillProficiencyMap}
           proficiencyBonus={proficiencyBonus}
-          editable={editable}
+          // M8: same lost-update guard as SavingThrowsPanel above.
+          editable={editable && !skillsMutation.isPending}
           canAct={canAct}
           onChange={changeSkill}
           characterId={characterId}
@@ -519,8 +536,10 @@ export function CharacterSheetPage() {
           <textarea
             rows={4}
             value={gmNotesDraft}
+            onFocus={() => setEditingGmNotes(true)}
             onChange={(e) => setGmNotesDraft(e.target.value)}
             onBlur={() => {
+              setEditingGmNotes(false);
               if (gmNotesDraft !== (character.gm_notes ?? '')) gmNotesMutation.mutate(gmNotesDraft);
             }}
             className="w-full rounded-md bg-stone-800 border border-violet-900/60 px-3 py-2 text-stone-100 text-sm"

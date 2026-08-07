@@ -230,11 +230,23 @@ export function ActionEconomyPanel({
                 title={actionDescription(t, action.key)}
                 disabled={used || spendMutation.isPending}
                 onClick={() => {
-                  spendMutation.mutate({ spend: action.slot, dash: action.isDash });
+                  // M11 fix: Dodge's actual mechanical effect used to fire
+                  // unconditionally ALONGSIDE the action-economy spend, not
+                  // chained after it — if the spend was rejected (stale
+                  // cache, turn changed, already used), the Dodge condition
+                  // still got granted with no action actually spent. Now
+                  // only applied in the spend's own onSuccess.
+                  spendMutation.mutate(
+                    { spend: action.slot, dash: action.isDash },
+                    {
+                      onSuccess: () => {
+                        if (action.key === 'dodge' && dodgeEffectDefinitionId) {
+                          applyDodgeMutation.mutate(dodgeEffectDefinitionId);
+                        }
+                      },
+                    },
+                  );
                   recordRegistryActionMutation.mutate({ label: actionLabel(t, action.key), isDash: action.isDash });
-                  if (action.key === 'dodge' && dodgeEffectDefinitionId) {
-                    applyDodgeMutation.mutate(dodgeEffectDefinitionId);
-                  }
                 }}
                 className="rounded-md border border-stone-700 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 text-xs px-2 py-1"
               >
