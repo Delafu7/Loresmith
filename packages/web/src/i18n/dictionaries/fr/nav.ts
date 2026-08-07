@@ -12,6 +12,7 @@ export const nav = {
   assets: 'Ressources',
   catalog: 'Catalogue',
   members: 'Membres',
+  settings: 'Paramètres',
   exportCampaign: 'Exporter la campagne (JSON)',
   exporting: 'Exportation…',
   logoAria: 'Loresmith — aller à l’accueil',

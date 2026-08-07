@@ -34,6 +34,7 @@ import { NotesIndexPage } from './notes/NotesIndexPage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
 import { CatalogEditorPage } from './catalog/CatalogEditorPage';
 import { CampaignMembersPage } from './campaigns/CampaignMembersPage';
+import { CampaignSettingsPage } from './campaigns/CampaignSettingsPage';
 import { AssetsPage } from './assets/AssetsPage';
 import { ProfilePage } from './profile/ProfilePage';
 
@@ -117,6 +118,7 @@ function App() {
                   <Route path="assets" element={<AssetsPage />} />
                   <Route path="catalog" element={<CatalogEditorPage />} />
                   <Route path="members" element={<CampaignMembersPage />} />
+                  <Route path="settings" element={<CampaignSettingsPage />} />
                 </Route>
               </Route>
 

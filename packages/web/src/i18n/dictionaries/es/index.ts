@@ -27,9 +27,10 @@ import { members } from './members.js';
 import { profile } from './profile.js';
 import { items } from './items.js';
 import { mapSection } from './mapSection.js';
+import { settings } from './settings.js';
 
 export const es = {
   common, login, register, dashboard, campaignDashboard, nav, hp, proficiency, effects, hpAdjust, upload,
   campaigns, notes, sessionLog, assets, dice, landing, characters,
-  monsters, bestiary, campaignBestiary, statBlock, catalog, encounters, members, profile, items, mapSection,
+  monsters, bestiary, campaignBestiary, statBlock, catalog, encounters, members, profile, items, mapSection, settings,
 } satisfies typeof en;

@@ -26,7 +26,7 @@ const STATUS_BADGE_VARIANT: Record<CampaignInvitation['status'], BadgeVariant> =
 
 export function CampaignMembersPage() {
   const { t } = useLocale();
-  const { campaignId, role } = useCampaignShell();
+  const { campaignId, campaign, role } = useCampaignShell();
   const isDm = role === 'dm';
 
   if (!isDm) {
@@ -40,7 +40,7 @@ export function CampaignMembersPage() {
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-6">
       <h2 className="font-display text-lg font-medium">{t('members.title')}</h2>
-      <MembersList campaignId={campaignId} />
+      <MembersList campaignId={campaignId} owningDmUserId={campaign.dm_user_id} />
       <InvitationsPanel campaignId={campaignId} />
     </div>
   );
@@ -50,7 +50,7 @@ function roleLabel(t: (key: TranslationKey) => string, role: CampaignRole): stri
   return role === 'dm' ? t('members.dmRole') : role === 'spectator' ? t('members.spectatorRole') : t('members.playerRole');
 }
 
-function MembersList({ campaignId }: { campaignId: string }) {
+function MembersList({ campaignId, owningDmUserId }: { campaignId: string; owningDmUserId: string }) {
   const { t } = useLocale();
   const membersQuery = useQuery({
     queryKey: ['campaign', campaignId, 'members'],
@@ -64,7 +64,7 @@ function MembersList({ campaignId }: { campaignId: string }) {
       {membersQuery.isError && <ErrorBanner message={errorMessage(membersQuery.error)} />}
       <ul className="mt-1 divide-y divide-stone-800">
         {membersQuery.data?.members.map((m) => (
-          <MemberRow key={m.id} member={m} campaignId={campaignId} />
+          <MemberRow key={m.id} member={m} campaignId={campaignId} isOwningDm={m.user_id === owningDmUserId} />
         ))}
       </ul>
     </Card>
@@ -76,14 +76,28 @@ function MembersList({ campaignId }: { campaignId: string }) {
 // isn't subject to a character limit). Each control fires its own PATCH
 // .../members/:userId immediately (checkbox on change, number field on
 // blur — not on every keystroke) via services/campaigns.ts's updateMember.
-function MemberRow({ member, campaignId }: { member: CampaignMember; campaignId: string }) {
+//
+// Iteration 3 major M6 — role change and remove were both fully implemented
+// server-side (updateMember/removeMember) with no frontend caller at all.
+// `isOwningDm` (this campaign's campaigns.dm_user_id row, distinct from
+// "any member currently holding the 'dm' role") disables both controls for
+// that one row: removeMember already 409s on it server-side ("delete the
+// campaign instead"), and role-change has no equivalent guard, so changing
+// it away from 'dm' here would strand the campaign's actual owner without
+// DM access with no server-side safety net — simpler to just not offer it.
+function MemberRow({ member, campaignId, isOwningDm }: { member: CampaignMember; campaignId: string; isOwningDm: boolean }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const [maxCharactersInput, setMaxCharactersInput] = useState(member.max_characters?.toString() ?? '');
 
   const updateMutation = useMutation({
-    mutationFn: (patch: { canCreateCharacters?: boolean; maxCharacters?: number | null }) =>
+    mutationFn: (patch: { role?: CampaignRole; canCreateCharacters?: boolean; maxCharacters?: number | null }) =>
       api.patch<{ member: CampaignMember }>(`/campaigns/${campaignId}/members/${member.user_id}`, patch),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['campaign', campaignId, 'members'] }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: () => api.delete(`/campaigns/${campaignId}/members/${member.user_id}`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['campaign', campaignId, 'members'] }),
   });
 
@@ -97,6 +111,13 @@ function MemberRow({ member, campaignId }: { member: CampaignMember; campaignId:
     if (value === member.max_characters) return; // no-op, avoid a needless request
     updateMutation.mutate({ maxCharacters: value });
   }
+
+  function handleRemove() {
+    if (!window.confirm(t('members.removeConfirm', { name: member.display_name }))) return;
+    removeMutation.mutate();
+  }
+
+  const pending = updateMutation.isPending || removeMutation.isPending;
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 py-2.5">
@@ -113,7 +134,7 @@ function MemberRow({ member, campaignId }: { member: CampaignMember; campaignId:
               <input
                 type="checkbox"
                 checked={member.can_create_characters}
-                disabled={updateMutation.isPending}
+                disabled={pending}
                 onChange={(e) => updateMutation.mutate({ canCreateCharacters: e.target.checked })}
               />
               {t('members.canCreateCharacters')}
@@ -125,7 +146,7 @@ function MemberRow({ member, campaignId }: { member: CampaignMember; campaignId:
                 min={0}
                 placeholder={t('members.unlimited')}
                 value={maxCharactersInput}
-                disabled={updateMutation.isPending}
+                disabled={pending}
                 onChange={(e) => setMaxCharactersInput(e.target.value)}
                 onBlur={commitMaxCharacters}
                 className="w-16 rounded bg-stone-800 border border-stone-700 px-1.5 py-0.5 text-stone-100"
@@ -133,10 +154,39 @@ function MemberRow({ member, campaignId }: { member: CampaignMember; campaignId:
             </label>
           </>
         )}
-        <Badge variant="outline">{roleLabel(t, member.role)}</Badge>
+        {isOwningDm ? (
+          <Badge variant="outline" title={t('members.owningDmHint')}>
+            {roleLabel(t, member.role)}
+          </Badge>
+        ) : (
+          <select
+            value={member.role}
+            disabled={pending}
+            onChange={(e) => updateMutation.mutate({ role: e.target.value as CampaignRole })}
+            className="min-h-9 rounded border border-stone-700 bg-stone-800 text-stone-200 text-xs px-2"
+            aria-label={t('members.roleSelectAria', { name: member.display_name })}
+          >
+            <option value="dm">{t('members.dmRole')}</option>
+            <option value="player">{t('members.playerRole')}</option>
+            <option value="spectator">{t('members.spectatorRole')}</option>
+          </select>
+        )}
+        {!isOwningDm && (
+          <button
+            type="button"
+            onClick={handleRemove}
+            disabled={pending}
+            className="min-h-9 px-1 text-red-400 hover:text-red-300 text-xs disabled:opacity-50"
+          >
+            {removeMutation.isPending ? t('members.removing') : t('members.removeButton')}
+          </button>
+        )}
       </div>
       {updateMutation.isError && (
         <p className="w-full text-[11px] text-red-400">{errorMessage(updateMutation.error)}</p>
+      )}
+      {removeMutation.isError && (
+        <p className="w-full text-[11px] text-red-400">{errorMessage(removeMutation.error)}</p>
       )}
     </li>
   );

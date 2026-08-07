@@ -33,6 +33,7 @@ const SECTION_LABEL_KEYS: Record<string, TranslationKey> = {
   assets: 'nav.assets',
   catalog: 'nav.catalog',
   members: 'nav.members',
+  settings: 'nav.settings',
 };
 
 interface CampaignShellContextValue {
@@ -58,8 +59,10 @@ export function useCampaignShell(): CampaignShellContextValue {
 // own requireRole('dm') gate). Downloads the "core content" snapshot
 // (services/campaignExport.ts) as a plain JSON file the DM can later feed
 // into /campaigns/import (see CampaignListPage.tsx) to restore/duplicate it
-// as a brand-new campaign — no dedicated settings page exists yet, so this
-// lives with the other campaign-level chrome in the sidebar.
+// as a brand-new campaign. Stays here in the sidebar rather than moving into
+// CampaignSettingsPage (Iteration 3 M7) — it's a one-shot download action,
+// not a persistent setting, and every other page in this sidebar footer is
+// action chrome too.
 function ExportCampaignButton({ campaignId, campaignName }: { campaignId: string; campaignName: string }) {
   const { t } = useLocale();
   const [pending, setPending] = useState(false);
@@ -195,6 +198,7 @@ export function CampaignShell() {
           <NavItem to="assets" onClick={onNavigate}>{t('nav.assets')}</NavItem>
           {isDm && <NavItem to="catalog" onClick={onNavigate}>{t('nav.catalog')}</NavItem>}
           {isDm && <NavItem to="members" onClick={onNavigate}>{t('nav.members')}</NavItem>}
+          {isDm && <NavItem to="settings" onClick={onNavigate}>{t('nav.settings')}</NavItem>}
         </NavItemList>
         {isDm && (
           <div className="mt-auto">
