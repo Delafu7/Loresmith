@@ -5,6 +5,7 @@ export const dice = {
   historyLoadMore: 'Charger plus',
   historyLoadingMore: 'Chargement…',
   historyCharacterLabel: 'Personnage n° {id}',
+  historyCritical: 'Critique',
   historyMonsterLabel: 'Monstre n° {id}',
   historyUserLabel: 'Utilisateur n° {id}',
   historyJustNow: "à l'instant",

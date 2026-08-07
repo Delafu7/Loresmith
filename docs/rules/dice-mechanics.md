@@ -369,3 +369,47 @@ Named explicitly, per this repo's persona convention:
 - **A hypothetical "immune to disadvantage on X" effect** (§2.1) — not found anywhere in this grounding set's SRD text; if ever implemented, it is homebrew content requiring explicit DM authorship (an `active_effects` row or similar), never a default behavior attached to any SRD-named trait without independently re-verifying that trait's exact text first.
 - **Whether the engine auto-aggregates advantage/disadvantage from tracked effects, or stays purely "DM/player selects the enum value"** (§2.2) — this app's existing convention is the latter (display-only state, human-adjudicated selection), consistent with the "no auto-computed advantage/disadvantage" precedent already established in `docs/rules/actions.md`. If the rebuild changes this, that's a deliberate architecture decision to make and name explicitly, not something to slide into "just how the dice engine works" without a conscious call.
 - **Any flat "special modifiers" term on a saving throw DC** (§5) — always DM/build-authored per-effect content (a specific magic item's or feature's bonus), never a global campaign-wide default; the formula's optional parameter exists precisely so this stays per-call data, not baked into the base 8 + prof + mod formula.
+
+---
+
+## Implementation notes (Iteration 3, Increment 5)
+
+Shipped: `packages/server/src/services/diceEngine.ts` (`criticalDiceCount`,
+`resolveAdvantage`, `rerollOnceIfMatches`, `clampDieMinimum`,
+`computeSaveDc`, `proficiencyBonusForLevel` — closing the confirmed
+server-side gap §5.2 flagged), full unit-test coverage of every worked
+example in §1.4/§2.4/§3.4/§5.4 (`diceEngine.test.ts`), `computeSaveDc`/
+`computePassiveScore` added to `packages/web/src/lib/dnd-math.ts` (§5.4/§6.4
+worked examples covered in `dnd-math.test.ts`, including the
+expertise-doubles-the-term-not-the-sum and advantage/disadvantage-cancel
+regression tests §6 calls out), `characters.ts`'s/`monsters.ts`'s duplicated
+crit-doubling ternary now calls `criticalDiceCount`, and the `dice_rolls.
+is_critical` column (§1.2's recommendation) shipped with a migration and a
+badge in `DiceRollHistoryPage.tsx`.
+
+**Deliberately deferred, not silently dropped**: unifying `services/
+diceRolls.ts`'s `parseHitDice` and `components/QuickDiceRoller.tsx`'s
+`parseDiceExpression` into one shared grammar module. Both parse the same
+"NdM+K" shape, but literally sharing one module between the two would need
+a new `packages/shared`-style workspace package (project references, build
+ordering, tsconfig wiring) — real monorepo infrastructure, not a dice-rules
+change, and neither parser has an active bug (server's only ever parses
+trusted catalog hit-dice strings, client's only ever parses free-text user
+input for the quick-roll UI — the two were never a security boundary, just
+duplicated code). Left as two independently-maintained, structurally
+near-identical implementations; worth a dedicated infra pass if it becomes
+a real pain point (e.g. the grammars visibly drift), not bundled into this
+increment.
+
+**Bug found live while verifying the `is_critical` badge, not part of the
+original defect inventory**: `DiceRollHistoryPage.tsx`'s paginated roll
+history query was gated on `enabled: Number.isInteger(campaignId)` —
+`campaignId` has been a UUID string since the uuid-primary-keys migration,
+so `Number.isInteger` on a string is always `false` and the query never ran
+for any campaign, ever. Live rolls still arrived via the `DICE_ROLLED`
+socket event (separate state, not gated by this flag), which is exactly
+why the page looked partially functional rather than obviously broken.
+Fixed in the same pass (`enabled: isUuid(campaignId)`, matching every other
+page's convention) and live-verified: before the fix, a campaign with real
+`dice_rolls` rows showed "No dice rolls yet"; after, the same rows render,
+including the new critical badge.

@@ -186,6 +186,50 @@ describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
     expect(result.diceRoll.rolls.length).toBe(1); // discarded nat-20 must not count
   });
 
+  // Regression test for the dice-engine rebuild's dice_rolls.is_critical
+  // column (docs/rules/dice-mechanics.md §1.2/§1.4) — applyDamage's own
+  // dice_rolls insert only fires when encounterId is supplied, so this is
+  // the one test in this file that needs a throwaway encounter fixture.
+  it('records is_critical on the dice_rolls row for both a critical and a non-critical damage roll', async () => {
+    const encounterRes = await pool.query<{ id: string }>(
+      `INSERT INTO encounters (campaign_id, name, status) VALUES ($1, 'is_critical Test Encounter', 'active') RETURNING id`,
+      [campaignId],
+    );
+    const encounterId = encounterRes.rows[0]!.id;
+
+    const critRoll = await pool.query<{ id: string }>(
+      `INSERT INTO dice_rolls (campaign_id, user_id, roll_type, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+       VALUES ($1, $2, 'attack', ARRAY[20], 'normal', 20, 1, 0, 20) RETURNING id`,
+      [campaignId, dmUserId],
+    );
+    await applyDamage(pool, dmUserId, plainCharacterId, {
+      diceSides: 4,
+      diceCount: 1,
+      modifier: 0,
+      damageType: null,
+      attackRollId: critRoll.rows[0]!.id,
+      encounterId,
+    } as Parameters<typeof applyDamage>[3]);
+    const critHistoryRow = await pool.query<{ is_critical: boolean }>(
+      `SELECT is_critical FROM dice_rolls WHERE character_id = $1 AND roll_type = 'damage' ORDER BY created_at DESC LIMIT 1`,
+      [plainCharacterId],
+    );
+    expect(critHistoryRow.rows[0]!.is_critical).toBe(true);
+
+    await applyDamage(pool, dmUserId, plainCharacterId, {
+      diceSides: 4,
+      diceCount: 1,
+      modifier: 0,
+      damageType: null,
+      encounterId,
+    } as Parameters<typeof applyDamage>[3]);
+    const nonCritHistoryRow = await pool.query<{ is_critical: boolean }>(
+      `SELECT is_critical FROM dice_rolls WHERE character_id = $1 AND roll_type = 'damage' ORDER BY created_at DESC LIMIT 1`,
+      [plainCharacterId],
+    );
+    expect(nonCritHistoryRow.rows[0]!.is_critical).toBe(false);
+  });
+
   it('untyped damage (no damageType) is never resisted even against a resistant target', async () => {
     const result = await applyDamage(pool, dmUserId, resistantCharacterId, {
       diceSides: 4,

@@ -5,6 +5,7 @@ export const dice = {
   historyLoadMore: 'Cargar más',
   historyLoadingMore: 'Cargando…',
   historyCharacterLabel: 'Personaje n.º {id}',
+  historyCritical: 'Crítico',
   historyMonsterLabel: 'Monstruo n.º {id}',
   historyUserLabel: 'Usuario n.º {id}',
   historyJustNow: 'ahora mismo',

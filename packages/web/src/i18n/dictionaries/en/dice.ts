@@ -10,6 +10,7 @@ export const dice = {
   historyLoadMore: 'Load more',
   historyLoadingMore: 'Loading…',
   historyCharacterLabel: 'Character #{id}',
+  historyCritical: 'Critical',
   historyMonsterLabel: 'Monster #{id}',
   historyUserLabel: 'User #{id}',
   historyJustNow: 'just now',

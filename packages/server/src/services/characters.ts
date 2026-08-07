@@ -7,6 +7,7 @@ import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlo
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
 import { computeAppliedDamage } from './damage.js';
 import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
+import { criticalDiceCount } from './diceEngine.js';
 import { findUserByEmail } from './users.js';
 import type {
   AssignCharacterOwnerInput,
@@ -588,7 +589,7 @@ export async function applyDamage(
     // Dice doubling is a rolling-time concern (docs/rules/
     // attacks-and-damage.md §1.2/§2.2) — roll double the dice count when
     // this was a critical hit, never double the flat modifier.
-    const diceCount = isCritical ? input.diceCount * 2 : input.diceCount;
+    const diceCount = criticalDiceCount(input.diceCount, isCritical);
     const rolls = Array.from({ length: diceCount }, () => rollDie(input.diceSides));
     const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
 
@@ -617,11 +618,12 @@ export async function applyDamage(
       await client.query(
         `INSERT INTO dice_rolls
            (campaign_id, user_id, character_id, encounter_id, roll_type, roll_context,
-            d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
-         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10)`,
+            d20_rolls, keep, dice_sides, dice_count, modifier, result_total, is_critical)
+         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10,$11)`,
         [
           character.campaign_id, actorId, characterId, input.encounterId,
           input.rollContext ?? null, rolls, input.diceSides, diceCount, input.modifier, diceTotal + input.modifier,
+          isCritical,
         ],
       );
     }

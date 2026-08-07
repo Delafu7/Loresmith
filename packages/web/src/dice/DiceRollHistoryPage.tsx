@@ -10,6 +10,7 @@ import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { formatModifier } from '../lib/dnd-math';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { useLocale } from '../i18n/LocaleContext';
+import { isUuid } from '../lib/ids';
 
 // Campaign-wide roll history (PLAN.md §6.6/Phase 3.4). Two independent data
 // sources feed this list rather than one merged cache:
@@ -43,7 +44,13 @@ export function DiceRollHistoryPage() {
       api.get<{ rolls: DiceRoll[]; nextCursor: string | null }>(
         `/campaigns/${campaignId}/dice-rolls${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
       ),
-    enabled: Number.isInteger(campaignId),
+    // Blocker fix: campaignId is a UUID string (post uuid-primary-keys
+    // migration) — Number.isInteger(campaignId) is always false for a
+    // string, so this query never ran at all, ever, for any campaign. Live
+    // rolls still arrived via the DICE_ROLLED socket event (separate
+    // liveRolls state below, not gated by this flag), which is why the bug
+    // wasn't "no dice ever show up" but specifically "history never loads."
+    enabled: isUuid(campaignId),
   });
 
   useEffect(() => {
@@ -122,6 +129,10 @@ function socketPayloadToDiceRoll(payload: DiceRolledEvent): DiceRoll {
     dice_count: payload.diceCount,
     modifier: payload.modifier,
     result_total: payload.resultTotal,
+    // DICE_ROLLED is never emitted for a damage roll (applyDamage's dice_rolls
+    // insert has no socket broadcast of its own — see services/characters.ts/
+    // monsters.ts) — every live-socket roll is safely never critical.
+    is_critical: false,
     created_at: payload.createdAt,
   };
 }
@@ -166,6 +177,11 @@ function DiceRollRow({ roll }: { roll: DiceRoll }) {
             <span className="text-stone-600"> · </span>
             <span className="capitalize text-stone-400">{roll.roll_type.replace('_', ' ')}</span>
             {roll.roll_context && <span className="text-stone-500"> — {roll.roll_context}</span>}
+            {roll.is_critical && (
+              <span className="ml-1.5 inline-flex items-center rounded border border-amber-500 px-1 text-[10px] font-semibold uppercase tracking-wide text-amber-500">
+                {t('dice.historyCritical')}
+              </span>
+            )}
           </div>
           <div className="text-xs text-stone-500">{relativeTime(roll.created_at, t)}</div>
         </div>

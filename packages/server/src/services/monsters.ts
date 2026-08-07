@@ -6,6 +6,7 @@ import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { MONSTER_INSTANCE_STAT_BLOCK_SQL } from '../domain/revealFields.js';
 import { computeAppliedDamage } from './damage.js';
 import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
+import { criticalDiceCount } from './diceEngine.js';
 import type {
   CreateMonsterInstanceInput,
   MonsterInstanceHpDeltaInput,
@@ -395,7 +396,7 @@ export async function applyMonsterInstanceDamage(
     );
     const row = locked.rows[0]!;
 
-    const diceCount = isCritical ? input.diceCount * 2 : input.diceCount;
+    const diceCount = criticalDiceCount(input.diceCount, isCritical);
     const rolls = Array.from({ length: diceCount }, () => rollDie(input.diceSides));
     const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
 
@@ -432,11 +433,12 @@ export async function applyMonsterInstanceDamage(
       await client.query(
         `INSERT INTO dice_rolls
            (campaign_id, user_id, monster_instance_id, encounter_id, roll_type, roll_context,
-            d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
-         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10)`,
+            d20_rolls, keep, dice_sides, dice_count, modifier, result_total, is_critical)
+         VALUES ($1,$2,$3,$4,'damage',$5,$6,'normal',$7,$8,$9,$10,$11)`,
         [
           instance.campaign_id, actorId, instanceId, input.encounterId,
           input.rollContext ?? null, rolls, input.diceSides, diceCount, input.modifier, diceTotal + input.modifier,
+          isCritical,
         ],
       );
     }

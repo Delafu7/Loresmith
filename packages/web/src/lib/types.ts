@@ -812,6 +812,11 @@ export interface DiceRoll {
   dice_count: number;
   modifier: number;
   result_total: number;
+  // Iteration 3 dice-engine rebuild — only ever true for roll_type='damage'
+  // rows (applyDamage's server-derived criticality, see
+  // services/diceRolls.ts's deriveIsCriticalFromAttackRoll); every other
+  // roll type always has this false.
+  is_critical: boolean;
   created_at: string;
 }
 

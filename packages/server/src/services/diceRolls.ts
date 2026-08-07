@@ -26,6 +26,7 @@ export interface DiceRollRow {
   dice_count: number;
   modifier: number;
   result_total: number;
+  is_critical: boolean;
   created_at: Date;
 }
 
