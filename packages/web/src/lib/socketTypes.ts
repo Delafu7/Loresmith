@@ -12,6 +12,7 @@ import type {
   EncounterDisposition,
   EncounterMode,
   EncounterStatus,
+  ResourcePool,
 } from './types';
 
 export interface Envelope {
@@ -269,6 +270,17 @@ export interface DiceRollVoidedEvent {
   id: string;
 }
 
+// Iteration 3 minor sweep — spending/recovering a resource pool used to
+// broadcast nothing at all; a same-player-two-tabs (or delegated-controller
+// + owner) view went stale. Campaign-room, not encounter-room — resource
+// pools can change outside combat too (rests, out-of-combat casting).
+export interface ResourcePoolChangedEvent {
+  campaignId: string;
+  serverTimestamp: number;
+  characterId: string;
+  resource: ResourcePool;
+}
+
 // Roll requests (Iteration 3 §2.3) — room-wide; never carries a roll's
 // value, only request/target metadata (see broadcast.ts's own comment on
 // why this is safe to fan out room-wide unlike DICE_ROLLED).
@@ -377,6 +389,7 @@ export interface ServerToClientEvents {
   DICE_ROLL_VOIDED: (payload: DiceRollVoidedEvent) => void;
   DICE_ROLL_REQUESTED: (payload: DiceRollRequestedEvent) => void;
   DICE_ROLL_REQUEST_UPDATED: (payload: DiceRollRequestUpdatedEvent) => void;
+  RESOURCE_POOL_CHANGED: (payload: ResourcePoolChangedEvent) => void;
   ACTION_RECORDED: (payload: ActionRecordedEvent) => void;
   ENCOUNTER_OPENED: (payload: EncounterOpenedEvent) => void;
   ENCOUNTER_FULLSCREEN_FORCED: (payload: EncounterOpenedEvent) => void;

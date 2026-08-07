@@ -23,9 +23,20 @@ export type RemoveFromBestiaryInput = z.infer<typeof removeFromBestiarySchema>;
 // automatically as the monster schema evolves. No `.default()` here either,
 // for the same "PATCH omission must not reintroduce a value" reason as
 // updateHomebrewMonsterSchema's own header comment.
+// clearOverrides: Iteration 3 minor sweep — statOverrides' fields (armorClass,
+// hitPointAverage, ...) are non-nullable on updateHomebrewMonsterSchema
+// (deliberately — a homebrew monster's OWN row must always have a real AC/
+// HP, so loosening that shared schema to accept null would let a client
+// clear the catalog row's actual stat, not just an override). A campaign
+// bestiary override is sparse by design, though, and needed a way to remove
+// one that was never expressible: this lists override KEYS to delete from
+// the stored JSONB blob, applied after statOverrides' own shallow-merge —
+// a separate mechanism rather than loosening the shared schema's own
+// nullability.
 export const updateBestiaryEntrySchema = z.object({
   customName: z.string().max(200).optional().nullable(),
   statOverrides: updateHomebrewMonsterSchema.optional(),
+  clearOverrides: z.array(z.string().max(100)).max(30).optional(),
   notes: z.string().max(20000).optional().nullable(),
   discovered: z.boolean().optional(),
 });

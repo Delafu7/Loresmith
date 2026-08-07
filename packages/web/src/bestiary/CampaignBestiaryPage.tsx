@@ -276,10 +276,18 @@ function BestiaryEntryDetail({
     const statOverrides: Record<string, unknown> = {};
     if (armorClassOverride.trim() !== '') statOverrides.armorClass = Number(armorClassOverride);
     if (hpOverride.trim() !== '') statOverrides.hitPointAverage = Number(hpOverride);
+    // Iteration 3 minor sweep — an override could be set but never
+    // cleared: emptying the field used to just skip sending that key,
+    // silently leaving the old override in place forever. Emptying a field
+    // that WAS overridden now asks the server to delete that override key.
+    const clearOverrides: string[] = [];
+    if (armorClassOverride.trim() === '' && entry.stat_overrides.armor_class !== undefined) clearOverrides.push('armorClass');
+    if (hpOverride.trim() === '' && entry.stat_overrides.hit_point_average !== undefined) clearOverrides.push('hitPointAverage');
     onUpdate({
       customName: customName.trim() === '' ? null : customName,
       notes: notes.trim() === '' ? null : notes,
       ...(Object.keys(statOverrides).length > 0 ? { statOverrides } : {}),
+      ...(clearOverrides.length > 0 ? { clearOverrides } : {}),
     });
   }
 

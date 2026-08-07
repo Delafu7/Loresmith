@@ -26,13 +26,18 @@ export async function listResourcePools(pool: Pool, actorId: string, characterId
  * current_value and both succeed — one wins, the other's UPDATE matches zero
  * rows and falls through to the insufficient-balance check below.
  */
+export interface ResourcePoolMutationResult {
+  resource: Record<string, unknown>;
+  campaignId: string;
+}
+
 export async function spendResource(
   pool: Pool,
   actorId: string,
   characterId: string,
   resourceKey: string,
   input: ResourceAmountInput,
-) {
+): Promise<ResourcePoolMutationResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterAction(pool, actorId, character);
 
@@ -43,7 +48,7 @@ export async function spendResource(
      RETURNING *`,
     [input.amount, characterId, resourceKey],
   );
-  if (result.rows.length > 0) return result.rows[0];
+  if (result.rows.length > 0) return { resource: result.rows[0], campaignId: character.campaign_id };
 
   // The UPDATE matched zero rows — find out why (pool doesn't exist at all
   // vs. exists but insufficient) only on this failure path, so the common
@@ -66,7 +71,7 @@ export async function recoverResource(
   characterId: string,
   resourceKey: string,
   input: ResourceAmountInput,
-) {
+): Promise<ResourcePoolMutationResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterAction(pool, actorId, character);
 
@@ -79,5 +84,5 @@ export async function recoverResource(
   );
   const row = result.rows[0];
   if (!row) throw notFound(`Resource pool '${resourceKey}'`);
-  return row;
+  return { resource: row, campaignId: character.campaign_id };
 }

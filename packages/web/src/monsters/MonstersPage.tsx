@@ -151,9 +151,13 @@ export function MonstersPage() {
   });
 
   if (role !== 'dm') {
+    // UX finding #9 (Iteration 3 audit) — a role-based permission denial is
+    // an expected state for that role, not an error condition; ErrorBanner
+    // was inconsistent with CampaignMembersPage's own (more appropriate)
+    // EmptyState treatment of the exact same situation.
     return (
       <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
-        <ErrorBanner message={t('monsters.dmOnly')} />
+        <EmptyState message={t('monsters.dmOnly')} />
       </div>
     );
   }

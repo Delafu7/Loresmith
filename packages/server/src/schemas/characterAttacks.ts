@@ -27,5 +27,20 @@ export const createCharacterAttackSchema = z
   });
 export type CreateCharacterAttackInput = z.infer<typeof createCharacterAttackSchema>;
 
-export const updateCharacterAttackSchema = z.object(sharedCharacterAttackShape).partial();
+// Iteration 3 minor sweep — this used to be a bare .partial() with none of
+// createCharacterAttackSchema's .refine() guard, even though the same DB
+// CHECK constraint applies to every row regardless of which endpoint wrote
+// it. This catches the common/direct case (a client sets both fields in
+// ONE PATCH payload) at the validation layer with a clean 400; it can't
+// catch "the row already has attackBonus set, this PATCH only sets saveDc"
+// (the payload alone doesn't reveal that conflict) — services/
+// characterAttacks.ts's updateCharacterAttack additionally catches the raw
+// DB check-violation for that case, same isCheckViolation pattern
+// services/characters.ts's insertCharacterRow already uses.
+export const updateCharacterAttackSchema = z
+  .object(sharedCharacterAttackShape)
+  .partial()
+  .refine((v) => !(v.attackBonus != null && v.saveDc != null), {
+    message: 'attackBonus and saveDc are mutually exclusive',
+  });
 export type UpdateCharacterAttackInput = z.infer<typeof updateCharacterAttackSchema>;

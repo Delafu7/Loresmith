@@ -203,11 +203,17 @@ export async function updateCampaignBestiaryEntry(
     sets.push(`discovered = $${i++}`);
     values.push(input.discovered);
   }
-  if (input.statOverrides !== undefined) {
+  if (input.statOverrides !== undefined || input.clearOverrides !== undefined) {
     // Shallow-merged into the EXISTING overrides blob (not replaced) — a
     // PATCH that only supplies a new armorClass override must not clobber
     // an hpMaxOverride set by an earlier PATCH.
-    const merged = { ...existing.stat_overrides, ...toSnakeCaseColumns(input.statOverrides) };
+    const merged: Record<string, unknown> = { ...existing.stat_overrides, ...toSnakeCaseColumns(input.statOverrides ?? {}) };
+    // clearOverrides: Iteration 3 minor sweep — an override could be SET
+    // but never cleared before this; applied after the merge above so a
+    // single PATCH can both set some overrides and clear others.
+    for (const key of input.clearOverrides ?? []) {
+      delete merged[key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)];
+    }
     sets.push(`stat_overrides = $${i++}`);
     values.push(JSON.stringify(merged));
   }

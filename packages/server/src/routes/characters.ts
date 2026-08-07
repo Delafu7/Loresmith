@@ -33,6 +33,7 @@ import {
   broadcastEffectApplied,
   broadcastEffectExpired,
   broadcastArmorClassChanged,
+  broadcastResourcePoolChanged,
 } from '../sockets/broadcast.js';
 import type { Server } from 'socket.io';
 import type { ArmorClassEncounterSync } from '../services/armorClass.js';
@@ -372,13 +373,19 @@ charactersRouter.get('/:id/resources', async (req, res) => {
 
 charactersRouter.post('/:id/resources/:key/spend', async (req, res) => {
   const input = resourceAmountSchema.parse(req.body);
-  const resource = await resourcePoolsService.spendResource(pool, req.user!.id, (req.params.id as string), req.params.key!, input);
+  const { resource, campaignId } = await resourcePoolsService.spendResource(
+    pool, req.user!.id, (req.params.id as string), req.params.key!, input,
+  );
+  broadcastResourcePoolChanged(getIo(req.app), campaignId, (req.params.id as string), resource);
   res.json({ resource });
 });
 
 charactersRouter.post('/:id/resources/:key/recover', async (req, res) => {
   const input = resourceAmountSchema.parse(req.body);
-  const resource = await resourcePoolsService.recoverResource(pool, req.user!.id, (req.params.id as string), req.params.key!, input);
+  const { resource, campaignId } = await resourcePoolsService.recoverResource(
+    pool, req.user!.id, (req.params.id as string), req.params.key!, input,
+  );
+  broadcastResourcePoolChanged(getIo(req.app), campaignId, (req.params.id as string), resource);
   res.json({ resource });
 });
 

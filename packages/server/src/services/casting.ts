@@ -35,6 +35,7 @@ import type { CastFromEncounterInput } from '../schemas/casting.js';
 
 export interface CastFromEncounterResult {
   resourcePool: Record<string, unknown>;
+  campaignId: string;
   appliedEffects: EffectMutationResult[];
 }
 
@@ -47,7 +48,7 @@ export async function castFromEncounter(
   const character = await fetchCharacterOrThrow(pool, input.characterId);
   await authorizeCharacterMutation(pool, actorId, character);
 
-  const resourcePool = await spendResource(pool, actorId, input.characterId, input.resourceKey, { amount: 1 });
+  const { resource: resourcePool, campaignId } = await spendResource(pool, actorId, input.characterId, input.resourceKey, { amount: 1 });
 
   const appliedEffects: EffectMutationResult[] = [];
   if (input.effectDefinitionId) {
@@ -76,5 +77,5 @@ export async function castFromEncounter(
     }
   }
 
-  return { resourcePool, appliedEffects };
+  return { resourcePool, campaignId, appliedEffects };
 }

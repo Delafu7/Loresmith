@@ -89,9 +89,11 @@ export function AddToBestiaryPage() {
   });
 
   if (role !== 'dm') {
+    // UX finding #9 (Iteration 3 audit) — see MonstersPage.tsx's identical
+    // fix for the reasoning.
     return (
       <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
-        <ErrorBanner message={t('campaignBestiary.dmOnly')} />
+        <EmptyState message={t('campaignBestiary.dmOnly')} />
       </div>
     );
   }

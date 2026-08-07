@@ -891,6 +891,29 @@ export function broadcastBestiaryUpdated(io: Server, campaignId: string): void {
   io.to(campaignRoom(campaignId)).emit('BESTIARY_UPDATED', { campaignId, serverTimestamp: Date.now() });
 }
 
+// Iteration 3 minor sweep — spending/recovering a resource pool (ki points,
+// rage uses, spell slots) never broadcast anything at all, unlike every
+// other combat-relevant mutation in this app, which is disciplined about
+// this. Same-player-two-tabs (or a delegated controller + the owner, both
+// watching the same character sheet) went stale until an unrelated event
+// forced a refetch. Campaign-room, not encounter-room — a resource pool can
+// be spent/recovered outside combat too (short/long rest, out-of-combat
+// spellcasting), same "not necessarily encounter-scoped" reasoning
+// DICE_ROLLED already uses.
+export function broadcastResourcePoolChanged(
+  io: Server,
+  campaignId: string,
+  characterId: string,
+  resource: Record<string, unknown>,
+): void {
+  io.to(campaignRoom(campaignId)).emit('RESOURCE_POOL_CHANGED', {
+    campaignId,
+    serverTimestamp: Date.now(),
+    characterId,
+    resource,
+  });
+}
+
 export async function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRollBroadcastRow): Promise<void> {
   const payload = {
     campaignId,

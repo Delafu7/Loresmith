@@ -147,6 +147,33 @@ describe('campaign bestiary curation (integration, live DB, throwaway fixtures)'
     expect(secondUpdate.notes).toBe('Wears a stolen cloak.');
   });
 
+  // Regression test for the Iteration 3 minor sweep — a stat override could
+  // be set but never cleared: updateHomebrewMonsterSchema's fields are
+  // deliberately non-nullable (a homebrew monster's OWN row must always
+  // have a real AC/HP), so statOverrides itself can never signal "remove
+  // this override." clearOverrides is the separate mechanism this test
+  // locks in.
+  it('clearOverrides removes a previously-set override without touching others set in the same PATCH', async () => {
+    const dmList = await listCampaignBestiary(pool, campaignId, 'dm');
+    const entryId = dmList.find((e) => e.monster_id === monsterId)!.id;
+
+    await updateCampaignBestiaryEntry(pool, campaignId, entryId, {
+      statOverrides: { hitPointAverage: 50, armorClass: 18 },
+    });
+
+    const cleared = await updateCampaignBestiaryEntry(pool, campaignId, entryId, {
+      statOverrides: { armorClass: 20 },
+      clearOverrides: ['hitPointAverage'],
+    });
+
+    const effective = cleared.effective as { hit_point_average: number; armor_class: number };
+    // hit_point_average falls back to the catalog row's own value (7, per
+    // this fixture's setup above) once its override is cleared.
+    expect(effective.hit_point_average).toBe(7);
+    expect(effective.armor_class).toBe(20);
+    expect(Object.keys(cleared.stat_overrides)).not.toContain('hit_point_average');
+  });
+
   it('removing a bestiary entry deletes only the curation row — the catalog monster and any combat instance survive', async () => {
     const instance = await createMonsterInstance(pool, campaignId, {
       monsterId,

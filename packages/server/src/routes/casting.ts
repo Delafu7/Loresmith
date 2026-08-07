@@ -12,7 +12,7 @@ import { AppError, notFound } from '../middleware/errors.js';
 import { isUuid } from '../domain/ids.js';
 import { castFromEncounterSchema } from '../schemas/casting.js';
 import { castFromEncounter } from '../services/casting.js';
-import { getIo, broadcastEffectApplied, broadcastEffectExpired } from '../sockets/broadcast.js';
+import { getIo, broadcastEffectApplied, broadcastEffectExpired, broadcastResourcePoolChanged } from '../sockets/broadcast.js';
 
 async function loadEncounterCampaignId(encounterId: string): Promise<string> {
   if (!isUuid(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
@@ -33,9 +33,10 @@ castingRouter.post('/:id/cast', async (req, res) => {
   // routes/effects.ts.
   await loadEncounterCampaignId(encounterId);
   const input = castFromEncounterSchema.parse(req.body);
-  const { resourcePool, appliedEffects } = await castFromEncounter(pool, req.user!.id, encounterId, input);
+  const { resourcePool, campaignId, appliedEffects } = await castFromEncounter(pool, req.user!.id, encounterId, input);
 
   const io = getIo(req.app);
+  broadcastResourcePoolChanged(io, campaignId, input.characterId, resourcePool);
   for (const applied of appliedEffects) {
     for (const sync of applied.encounterSyncs) {
       if (applied.replacedEffect) {

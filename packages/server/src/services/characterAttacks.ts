@@ -7,7 +7,8 @@
 // player only for mutations, any campaign member for reads.
 
 import type { Pool } from 'pg';
-import { notFound } from '../middleware/errors.js';
+import { AppError, notFound } from '../middleware/errors.js';
+import { isCheckViolation } from './dbErrors.js';
 import { requireMembership } from './authz.js';
 import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
 import type { CreateCharacterAttackInput, UpdateCharacterAttackInput } from '../schemas/characterAttacks.js';
@@ -26,17 +27,24 @@ export async function addCharacterAttack(pool: Pool, actorId: string, characterI
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);
 
-  const result = await pool.query(
-    `INSERT INTO character_attacks
-       (character_id, name, attack_bonus, damage_dice, damage_type, save_dc, save_ability_index, half_on_save, notes, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     RETURNING *`,
-    [
-      characterId, input.name, input.attackBonus ?? null, input.damageDice ?? null, input.damageType ?? null,
-      input.saveDc ?? null, input.saveAbilityIndex ?? null, input.halfOnSave, input.notes ?? null, input.sortOrder,
-    ],
-  );
-  return result.rows[0];
+  try {
+    const result = await pool.query(
+      `INSERT INTO character_attacks
+         (character_id, name, attack_bonus, damage_dice, damage_type, save_dc, save_ability_index, half_on_save, notes, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING *`,
+      [
+        characterId, input.name, input.attackBonus ?? null, input.damageDice ?? null, input.damageType ?? null,
+        input.saveDc ?? null, input.saveAbilityIndex ?? null, input.halfOnSave, input.notes ?? null, input.sortOrder,
+      ],
+    );
+    return result.rows[0];
+  } catch (err) {
+    if (isCheckViolation(err)) {
+      throw new AppError('VALIDATION_ERROR', 'Attack data violates a database constraint', { cause: String(err) });
+    }
+    throw err;
+  }
 }
 
 const UPDATABLE_COLUMNS: Record<string, string> = {
@@ -79,13 +87,25 @@ export async function updateCharacterAttack(
   }
 
   values.push(attackId, characterId);
-  const result = await pool.query(
-    `UPDATE character_attacks SET ${sets.join(', ')} WHERE id = $${i++} AND character_id = $${i} RETURNING *`,
-    values,
-  );
-  const row = result.rows[0];
-  if (!row) throw notFound('Character attack');
-  return row;
+  try {
+    const result = await pool.query(
+      `UPDATE character_attacks SET ${sets.join(', ')} WHERE id = $${i++} AND character_id = $${i} RETURNING *`,
+      values,
+    );
+    const row = result.rows[0];
+    if (!row) throw notFound('Character attack');
+    return row;
+  } catch (err) {
+    // Catches the case the schema's own .refine() can't: this PATCH only
+    // set ONE of attackBonus/saveDc, but the row already had the other set
+    // from a previous write — the payload alone never revealed the
+    // conflict, only the resulting row does, which is exactly what the DB
+    // CHECK constraint is for.
+    if (isCheckViolation(err)) {
+      throw new AppError('VALIDATION_ERROR', 'Attack data violates a database constraint', { cause: String(err) });
+    }
+    throw err;
+  }
 }
 
 export async function removeCharacterAttack(pool: Pool, actorId: string, characterId: string, attackId: string): Promise<void> {
