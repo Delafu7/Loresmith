@@ -817,7 +817,46 @@ export interface DiceRoll {
   // services/diceRolls.ts's deriveIsCriticalFromAttackRoll); every other
   // roll type always has this false.
   is_critical: boolean;
+  // Iteration 3 §2.3/2.4 — net-new roll capability.
+  visibility: DiceRollVisibility;
+  visible_to_user_id: string | null;
+  is_manual: boolean;
+  voided_at: string | null;
+  voided_by_user_id: string | null;
   created_at: string;
+}
+
+export type DiceRollVisibility = 'public' | 'gm_only' | 'private';
+
+// GM-initiated "please roll X" fan-out (Iteration 3 §2.3).
+export interface DiceRollRequest {
+  id: string;
+  campaign_id: string;
+  encounter_id: string | null;
+  requested_by_user_id: string;
+  roll_type: DiceRollType;
+  roll_context: string | null;
+  dc: number | null;
+  created_at: string;
+}
+
+export interface DiceRollRequestTarget {
+  id: string;
+  request_id: string;
+  user_id: string;
+  character_id: string | null;
+  status: 'pending' | 'rolled' | 'passed';
+  dice_roll_id: string | null;
+  responded_at: string | null;
+  // Only present on the GET .../dice-roll-requests read path — whether the
+  // fulfilling roll (if any) is visible to the requesting viewer, per
+  // services/diceRolls.ts's isRollVisibleToViewer.
+  rollVisible?: boolean;
+}
+
+export interface DiceRollRequestWithTargets {
+  request: DiceRollRequest;
+  targets: DiceRollRequestTarget[];
 }
 
 // POST /campaigns/:id/roll-ability-scores's response (Phase 3.8) — one of

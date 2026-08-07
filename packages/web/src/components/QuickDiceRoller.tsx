@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { formatModifier } from '../lib/dnd-math';
-import { DICE_SIDES, type DiceRoll, type DiceRollKeep } from '../lib/types';
+import { DICE_SIDES, type CampaignMember, type DiceRoll, type DiceRollKeep, type DiceRollVisibility } from '../lib/types';
 import { DieFace, keptDieIndex } from './DiceRoller';
 import { ErrorBanner, errorMessage } from './Feedback';
 import { useLocale } from '../i18n/LocaleContext';
@@ -30,6 +30,12 @@ export function parseDiceExpression(input: string): ParsedExpression | null {
   return { count, sides, modifier };
 }
 
+const VISIBILITY_LABEL_KEYS = {
+  public: 'dice.visibilityPublic',
+  gm_only: 'dice.visibilityGmOnly',
+  private: 'dice.visibilityPrivate',
+} as const;
+
 export interface QuickDiceRollerProps {
   characterId?: string;
   monsterInstanceId?: string;
@@ -48,13 +54,43 @@ export interface QuickDiceRollerProps {
  */
 export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, className = '' }: QuickDiceRollerProps) {
   const { t } = useLocale();
-  const { campaignId } = useCampaignShell();
+  const { campaignId, role } = useCampaignShell();
+  const isDm = role === 'dm';
   const [expression, setExpression] = useState('1d20');
   const [keep, setKeep] = useState<DiceRollKeep>('normal');
   const [result, setResult] = useState<DiceRoll | null>(null);
 
+  // Iteration 3 §2.4 — DM-only. Never shown to a player: rollDice rejects
+  // anything but 'public' from a non-DM anyway, so hiding the picker here
+  // just avoids offering a control that would 403.
+  const [visibility, setVisibility] = useState<DiceRollVisibility>('public');
+  const [visibleToUserId, setVisibleToUserId] = useState('');
+  const membersQuery = useQuery({
+    queryKey: ['campaign', campaignId, 'members'],
+    queryFn: () => api.get<{ members: CampaignMember[] }>(`/campaigns/${campaignId}/members`),
+    enabled: isDm,
+  });
+
+  // Iteration 3 §2.3/2.4 "both physical and digital dice matter equally" —
+  // a manual-entry toggle that swaps the roll button for per-die number
+  // inputs matching the parsed expression's dice count/sides; the request
+  // still goes through the exact same endpoint, only the SOURCE of the raw
+  // values differs (see schemas/diceRolls.ts's manualRolls field).
+  const [manualMode, setManualMode] = useState(false);
+  const [manualValues, setManualValues] = useState<string[]>([]);
+
   const parsed = parseDiceExpression(expression);
   const isD20 = parsed?.sides === 20;
+  const manualRollCount = parsed ? (isD20 && keep !== 'normal' ? 2 : parsed.count) : 0;
+  useEffect(() => {
+    setManualValues((prev) => Array.from({ length: manualRollCount }, (_, i) => prev[i] ?? ''));
+  }, [manualRollCount]);
+  const parsedManualValues = manualValues.map((v) => Number(v));
+  const manualValuesValid =
+    !manualMode ||
+    (parsedManualValues.length === manualRollCount &&
+      parsedManualValues.every((v) => Number.isInteger(v) && v >= 1 && parsed && v <= parsed.sides));
+
   const keepOptions: Array<{ value: DiceRollKeep; label: string }> = [
     { value: 'disadvantage', label: t('dice.rollerDisadvantage') },
     { value: 'normal', label: t('dice.rollerNormal') },
@@ -74,6 +110,9 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
         characterId,
         monsterInstanceId,
         encounterId,
+        visibility: isDm ? visibility : 'public',
+        visibleToUserId: isDm && visibility === 'private' ? visibleToUserId || undefined : undefined,
+        manualRolls: manualMode ? parsedManualValues : undefined,
       });
     },
     onSuccess: (data) => setResult(data.roll),
@@ -134,15 +173,86 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
             ))}
           </div>
         )}
-        <button
-          type="button"
-          disabled={!parsed || rollMutation.isPending}
-          onClick={() => rollMutation.mutate()}
-          className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
-        >
-          {rollMutation.isPending ? t('dice.quickRolling') : t('dice.rollerRollButton')}
-        </button>
+        <label className="flex items-center gap-1.5 text-[11px] text-stone-400">
+          <input type="checkbox" checked={manualMode} onChange={(e) => setManualMode(e.target.checked)} />
+          {t('dice.manualEntryToggle')}
+        </label>
+        {!manualMode && (
+          <button
+            type="button"
+            disabled={!parsed || rollMutation.isPending}
+            onClick={() => rollMutation.mutate()}
+            className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
+          >
+            {rollMutation.isPending ? t('dice.quickRolling') : t('dice.rollerRollButton')}
+          </button>
+        )}
       </div>
+
+      {manualMode && parsed && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-stone-500">{t('dice.manualEntryHint', { count: manualRollCount, sides: parsed.sides })}</span>
+          {manualValues.map((v, i) => (
+            <input
+              key={i}
+              type="number"
+              min={1}
+              max={parsed.sides}
+              value={v}
+              onChange={(e) => setManualValues((prev) => prev.map((p, pi) => (pi === i ? e.target.value : p)))}
+              className="w-14 rounded-md bg-stone-800 border border-stone-700 px-1.5 py-1 text-sm text-stone-100 text-center"
+            />
+          ))}
+          <button
+            type="button"
+            disabled={!parsed || !manualValuesValid || rollMutation.isPending}
+            onClick={() => rollMutation.mutate()}
+            className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-3 py-1.5 text-xs"
+          >
+            {rollMutation.isPending ? t('dice.quickRolling') : t('dice.rollerRollButton')}
+          </button>
+        </div>
+      )}
+
+      {isDm && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-stone-800 pt-2">
+          <span className="text-[11px] text-stone-500">{t('dice.visibilityLabel')}</span>
+          <div
+            role="radiogroup"
+            aria-label={t('dice.visibilityLabel')}
+            className="inline-flex rounded-md border border-stone-700 overflow-hidden text-[10px] leading-none"
+          >
+            {(['public', 'gm_only', 'private'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="radio"
+                aria-checked={visibility === v}
+                onClick={() => setVisibility(v)}
+                className={`px-1.5 py-1.5 transition-colors ${
+                  visibility === v ? 'bg-amber-950 text-amber-400 font-semibold' : 'bg-stone-900 text-stone-400 hover:bg-stone-800'
+                }`}
+              >
+                {t(VISIBILITY_LABEL_KEYS[v])}
+              </button>
+            ))}
+          </div>
+          {visibility === 'private' && (
+            <select
+              value={visibleToUserId}
+              onChange={(e) => setVisibleToUserId(e.target.value)}
+              className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
+            >
+              <option value="">{t('dice.visibilityPickPlayer')}</option>
+              {(membersQuery.data?.members ?? []).map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.display_name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
       {!parsed && expression.trim() !== '' && (
         <p className="text-xs text-red-400">{t('dice.quickInvalidExpression')}</p>

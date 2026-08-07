@@ -62,6 +62,7 @@ describe('rollDice rejects a spectator bare roll (integration, live DB, throwawa
     modifier: 0,
     diceSides: 20,
     diceCount: 1,
+    visibility: 'public',
   };
 
   it('rejects a spectator rolling a bare (no character/monster) die', async () => {

@@ -53,7 +53,7 @@ describe('listDiceRolls cursor pagination (integration, live DB, throwaway fixtu
   it('walks every page via the server-issued cursor without the id-type guard rejecting it', async () => {
     const seen = new Set<string>();
 
-    const first = await listDiceRolls(pool, campaignId, 'dm', {});
+    const first = await listDiceRolls(pool, campaignId, dmUserId, 'dm', {});
     expect(first.rolls.length).toBe(30);
     expect(first.nextCursor).not.toBeNull();
     for (const roll of first.rolls) seen.add(roll.id);
@@ -61,7 +61,7 @@ describe('listDiceRolls cursor pagination (integration, live DB, throwaway fixtu
     // Before the fix, this call always threw AppError('VALIDATION_ERROR',
     // 'Invalid cursor') because decodeCursor's guard could never accept a
     // UUID string id.
-    const second = await listDiceRolls(pool, campaignId, 'dm', { cursor: first.nextCursor! });
+    const second = await listDiceRolls(pool, campaignId, dmUserId, 'dm', { cursor: first.nextCursor! });
     expect(second.rolls.length).toBe(5);
     expect(second.nextCursor).toBeNull();
     for (const roll of second.rolls) seen.add(roll.id);

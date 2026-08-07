@@ -7,6 +7,7 @@ import type {
   ActiveEffectSummary,
   DiceRollKeep,
   DiceRollType,
+  DiceRollVisibility,
   EffectDurationType,
   EncounterDisposition,
   EncounterMode,
@@ -249,11 +250,46 @@ export interface DiceRolledEvent {
   diceCount: number;
   modifier: number;
   resultTotal: number;
+  isCritical: boolean;
+  visibility: DiceRollVisibility;
+  isManual: boolean;
   characterId: string | null;
   monsterInstanceId: string | null;
   encounterId: string | null;
   userId: string;
   createdAt: string;
+}
+
+// Void, not delete (Iteration 3 §2.4) — same recipient set as the DICE_ROLLED
+// this roll originally went to, so voiding never leaks that a
+// gm_only/private roll existed to someone who couldn't already see it.
+export interface DiceRollVoidedEvent {
+  campaignId: string;
+  serverTimestamp: number;
+  id: string;
+}
+
+// Roll requests (Iteration 3 §2.3) — room-wide; never carries a roll's
+// value, only request/target metadata (see broadcast.ts's own comment on
+// why this is safe to fan out room-wide unlike DICE_ROLLED).
+export interface DiceRollRequestedEvent {
+  campaignId: string;
+  serverTimestamp: number;
+  id: string;
+  rollType: DiceRollType;
+  rollContext: string | null;
+  dc: number | null;
+  encounterId: string | null;
+  targetUserIds: string[];
+}
+
+export interface DiceRollRequestUpdatedEvent {
+  campaignId: string;
+  serverTimestamp: number;
+  targetId: string;
+  requestId: string;
+  status: 'pending' | 'rolled' | 'passed';
+  diceRollId: string | null;
 }
 
 // ACTION_RECORDED (nav point 2 — combat log). Same "not part of turn-
@@ -338,6 +374,9 @@ export interface ServerToClientEvents {
   PARTICIPANT_FACTION_CHANGED: (payload: ParticipantFactionChangedEvent) => void;
   ACTION_ECONOMY_CHANGED: (payload: ActionEconomyChangedEvent) => void;
   DICE_ROLLED: (payload: DiceRolledEvent) => void;
+  DICE_ROLL_VOIDED: (payload: DiceRollVoidedEvent) => void;
+  DICE_ROLL_REQUESTED: (payload: DiceRollRequestedEvent) => void;
+  DICE_ROLL_REQUEST_UPDATED: (payload: DiceRollRequestUpdatedEvent) => void;
   ACTION_RECORDED: (payload: ActionRecordedEvent) => void;
   ENCOUNTER_OPENED: (payload: EncounterOpenedEvent) => void;
   ENCOUNTER_FULLSCREEN_FORCED: (payload: EncounterOpenedEvent) => void;

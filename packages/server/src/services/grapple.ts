@@ -176,6 +176,7 @@ export async function performGrapple(
     diceCount: 1,
     characterId: attackerCharacterId,
     encounterId,
+    visibility: 'public' as const,
   });
 
   const defenderAbilityScore = input.defenderSkill === 'athletics' ? defenderStr : defenderDex;
@@ -196,6 +197,7 @@ export async function performGrapple(
       diceCount: 1,
       monsterInstanceId: defenderMonsterInstanceId,
       encounterId,
+      visibility: 'public' as const,
     });
     defenderTotal = defenderRoll.result_total;
   }

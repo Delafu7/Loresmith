@@ -178,6 +178,7 @@ export async function performShove(
     diceCount: 1,
     characterId: attackerCharacterId,
     encounterId,
+    visibility: 'public' as const,
   });
 
   // Monster stat blocks list the SKILL's final total bonus directly when the
@@ -203,6 +204,7 @@ export async function performShove(
       diceCount: 1,
       monsterInstanceId: defenderMonsterInstanceId,
       encounterId,
+      visibility: 'public' as const,
     });
     defenderTotal = defenderRoll.result_total;
   }

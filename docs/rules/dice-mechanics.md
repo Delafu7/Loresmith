@@ -413,3 +413,47 @@ Fixed in the same pass (`enabled: isUuid(campaignId)`, matching every other
 page's convention) and live-verified: before the fix, a campaign with real
 `dice_rolls` rows showed "No dice rolls yet"; after, the same rows render,
 including the new critical badge.
+
+## Implementation notes (Iteration 3, Increment 6 — net-new dice capability)
+
+Confirmed with the person who owns this codebase before implementing (see
+the `1784269792666_add-dice-roll-visibility-and-requests` migration's own
+header comment): visibility tiers on `dice_rolls` specifically are a
+deliberate, scoped-down exception to the earlier `1784269769666` migration
+that removed the general-purpose "hide info from players" engine app-wide
+("the feature is gone, not archived"). Nothing else that migration
+simplified (participant HP visibility, effect visibility, asset/note
+visibility, the character-scoped half of `entity_field_reveals`) was
+touched or revived — this is `dice_rolls` only.
+
+Shipped: `visibility` (`public`/`gm_only`/`private`) + `visible_to_user_id`
+on `dice_rolls`, DM-only to set anything but `public` (services/
+diceRolls.ts's `rollDice`); `is_manual` + `manualRolls` schema field for
+physical dice entry, running through the exact same modifier/crit/history
+path as a server roll; `voided_at`/`voided_by_user_id` (void, never
+delete — DM or the roller); `dice_roll_requests`/`dice_roll_request_targets`
+(GM asks one/several/the whole party for a roll, each target's pending/
+rolled/passed status collects in one place, fulfilled either by the
+targeted player or the DM secretly rolling on their behalf). `GET
+.../dice-rolls` gained a `characterId` filter for the roll log. Every
+per-participant-equivalent broadcast (`DICE_ROLLED`, `DICE_ROLL_VOIDED`)
+routes through a visibility-aware recipient computation mirroring
+`isRollVisibleToViewer` exactly, so a `gm_only`/`private` roll never reaches
+a socket that shouldn't see it — same discipline as Increment 2's M2 fix
+for combat participants. `DICE_ROLL_REQUESTED`/`DICE_ROLL_REQUEST_UPDATED`
+are deliberately room-wide (not visibility-gated) — request/target metadata
+(roll type, DC, who's been asked, who's responded) was judged not
+HP/position-sensitive, matching the "whole table can see who's rolled"
+spirit of a tabletop group check; only the underlying ROLL a target
+fulfilled with still respects its own visibility.
+
+Full test coverage: `diceRollVisibilityAndRequests.integration.test.ts`
+(20 cases — visibility authorization, `isRollVisibleToViewer`'s five rules,
+SQL-level visibility filtering in `listDiceRolls`, manual-entry recording,
+void authorization/idempotency, and the full request→fulfill/pass→list
+lifecycle including a DM fulfilling on a player's behalf with a `gm_only`
+roll). Live-verified end to end in a running dev server: DM creates a
+whole-party saving-throw request, a player sees it in their own roll log,
+fulfills it with one click, and the request's status updates live for
+everyone connected — plus manual entry (typed-in die values reach the
+history row verbatim) and the character filter.

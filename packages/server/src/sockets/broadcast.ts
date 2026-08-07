@@ -841,7 +841,43 @@ export interface DiceRollBroadcastRow {
   dice_count: number;
   modifier: number;
   result_total: number;
+  is_critical: boolean;
+  visibility: 'public' | 'gm_only' | 'private';
+  visible_to_user_id: string | null;
+  is_manual: boolean;
   created_at: Date | string;
+}
+
+// Iteration 3 §2.4 visibility — mirrors services/diceRolls.ts's
+// isRollVisibleToViewer exactly (DM always, the roller's own roll always,
+// 'public' to everyone, 'private' only to its one named target), just
+// expressed over live sockets instead of a DB row. A single fetchSockets()
+// call, filtered in JS, rather than the room-split-then-refetch pattern
+// used elsewhere in this file — dice rolls don't need the two-payload
+// shape those other events use, since 'public'/'gm_only'/'private' collapse
+// to one recipient SET, not two different payloads for two different roles.
+async function diceRollRecipientSocketIds(io: Server, campaignId: string, roll: DiceRollBroadcastRow): Promise<string[]> {
+  const room = campaignRoom(campaignId);
+  const sockets = await io.in(room).fetchSockets();
+  if (sockets.length === 0) return [];
+  if (roll.visibility === 'public') return sockets.map((s) => s.id);
+
+  const userIds = [...new Set(sockets.map((s) => (s.data as SocketData).userId))];
+  const roleRes = await pool.query<{ user_id: string; role: CampaignRole }>(
+    `SELECT user_id, role FROM campaign_members WHERE campaign_id = $1 AND user_id = ANY($2::uuid[])`,
+    [campaignId, userIds],
+  );
+  const roleByUser = new Map(roleRes.rows.map((r) => [r.user_id, r.role]));
+
+  return sockets
+    .filter((s) => {
+      const userId = (s.data as SocketData).userId;
+      if (roleByUser.get(userId) === 'dm') return true;
+      if (userId === roll.user_id) return true;
+      if (roll.visibility === 'private' && userId === roll.visible_to_user_id) return true;
+      return false;
+    })
+    .map((s) => s.id);
 }
 
 // ---- BESTIARY_UPDATED (Task 1 — per-campaign bestiary) ----
@@ -855,7 +891,7 @@ export function broadcastBestiaryUpdated(io: Server, campaignId: string): void {
   io.to(campaignRoom(campaignId)).emit('BESTIARY_UPDATED', { campaignId, serverTimestamp: Date.now() });
 }
 
-export function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRollBroadcastRow): void {
+export async function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRollBroadcastRow): Promise<void> {
   const payload = {
     campaignId,
     serverTimestamp: Date.now(),
@@ -868,6 +904,9 @@ export function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRo
     diceCount: roll.dice_count,
     modifier: roll.modifier,
     resultTotal: roll.result_total,
+    isCritical: roll.is_critical,
+    visibility: roll.visibility,
+    isManual: roll.is_manual,
     characterId: roll.character_id,
     monsterInstanceId: roll.monster_instance_id,
     encounterId: roll.encounter_id,
@@ -875,7 +914,58 @@ export function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRo
     createdAt: roll.created_at,
   };
 
-  io.to(campaignRoom(campaignId)).emit('DICE_ROLLED', payload);
+  const recipientIds = await diceRollRecipientSocketIds(io, campaignId, roll);
+  if (recipientIds.length > 0) io.to(recipientIds).emit('DICE_ROLLED', payload);
+}
+
+// Void, not delete (Iteration 3 §2.4) — same recipient set as the original
+// DICE_ROLLED, so a player who could never see a 'gm_only'/private roll in
+// the first place doesn't even learn one existed and got voided.
+export async function broadcastDiceRollVoided(io: Server, campaignId: string, roll: DiceRollBroadcastRow): Promise<void> {
+  const recipientIds = await diceRollRecipientSocketIds(io, campaignId, roll);
+  if (recipientIds.length === 0) return;
+  io.to(recipientIds).emit('DICE_ROLL_VOIDED', { campaignId, serverTimestamp: Date.now(), id: roll.id });
+}
+
+// ---- Dice roll requests (Iteration 3 §2.3) ----
+//
+// Room-wide, unlike DICE_ROLLED — request metadata (roll type, context, DC,
+// who's targeted, who's responded) isn't HP/position-sensitive info the way
+// combat state is; matches the "whole table can see who's rolled" spirit of
+// a tabletop group check. The underlying ROLL a target fulfilled with still
+// respects its own visibility via DICE_ROLLED/the roll-log read path — this
+// event only ever carries request/target metadata, never a roll's value.
+export function broadcastDiceRollRequested(
+  io: Server,
+  campaignId: string,
+  request: { id: string; roll_type: string; roll_context: string | null; dc: number | null; encounter_id: string | null },
+  targetUserIds: string[],
+): void {
+  io.to(campaignRoom(campaignId)).emit('DICE_ROLL_REQUESTED', {
+    campaignId,
+    serverTimestamp: Date.now(),
+    id: request.id,
+    rollType: request.roll_type,
+    rollContext: request.roll_context,
+    dc: request.dc,
+    encounterId: request.encounter_id,
+    targetUserIds,
+  });
+}
+
+export function broadcastDiceRollRequestUpdated(
+  io: Server,
+  campaignId: string,
+  target: { id: string; request_id: string; status: string; dice_roll_id: string | null },
+): void {
+  io.to(campaignRoom(campaignId)).emit('DICE_ROLL_REQUEST_UPDATED', {
+    campaignId,
+    serverTimestamp: Date.now(),
+    targetId: target.id,
+    requestId: target.request_id,
+    status: target.status,
+    diceRollId: target.dice_roll_id,
+  });
 }
 
 // ---- ENCOUNTER_OPENED / ENCOUNTER_FULLSCREEN_FORCED (map-first encounter system) ----
