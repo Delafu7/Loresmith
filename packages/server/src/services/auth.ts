@@ -12,6 +12,7 @@ import type {
   UpdateProfileInput,
   UpdatePasswordInput,
   UpdateTextSizeInput,
+  UpdateUnitSystemInput,
 } from '../schemas/auth.js';
 
 const BCRYPT_ROUNDS = 10;
@@ -24,6 +25,7 @@ export interface UserRow {
   locale: 'en' | 'es' | 'fr';
   avatarUrl: string | null;
   textSize: 'normal' | 'large';
+  unitSystem: 'imperial' | 'metric';
 }
 
 export interface MembershipSummary {
@@ -40,9 +42,10 @@ interface RawUserRow {
   locale: 'en' | 'es' | 'fr';
   avatar_url: string | null;
   text_size: 'normal' | 'large';
+  unit_system: 'imperial' | 'metric';
 }
 
-const USER_COLUMNS = 'id, email, display_name, ui_theme, locale, avatar_url, text_size';
+const USER_COLUMNS = 'id, email, display_name, ui_theme, locale, avatar_url, text_size, unit_system';
 
 function toUserRow(row: RawUserRow): UserRow {
   return {
@@ -53,6 +56,7 @@ function toUserRow(row: RawUserRow): UserRow {
     locale: row.locale,
     avatarUrl: row.avatar_url,
     textSize: row.text_size,
+    unitSystem: row.unit_system,
   };
 }
 
@@ -109,6 +113,14 @@ export async function updateTextSize(pool: Pool, userId: string, input: UpdateTe
   const result = await pool.query<RawUserRow>(
     `UPDATE users SET text_size = $1 WHERE id = $2 RETURNING ${USER_COLUMNS}`,
     [input.textSize, userId],
+  );
+  return toUserRow(result.rows[0]!);
+}
+
+export async function updateUnitSystem(pool: Pool, userId: string, input: UpdateUnitSystemInput): Promise<UserRow> {
+  const result = await pool.query<RawUserRow>(
+    `UPDATE users SET unit_system = $1 WHERE id = $2 RETURNING ${USER_COLUMNS}`,
+    [input.unitSystem, userId],
   );
   return toUserRow(result.rows[0]!);
 }

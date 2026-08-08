@@ -31,6 +31,7 @@ import { Field, Input } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
+import { formatDistance } from '../lib/units';
 import { canMoveToken } from './canMoveToken';
 import { Token } from './Token';
 import { controlBadgeFor } from './controlBadge';
@@ -394,7 +395,7 @@ export function BattleMap({
           {canControlSelected && reachableQuery.data && (
             <span className="text-xs text-stone-400 ml-2">
               {t('encounters.battleMap.remainingMovementLabel')}{' '}
-              <span className="text-amber-400 font-medium">{t('encounters.tracker.feetValue', { value: reachableQuery.data.remainingFt })}</span>
+              <span className="text-amber-400 font-medium">{formatDistance(reachableQuery.data.remainingFt, user?.unitSystem ?? 'imperial', t)}</span>
             </span>
           )}
         </div>

@@ -9,6 +9,8 @@ import type { GrappleResult, ShoveResult, SnapshotParticipant } from '../lib/typ
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
 import { useLocale } from '../i18n/LocaleContext';
+import { useAuth } from '../auth/AuthContext';
+import { formatDistance } from '../lib/units';
 import { actionDescription, actionLabel } from './actionLabels';
 
 type AbilityScores = Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>;
@@ -47,6 +49,8 @@ export function ActionEconomyPanel({
   otherParticipants: SnapshotParticipant[];
 }) {
   const { t } = useLocale();
+  const { user } = useAuth();
+  const unitSystem = user?.unitSystem ?? 'imperial';
   const { campaignId, campaign } = useCampaignShell();
   const queryClient = useQueryClient();
   const [running, setRunning] = useState(true);
@@ -471,7 +475,7 @@ export function ActionEconomyPanel({
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400 pl-2">
         <span className="text-stone-500">{t('encounters.actionEconomy.longJump')}</span>
-        {longJumpDistance !== null && <span>{t('encounters.actionEconomy.feet', { distance: longJumpDistance })}</span>}
+        {longJumpDistance !== null && <span>{formatDistance(longJumpDistance, unitSystem, t)}</span>}
         {longJumpDistance !== null && !longJumpFeasible && (
           <span className="text-red-500">{t('encounters.actionEconomy.notEnoughMovement')}</span>
         )}
@@ -487,7 +491,7 @@ export function ActionEconomyPanel({
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400 pl-2">
         <span className="text-stone-500">{t('encounters.actionEconomy.highJump')}</span>
-        {highJumpDistance !== null && <span>{t('encounters.actionEconomy.feet', { distance: highJumpDistance })}</span>}
+        {highJumpDistance !== null && <span>{formatDistance(highJumpDistance, unitSystem, t)}</span>}
         {highJumpDistance !== null && !highJumpFeasible && (
           <span className="text-red-500">{t('encounters.actionEconomy.notEnoughMovement')}</span>
         )}

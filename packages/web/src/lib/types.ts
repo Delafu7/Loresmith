@@ -12,6 +12,8 @@ export type Locale = 'en' | 'es' | 'fr';
 
 export type TextSize = 'normal' | 'large';
 
+export type UnitSystem = 'imperial' | 'metric';
+
 export interface User {
   id: string;
   email: string;
@@ -28,6 +30,9 @@ export interface User {
   // preference backed by a real effect (root font-size override, index.css).
   avatarUrl: string | null;
   textSize: TextSize;
+  // Distance-unit preference (Iteration 4) — same personal-preference shape
+  // as textSize; see lib/units.ts's formatDistance for how this is applied.
+  unitSystem: UnitSystem;
 }
 
 export interface Membership {

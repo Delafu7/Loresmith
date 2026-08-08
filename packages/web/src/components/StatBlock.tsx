@@ -7,9 +7,11 @@
 
 import type { ReactNode } from 'react';
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
+import { formatDistance } from '../lib/units';
 import type { MonsterCatalogEntry, StatBlockEntry } from '../lib/types';
 import { formatTimestamp } from '../lib/dates';
 import { useLocale } from '../i18n/LocaleContext';
+import { useAuth } from '../auth/AuthContext';
 
 const ABILITIES: Array<{ key: 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha'; label: string }> = [
   { key: 'str', label: 'STR' },
@@ -103,9 +105,11 @@ function kvList(record: Record<string, number> | null | undefined): string {
 
 export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
   const { t } = useLocale();
+  const { user } = useAuth();
+  const unitSystem = user?.unitSystem ?? 'imperial';
   const proficiencyBonus = crToProficiencyBonus(monster.challenge_rating);
   const speedText = Object.entries(monster.speed ?? {})
-    .map(([k, v]) => (k === 'walk' ? `${v} ft.` : `${k} ${v} ft.`))
+    .map(([k, v]) => (k === 'walk' ? formatDistance(Number(v), unitSystem, t) : `${k} ${formatDistance(Number(v), unitSystem, t)}`))
     .join(', ');
 
   const savingThrowsText = kvList(monster.saving_throws);

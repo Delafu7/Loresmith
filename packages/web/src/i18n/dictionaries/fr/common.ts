@@ -12,4 +12,6 @@ export const common = {
   edit: 'Modifier',
   create: 'Créer',
   back: '← Retour',
+  feetUnit: 'pi',
+  metersUnit: 'm',
 };

@@ -3,7 +3,7 @@ import { useLocale } from '../i18n/LocaleContext';
 import { Card, CardKicker } from '../components/ui/Card';
 import { ThemePicker } from '../components/ThemePicker';
 import { LocalePicker } from '../components/LocalePicker';
-import type { TextSize } from '../lib/types';
+import type { TextSize, UnitSystem } from '../lib/types';
 
 /*
  * Theme/language relocated here from the old inline pickers (DashboardPage,
@@ -27,6 +27,10 @@ export function PreferencesTab() {
         <CardKicker>{t('profile.accessibilityKicker')}</CardKicker>
         <TextSizePicker />
       </Card>
+      <Card>
+        <CardKicker>{t('profile.unitsKicker')}</CardKicker>
+        <UnitSystemPicker />
+      </Card>
     </div>
   );
 }
@@ -47,6 +51,27 @@ function TextSizePicker() {
       >
         <option value="normal">{t('profile.textSizeNormal')}</option>
         <option value="large">{t('profile.textSizeLarge')}</option>
+      </select>
+    </label>
+  );
+}
+
+function UnitSystemPicker() {
+  const { user, setUnitSystem, unitSystemPending } = useAuth();
+  const { t } = useLocale();
+  if (!user) return null;
+
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-stone-400">
+      {t('profile.unitSystemLabel')}
+      <select
+        value={user.unitSystem}
+        disabled={unitSystemPending}
+        onChange={(e) => setUnitSystem(e.target.value as UnitSystem)}
+        className="min-h-11 rounded-md border border-stone-700 bg-stone-800 px-2 py-1 text-stone-200 disabled:opacity-50"
+      >
+        <option value="imperial">{t('profile.unitSystemImperial')}</option>
+        <option value="metric">{t('profile.unitSystemMetric')}</option>
       </select>
     </label>
   );

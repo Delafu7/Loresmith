@@ -12,6 +12,7 @@ import {
   updateProfileSchema,
   updatePasswordSchema,
   updateTextSizeSchema,
+  updateUnitSystemSchema,
 } from '../schemas/auth.js';
 import * as authService from '../services/auth.js';
 
@@ -68,6 +69,13 @@ authRouter.patch('/me/locale', requireAuth, async (req, res) => {
 authRouter.patch('/me/text-size', requireAuth, async (req, res) => {
   const input = updateTextSizeSchema.parse(req.body);
   const user = await authService.updateTextSize(pool, req.user!.id, input);
+  res.json({ user });
+});
+
+// Distance-unit preference — same personal-preference shape as /me/text-size.
+authRouter.patch('/me/unit-system', requireAuth, async (req, res) => {
+  const input = updateUnitSystemSchema.parse(req.body);
+  const user = await authService.updateUnitSystem(pool, req.user!.id, input);
   res.json({ user });
 });
 

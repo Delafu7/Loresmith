@@ -25,4 +25,8 @@ export const profile = {
   textSizeLabel: 'Tamaño de texto',
   textSizeNormal: 'Normal',
   textSizeLarge: 'Grande',
+  unitsKicker: 'Unidades',
+  unitSystemLabel: 'Unidades de distancia',
+  unitSystemImperial: 'Pies',
+  unitSystemMetric: 'Metros',
 };

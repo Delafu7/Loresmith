@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { CampaignRole, Locale, Membership, TextSize, UiTheme, User } from '../lib/types';
+import type { CampaignRole, Locale, Membership, TextSize, UiTheme, UnitSystem, User } from '../lib/types';
 import { getSocket } from '../lib/socket';
 
 export interface MeResponse {
@@ -26,6 +26,8 @@ interface AuthContextValue {
   localePending: boolean;
   setTextSize: (textSize: TextSize) => void;
   textSizePending: boolean;
+  setUnitSystem: (unitSystem: UnitSystem) => void;
+  unitSystemPending: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -88,6 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const unitSystemMutation = useMutation({
+    mutationFn: (unitSystem: UnitSystem) => api.patch<{ user: User }>('/auth/me/unit-system', { unitSystem }),
+    onSuccess: (data) => {
+      queryClient.setQueryData<MeResponse>(['me'], (prev) => (prev ? { ...prev, user: data.user } : prev));
+    },
+  });
+
   // Applied as soon as the logged-in user's theme is known (including right
   // after login/register/refresh) — every `amber-*`/`stone-*` Tailwind class
   // anywhere in the app re-colors via index.css's [data-theme] overrides, no
@@ -133,6 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localePending: localeMutation.isPending,
       setTextSize: (textSize: TextSize) => textSizeMutation.mutate(textSize),
       textSizePending: textSizeMutation.isPending,
+      setUnitSystem: (unitSystem: UnitSystem) => unitSystemMutation.mutate(unitSystem),
+      unitSystemPending: unitSystemMutation.isPending,
     }),
     [
       meQuery.data,
@@ -143,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       themeMutation,
       localeMutation,
       textSizeMutation,
+      unitSystemMutation,
     ],
   );
 

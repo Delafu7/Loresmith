@@ -26,6 +26,7 @@ import { HPBar } from '../components/HPBar';
 import { HpAdjustForm } from '../components/HpAdjustForm';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
+import { formatDistance } from '../lib/units';
 import { SavingThrowsPanel } from './SavingThrowsPanel';
 import { SkillsPanel } from './SkillsPanel';
 import { ClassSummaryPanel } from './ClassSummaryPanel';
@@ -394,7 +395,9 @@ export function CharacterSheetPage() {
                 className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100"
               />
             ) : (
-              <div className="text-lg font-semibold text-stone-100">{character.speed} ft.</div>
+              <div className="text-lg font-semibold text-stone-100">
+                {formatDistance(character.speed, user?.unitSystem ?? 'imperial', t)}
+              </div>
             )}
           </div>
         </div>

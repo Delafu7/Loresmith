@@ -59,3 +59,11 @@ export const updateTextSizeSchema = z.object({
   textSize: textSizeEnum,
 });
 export type UpdateTextSizeInput = z.infer<typeof updateTextSizeSchema>;
+
+// Distance-unit preference — same personal-preference shape as textSize
+// above. Stored values elsewhere stay in feet; this only changes display.
+export const unitSystemEnum = z.enum(['imperial', 'metric']);
+export const updateUnitSystemSchema = z.object({
+  unitSystem: unitSystemEnum,
+});
+export type UpdateUnitSystemInput = z.infer<typeof updateUnitSystemSchema>;

@@ -15,6 +15,7 @@ export interface AuthedUser {
   locale: 'en' | 'es' | 'fr';
   avatarUrl: string | null;
   textSize: 'normal' | 'large';
+  unitSystem: 'imperial' | 'metric';
 }
 
 declare global {
@@ -40,8 +41,9 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     locale: 'en' | 'es' | 'fr';
     avatar_url: string | null;
     text_size: 'normal' | 'large';
+    unit_system: 'imperial' | 'metric';
   }>(
-    `SELECT id, email, display_name, ui_theme, locale, avatar_url, text_size FROM users WHERE id = $1`,
+    `SELECT id, email, display_name, ui_theme, locale, avatar_url, text_size, unit_system FROM users WHERE id = $1`,
     [userId],
   );
   const row = result.rows[0];
@@ -59,6 +61,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     locale: row.locale,
     avatarUrl: row.avatar_url,
     textSize: row.text_size,
+    unitSystem: row.unit_system,
   };
   next();
 }

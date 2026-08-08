@@ -17,6 +17,8 @@ import { useReveals } from '../lib/useReveal';
 import { StatBlock } from '../components/StatBlock';
 import { AbilityScoreGrid } from '../components/AbilityScoreGrid';
 import { useLocale } from '../i18n/LocaleContext';
+import { useAuth } from '../auth/AuthContext';
+import { formatDistance } from '../lib/units';
 import { SessionScreen } from './SessionScreen';
 import { AttackRoller, type AttackTarget, type NormalizedAttack } from './AttackRoller';
 
@@ -110,6 +112,8 @@ export function ParticipantStatLookup({
   allParticipants?: SnapshotParticipant[];
 }) {
   const { t } = useLocale();
+  const { user } = useAuth();
+  const unitSystem = user?.unitSystem ?? 'imperial';
   if (participant.characterId != null) {
     const c = characters?.find((ch) => ch.id === participant.characterId);
     if (!c) return <p className="text-xs text-stone-500 italic mt-2">{t('common.loading')}</p>;
@@ -123,7 +127,7 @@ export function ParticipantStatLookup({
           </div>
           <div>
             <dt className="text-stone-600">{t('encounters.tracker.speed')}</dt>
-            <dd className="text-stone-200 font-semibold">{t('encounters.tracker.feetValue', { value: c.speed })}</dd>
+            <dd className="text-stone-200 font-semibold">{formatDistance(c.speed, unitSystem, t)}</dd>
           </div>
           <div>
             <dt className="text-stone-600">{t('encounters.tracker.senses')}</dt>
