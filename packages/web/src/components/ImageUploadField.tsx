@@ -25,20 +25,29 @@ const ACCEPT_ATTR = 'image/png,image/jpeg,image/webp,image/gif';
 export function ImageUploadField({
   campaignId,
   characterId,
+  bestiaryEntryId,
   title,
   onUploaded,
   label,
+  showVisibilityToggle,
 }: {
   campaignId: string;
   /** Set to target this upload at a specific character's portrait (POST body's `characterId` field). */
   characterId?: string;
+  /** Set to attach this upload to a campaign bestiary entry's image gallery (POST body's `bestiaryEntryId` field). */
+  bestiaryEntryId?: string;
   title?: string;
   onUploaded: (asset: CampaignAsset) => void;
   label?: string;
+  /** DM-only "visible to players" checkbox — only the DM's own upload can
+   * ever end up GM-only server-side (see services/assets.ts), so callers
+   * should only pass this when the current viewer is the DM. */
+  showVisibilityToggle?: boolean;
 }) {
   const { t } = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [visibleToPlayers, setVisibleToPlayers] = useState(true);
 
   // onSuccess is passed to mutate() below rather than here: useMutation's own
   // options are rebound to the latest render on every render (by design, so
@@ -55,7 +64,9 @@ export function ImageUploadField({
       const formData = new FormData();
       formData.append('file', file);
       if (characterId !== undefined) formData.append('characterId', String(characterId));
+      if (bestiaryEntryId !== undefined) formData.append('bestiaryEntryId', String(bestiaryEntryId));
       if (title) formData.append('title', title);
+      if (showVisibilityToggle) formData.append('visibleToPlayers', String(visibleToPlayers));
       return api.upload<{ asset: CampaignAsset }>(`/campaigns/${campaignId}/assets`, formData);
     },
     onSettled: () => {
@@ -103,6 +114,16 @@ export function ImageUploadField({
         />
         {uploadMutation.isPending ? t('upload.uploading') : (label ?? t('upload.uploadImage'))}
       </label>
+      {showVisibilityToggle && (
+        <label className="inline-flex items-center gap-1.5 text-[11px] text-stone-400">
+          <input
+            type="checkbox"
+            checked={visibleToPlayers}
+            onChange={(e) => setVisibleToPlayers(e.target.checked)}
+          />
+          {t('upload.visibleToPlayers')}
+        </label>
+      )}
       {error && <ErrorBanner message={error} />}
     </div>
   );

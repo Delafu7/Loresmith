@@ -11,6 +11,10 @@ import { z } from 'zod';
 export const createAssetFieldsSchema = z.object({
   characterId: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
+  // Player-supplied uploads always force this true server-side regardless of
+  // what's sent (see services/assets.ts's createAsset) — only a DM's upload
+  // can actually end up GM-only.
+  visibleToPlayers: z.coerce.boolean().optional(),
 });
 export type CreateAssetFieldsInput = z.infer<typeof createAssetFieldsSchema>;
 
@@ -21,3 +25,10 @@ export const updateAssetSchema = z.object({
   title: z.string().min(1).max(200),
 });
 export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;
+
+// PATCH /assets/:id/visibility — separate small endpoint, same "one-field,
+// no partial ambiguity" shape as updateAssetSchema above.
+export const updateAssetVisibilitySchema = z.object({
+  visibleToPlayers: z.boolean(),
+});
+export type UpdateAssetVisibilityInput = z.infer<typeof updateAssetVisibilitySchema>;

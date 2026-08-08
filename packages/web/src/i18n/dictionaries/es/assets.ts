@@ -14,4 +14,6 @@ export const assets = {
   renamed: 'Renombrado el {date}',
   you: 'ti',
   someone: 'alguien',
+  hideFromPlayers: 'Ocultar a los jugadores',
+  revealToPlayers: 'Mostrar a los jugadores',
 };

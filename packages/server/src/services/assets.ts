@@ -20,14 +20,23 @@ interface AssetRow {
   mime_type: string;
   file_size_bytes: number;
   title: string | null;
+  visible_to_players: boolean;
   created_at: string;
   updated_at: string;
 }
 
-export async function listAssets(pool: Pool, campaignId: string, _role: CampaignRole): Promise<AssetRow[]> {
+// visible_to_players (re-added by 1784269793666, a narrow exception to
+// 1784269769666's app-wide hide/reveal removal — see that migration's
+// header comment) is filtered here in SQL, never in JS, same discipline as
+// campaignBestiary.ts's listCampaignBestiary discovered-filter.
+export async function listAssets(pool: Pool, campaignId: string, role: CampaignRole): Promise<AssetRow[]> {
+  const values: unknown[] = [campaignId];
+  let where = 'campaign_id = $1';
+  if (role !== 'dm') where += ' AND visible_to_players = true';
+
   const result = await pool.query<AssetRow>(
-    `SELECT * FROM campaign_assets WHERE campaign_id = $1 ORDER BY created_at DESC`,
-    [campaignId],
+    `SELECT * FROM campaign_assets WHERE ${where} ORDER BY created_at DESC`,
+    values,
   );
   return result.rows;
 }
@@ -75,21 +84,24 @@ export async function createAsset(
   pool: Pool,
   campaignId: string,
   actorId: string,
-  _role: CampaignRole,
+  role: CampaignRole,
   fields: CreateAssetFieldsInput,
   file: UploadedFileInfo,
 ): Promise<AssetRow> {
   const fileUrl = `/uploads/campaigns/${campaignId}/${path.basename(file.path)}`;
+  // A player's own upload (portrait) can never be GM-only, regardless of
+  // what the field says — only a DM may create a hidden asset.
+  const visibleToPlayers = role === 'dm' ? (fields.visibleToPlayers ?? true) : true;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const inserted = await client.query<AssetRow>(
       `INSERT INTO campaign_assets
-         (campaign_id, uploaded_by_user_id, asset_type, file_url, mime_type, file_size_bytes, title)
-       VALUES ($1,$2,'image',$3,$4,$5,$6)
+         (campaign_id, uploaded_by_user_id, asset_type, file_url, mime_type, file_size_bytes, title, visible_to_players)
+       VALUES ($1,$2,'image',$3,$4,$5,$6,$7)
        RETURNING *`,
-      [campaignId, actorId, fileUrl, file.mimeType, file.sizeBytes, fields.title ?? null],
+      [campaignId, actorId, fileUrl, file.mimeType, file.sizeBytes, fields.title ?? null, visibleToPlayers],
     );
     const asset = inserted.rows[0]!;
 
@@ -131,6 +143,22 @@ export async function updateAssetTitle(pool: Pool, actorId: string, assetId: str
   const result = await pool.query<AssetRow>(
     `UPDATE campaign_assets SET title = $1, updated_at = now() WHERE id = $2 RETURNING *`,
     [title, assetId],
+  );
+  return result.rows[0]!;
+}
+
+export async function updateAssetVisibility(pool: Pool, actorId: string, assetId: string, visibleToPlayers: boolean): Promise<AssetRow> {
+  const asset = await fetchAssetOrThrow(pool, assetId);
+  const role = await requireMembership(pool, asset.campaign_id, actorId);
+  // Same rule as updateAssetTitle/deleteAsset: DM of the owning campaign, OR
+  // the original uploader, may change visibility.
+  if (role !== 'dm' && asset.uploaded_by_user_id !== actorId) {
+    throw new AppError('FORBIDDEN_NOT_OWNER', 'Only the DM or the original uploader can change this asset\'s visibility');
+  }
+
+  const result = await pool.query<AssetRow>(
+    `UPDATE campaign_assets SET visible_to_players = $1 WHERE id = $2 RETURNING *`,
+    [visibleToPlayers, assetId],
   );
   return result.rows[0]!;
 }

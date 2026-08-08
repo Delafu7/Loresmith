@@ -696,6 +696,7 @@ export interface CampaignAsset {
   mime_type: string;
   file_size_bytes: number;
   title: string | null;
+  visible_to_players: boolean;
   created_at: string;
   updated_at: string;
 }

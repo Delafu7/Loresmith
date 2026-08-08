@@ -47,6 +47,12 @@ export function AssetsPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['assets', campaignId] }),
   });
 
+  const visibilityMutation = useMutation({
+    mutationFn: ({ assetId, visibleToPlayers }: { assetId: string; visibleToPlayers: boolean }) =>
+      api.patch<{ asset: CampaignAsset }>(`/assets/${assetId}/visibility`, { visibleToPlayers }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['assets', campaignId] }),
+  });
+
   function startRename(asset: CampaignAsset) {
     setRenamingId(asset.id);
     setRenameValue(asset.title ?? '');
@@ -113,6 +119,22 @@ export function AssetsPage() {
                     <h3 className="font-medium text-stone-100">{asset.title ?? t('assets.untitled')}</h3>
                     {canModify && (
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        {role === 'dm' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              visibilityMutation.mutate({ assetId: asset.id, visibleToPlayers: !asset.visible_to_players })
+                            }
+                            disabled={visibilityMutation.isPending}
+                            aria-label={asset.visible_to_players ? t('assets.hideFromPlayers') : t('assets.revealToPlayers')}
+                            title={asset.visible_to_players ? t('assets.hideFromPlayers') : t('assets.revealToPlayers')}
+                            className={`min-h-11 px-1 text-xs disabled:opacity-50 ${
+                              asset.visible_to_players ? 'text-stone-400 hover:text-stone-200' : 'text-amber-500 hover:text-amber-400'
+                            }`}
+                          >
+                            {asset.visible_to_players ? '👁' : '🙈'}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => startRename(asset)}

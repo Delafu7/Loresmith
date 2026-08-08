@@ -14,4 +14,6 @@ export const assets = {
   renamed: 'Renommé le {date}',
   you: 'vous',
   someone: "quelqu'un",
+  hideFromPlayers: 'Masquer aux joueurs',
+  revealToPlayers: 'Révéler aux joueurs',
 };
