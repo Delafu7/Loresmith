@@ -230,7 +230,7 @@ function TakeActionSection({
 
   if (!actingParticipant || actingParticipant.participantId === target.participantId) return null;
 
-  const targets = attackTargetsFor(allParticipants, actingParticipant.participantId);
+  const targets = attackTargetsFor(allParticipants, actingParticipant.participantId, monsterInstances);
   const actingCharacter = actingParticipant.characterId != null ? characters?.find((c) => c.id === actingParticipant.characterId) : undefined;
 
   return (

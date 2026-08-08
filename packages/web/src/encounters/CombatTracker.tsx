@@ -63,10 +63,29 @@ export function ParticipantWeaknessReveal({ monsterInstanceId }: { monsterInstan
 // devtools. Characters render via the same read-only AbilityScoreGrid the
 // character sheet itself uses, not a new component; monster instances reuse
 // StatBlock as-is (already built for the bestiary page).
-export function attackTargetsFor(allParticipants: SnapshotParticipant[] | undefined, selfId: string): AttackTarget[] {
+export function attackTargetsFor(
+  allParticipants: SnapshotParticipant[] | undefined,
+  selfId: string,
+  // Optional (Iteration 4) — when supplied, threads each monster target's
+  // already-role-redacted weakness fields onto AttackTarget so AttackRoller
+  // can show a proactive resist/vulnerable/immune hint before the roller
+  // commits. Omitted entirely still works exactly as before.
+  monsterInstances?: MonsterInstance[],
+): AttackTarget[] {
   return (allParticipants ?? [])
     .filter((p) => p.participantId !== selfId)
-    .map((p) => ({ participantId: p.participantId, name: p.name, characterId: p.characterId, monsterInstanceId: p.monsterInstanceId }));
+    .map((p) => {
+      const mi = p.monsterInstanceId != null ? monsterInstances?.find((m) => m.id === p.monsterInstanceId) : undefined;
+      return {
+        participantId: p.participantId,
+        name: p.name,
+        characterId: p.characterId,
+        monsterInstanceId: p.monsterInstanceId,
+        damageVulnerabilities: mi?.damage_vulnerabilities,
+        damageResistances: mi?.damage_resistances,
+        damageImmunities: mi?.damage_immunities,
+      };
+    });
 }
 
 export function ParticipantStatLookup({
@@ -117,7 +136,7 @@ export function ParticipantStatLookup({
             characterId={c.id}
             encounterId={encounterId}
             rollerParticipantId={participant.participantId}
-            targets={attackTargetsFor(allParticipants, participant.participantId)}
+            targets={attackTargetsFor(allParticipants, participant.participantId, monsterInstances)}
           />
         )}
       </div>
@@ -147,7 +166,7 @@ export function ParticipantStatLookup({
           rollerMonsterInstanceId={mi.id}
           encounterId={encounterId}
           rollerParticipantId={participant.participantId}
-          targets={attackTargetsFor(allParticipants, participant.participantId)}
+          targets={attackTargetsFor(allParticipants, participant.participantId, monsterInstances)}
         />
       )}
     </div>

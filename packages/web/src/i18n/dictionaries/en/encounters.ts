@@ -182,6 +182,11 @@ export const encounters = {
     resisted: ' → resisted',
     vulnerable: ' → vulnerable',
     applied: ' → {amount} applied',
+    weaknessHint: {
+      immune: '⛔ Target is immune to {type}',
+      vulnerable: '⚠ Target is vulnerable to {type}',
+      resistant: '🛡 Target resists {type}',
+    },
   },
   sheet: {
     detailDmOnly: 'Full stats are only visible to the DM.',

@@ -177,6 +177,11 @@ export const encounters = {
     resisted: ' → résisté',
     vulnerable: ' → vulnérable',
     applied: ' → {amount} appliqué',
+    weaknessHint: {
+      immune: '⛔ La cible est immunisée contre {type}',
+      vulnerable: '⚠ La cible est vulnérable à {type}',
+      resistant: '🛡 La cible résiste à {type}',
+    },
   },
   sheet: {
     detailDmOnly: 'Les statistiques complètes ne sont visibles que par le MJ.',

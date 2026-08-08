@@ -42,6 +42,15 @@ export interface AttackTarget {
   name: string;
   characterId: string | null;
   monsterInstanceId: string | null;
+  // Proactive damage-type hint (Iteration 4) — already role-redacted by the
+  // server before this ever reaches the client (monsters.ts's
+  // resolveReveals/redactEntityFields: absent/undefined for a player role
+  // until the DM reveals it, always the true value for the DM), so this
+  // component never needs its own redaction logic. Undefined for character
+  // targets (weaknesses only exist on monster instances).
+  damageVulnerabilities?: string[] | null;
+  damageResistances?: string[] | null;
+  damageImmunities?: string[] | null;
 }
 
 interface ApplyDamageResponse {
@@ -157,6 +166,24 @@ function AttackRow({
 
   const target = targets.find((t) => t.participantId === targetId);
 
+  // Proactive damage-type hint (Iteration 4) — the post-hit breakdown below
+  // already shows resist/vulnerable/immune AFTER applying damage; this
+  // surfaces the same fact BEFORE the roller commits, using weakness data
+  // that's already fetched and already role-redacted (see AttackTarget's
+  // damageResistances/Vulnerabilities/Immunities comment). Absent for
+  // character targets and for an un-revealed monster, so this silently
+  // renders nothing rather than a false "no weakness" claim.
+  const weaknessHint: 'immune' | 'vulnerable' | 'resistant' | null =
+    target && attack.damageType
+      ? target.damageImmunities?.includes(attack.damageType)
+        ? 'immune'
+        : target.damageVulnerabilities?.includes(attack.damageType)
+          ? 'vulnerable'
+          : target.damageResistances?.includes(attack.damageType)
+            ? 'resistant'
+            : null
+      : null;
+
   // Combat log (nav point 2) — recorded once damage actually lands, not on
   // the attack roll alone, since that's the point every field (result,
   // damage) is finally known. Best-effort: swallowed on error, same as the
@@ -270,6 +297,15 @@ function AttackRow({
             >
               {isCritical ? t('encounters.attackRoller.applyDamageCrit') : t('encounters.attackRoller.applyDamage')}
             </button>
+            {weaknessHint && (
+              <span
+                className={`text-[10px] font-medium ${
+                  weaknessHint === 'immune' ? 'text-stone-500' : weaknessHint === 'vulnerable' ? 'text-red-400' : 'text-sky-400'
+                }`}
+              >
+                {t(`encounters.attackRoller.weaknessHint.${weaknessHint}`, { type: attack.damageType ?? '' })}
+              </span>
+            )}
           </>
         )}
       </div>

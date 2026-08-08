@@ -177,6 +177,11 @@ export const encounters = {
     resisted: ' → resistido',
     vulnerable: ' → vulnerable',
     applied: ' → {amount} aplicado',
+    weaknessHint: {
+      immune: '⛔ El objetivo es inmune a {type}',
+      vulnerable: '⚠ El objetivo es vulnerable a {type}',
+      resistant: '🛡 El objetivo resiste {type}',
+    },
   },
   sheet: {
     detailDmOnly: 'Las estadísticas completas solo son visibles para el DJ.',
