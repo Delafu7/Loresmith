@@ -143,7 +143,7 @@ export function DiceRoller({
 function DiceRollResult({ roll }: { roll: DiceRoll }) {
   const keptIndex = keptDieIndex(roll.d20_rolls, roll.keep);
   return (
-    <div className="flex items-center gap-1.5 text-xs">
+    <div className="flex items-center gap-1.5 text-xs font-mono tabular-nums">
       <div className="flex items-center gap-1">
         {roll.d20_rolls.map((value, i) => (
           <DieFace key={i} value={value} kept={i === keptIndex} sides={roll.dice_sides} />
@@ -151,7 +151,9 @@ function DiceRollResult({ roll }: { roll: DiceRoll }) {
       </div>
       <span className="text-stone-500">{formatModifier(roll.modifier)}</span>
       <span className="text-stone-500">=</span>
-      <span className="font-semibold text-stone-100">{roll.result_total}</span>
+      {/* The actual roll result — the single number a roll exists to
+          produce, sized to match. */}
+      <span className="font-bold text-xl text-stone-100">{roll.result_total}</span>
     </div>
   );
 }
@@ -183,7 +185,7 @@ export function DieFace({ value, kept, sides = 20 }: { value: number; kept: bool
   return (
     <span
       title={kept ? t('dice.rollerKept') : t('dice.rollerNotKept')}
-      className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border text-sm font-semibold ${
+      className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border font-mono text-sm font-semibold tabular-nums ${
         kept ? 'ring-2 ring-amber-500' : 'opacity-50'
       } ${
         isNat20

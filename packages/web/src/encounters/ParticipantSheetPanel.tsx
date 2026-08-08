@@ -71,8 +71,10 @@ export function ParticipantSheetPanel({
         <div className="flex items-center gap-2.5 min-w-0">
           <Portrait fileUrl={participant.imageUrl} alt={participant.name} shape="circle" size="md" placeholderLabel={participant.name} />
           <div className="min-w-0">
-            <h3 className="font-display text-sm font-medium text-stone-100 truncate">{participant.name}</h3>
-            <p className="text-[11px] uppercase text-stone-500">{t('encounters.tracker.armorClass')} {participant.armorClass}</p>
+            <h3 className="font-display text-base font-semibold text-stone-100 truncate">{participant.name}</h3>
+            <p className="text-[11px] uppercase text-stone-500">
+              {t('encounters.tracker.armorClass')} <span className="font-mono tabular-nums">{participant.armorClass}</span>
+            </p>
           </div>
         </div>
         <button
@@ -85,7 +87,7 @@ export function ParticipantSheetPanel({
         </button>
       </div>
 
-      <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} />
+      <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} size="large" />
 
       {isDm && <FactionSelect encounterId={encounterId} participant={participant} />}
 

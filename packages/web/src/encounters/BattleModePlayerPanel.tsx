@@ -142,13 +142,17 @@ function PlayerPanelBody({
       <div className="rounded-md bg-stone-900 shadow-sm p-3">
         <div className="flex items-center gap-1.5">
           {isMyTurn && <TurnTorch size={18} className="text-amber-500 flex-shrink-0" />}
-          <span className="font-semibold text-stone-100 truncate">{participant.name}</span>
+          <span
+            className={`font-semibold text-stone-100 truncate ${isMyTurn ? 'underline decoration-amber-600 decoration-2 underline-offset-2' : ''}`}
+          >
+            {participant.name}
+          </span>
         </div>
         <div className="mt-2">
-          <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} />
+          <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} size="large" />
         </div>
         <p className="text-xs text-stone-500 mt-1" title={t('encounters.tracker.armorClass')}>
-          AC {participant.armorClass}
+          <span className="font-mono tabular-nums">AC {participant.armorClass}</span>
         </p>
       </div>
 

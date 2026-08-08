@@ -130,9 +130,7 @@ export function BattleModeDmPanel({
           return (
             <li
               key={p.participantId}
-              className={`rounded-md border p-2 text-xs ${
-                isActive ? 'border-amber-600 bg-amber-950/20' : 'border-stone-800 bg-stone-900'
-              }`}
+              className="rounded-md border border-stone-800 bg-stone-900 p-2 text-xs"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -144,9 +142,20 @@ export function BattleModeDmPanel({
                       className={`h-2 w-2 flex-shrink-0 rounded-full ${CONTROL_BADGE_DOT_COLOR[controlBadge]}`}
                     />
                   )}
-                  <span className="font-medium text-stone-100 truncate">{p.name}</span>
+                  {/* Current turn = an ink underline on the name, not a
+                      glowing card (Field Ledger direction) — the torch icon
+                      above already signals it; this keeps the mark quiet. */}
+                  <span
+                    className={`font-medium text-stone-100 truncate ${isActive ? 'underline decoration-amber-600 decoration-2 underline-offset-2' : ''}`}
+                  >
+                    {p.name}
+                  </span>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-2 flex-shrink-0 font-mono tabular-nums">
+                  <span className="text-stone-300" title={t('encounters.tracker.hitPoints')}>
+                    {p.hp.hpCurrent}/{p.hp.hpMax}
+                    {p.hp.hpTemp > 0 && <span className="text-sky-400"> (+{p.hp.hpTemp})</span>}
+                  </span>
                   <span className="text-stone-500 border border-stone-700 rounded px-1" title={t('encounters.tracker.armorClass')}>
                     AC {p.armorClass}
                   </span>

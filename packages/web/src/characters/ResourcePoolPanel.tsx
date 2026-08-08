@@ -87,7 +87,7 @@ export function ResourcePoolPanel({
             <li key={pool.resource_key} className="rounded-md border border-stone-700 bg-stone-950 p-3">
               <div className="flex items-center justify-between text-sm mb-1">
                 <span className="text-stone-300">{poolLabel(pool.resource_key)}</span>
-                <span className="font-medium text-stone-100">
+                <span className="font-mono font-semibold text-stone-100 tabular-nums">
                   {pool.current_value}/{pool.max_value}
                 </span>
               </div>

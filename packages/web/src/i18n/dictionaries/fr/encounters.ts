@@ -30,6 +30,7 @@ export const encounters = {
     viewStats: 'Voir les statistiques de {name}',
     viewFullStats: 'Voir toutes les statistiques',
     armorClass: 'Classe d’Armure',
+    hitPoints: 'Points de Vie',
     position: 'Position sur la carte de combat',
     unplaced: 'non placé',
     currentTurn: 'Tour actuel',

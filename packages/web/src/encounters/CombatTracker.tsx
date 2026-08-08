@@ -123,11 +123,11 @@ export function ParticipantStatLookup({
         <dl className="grid grid-cols-3 gap-2 text-xs">
           <div>
             <dt className="text-stone-600">AC</dt>
-            <dd className="text-stone-200 font-semibold">{c.armor_class}</dd>
+            <dd className="font-mono text-stone-200 font-semibold tabular-nums">{c.armor_class}</dd>
           </div>
           <div>
             <dt className="text-stone-600">{t('encounters.tracker.speed')}</dt>
-            <dd className="text-stone-200 font-semibold">{formatDistance(c.speed, unitSystem, t)}</dd>
+            <dd className="font-mono text-stone-200 font-semibold tabular-nums">{formatDistance(c.speed, unitSystem, t)}</dd>
           </div>
           <div>
             <dt className="text-stone-600">{t('encounters.tracker.senses')}</dt>

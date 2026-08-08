@@ -323,7 +323,7 @@ function SlotMeter({
           );
         })}
       </div>
-      <div className="text-xs text-stone-300">
+      <div className="font-mono text-xs text-stone-300 tabular-nums">
         {pool.current_value}/{pool.max_value}
       </div>
     </div>

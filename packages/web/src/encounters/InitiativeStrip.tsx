@@ -58,9 +58,7 @@ export function InitiativeStrip({
           <li
             key={p.participantId}
             ref={isActive ? activeRef : undefined}
-            className={`flex flex-none flex-col items-center gap-1 rounded-md px-2 py-1.5 min-w-14 ${
-              isActive ? 'bg-amber-950/40 outline outline-1 outline-amber-600' : 'bg-stone-900'
-            }`}
+            className="flex flex-none flex-col items-center gap-1 rounded-md px-2 py-1.5 min-w-14 bg-stone-900"
           >
             {isActive && <TurnTorch size={12} className="text-amber-500" />}
             <button
@@ -68,7 +66,7 @@ export function InitiativeStrip({
               onClick={() => onSelect?.(p.participantId)}
               disabled={!onSelect}
               aria-label={t('encounters.initiativeStrip.openSheet', { name: p.name })}
-              className={`relative rounded-full ${isActive ? 'outline outline-2 outline-amber-500' : ''} ${onSelect ? 'cursor-pointer' : ''}`}
+              className={`relative rounded-full ${onSelect ? 'cursor-pointer' : ''}`}
             >
               <Portrait fileUrl={p.imageUrl} alt={p.name} shape="circle" size="sm" placeholderLabel={p.name} />
               {controlBadge && (
@@ -79,7 +77,13 @@ export function InitiativeStrip({
                 />
               )}
             </button>
-            <span className={`max-w-14 truncate text-[10px] ${isActive ? 'text-amber-400' : 'text-stone-400'}`}>
+            {/* Current turn = an ink underline, not a glow (Field Ledger
+                direction) — the torch icon above is the primary signal. */}
+            <span
+              className={`max-w-14 truncate text-[10px] ${
+                isActive ? 'text-amber-400 underline decoration-amber-600 underline-offset-2' : 'text-stone-400'
+              }`}
+            >
               {p.name}
             </span>
           </li>

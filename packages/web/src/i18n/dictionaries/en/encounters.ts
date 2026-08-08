@@ -35,6 +35,7 @@ export const encounters = {
     viewStats: "View {name}'s stats",
     viewFullStats: 'View full stats',
     armorClass: 'Armor Class',
+    hitPoints: 'Hit Points',
     position: 'Position on the battle map',
     unplaced: 'unplaced',
     currentTurn: 'Current turn',

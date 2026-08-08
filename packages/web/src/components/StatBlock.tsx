@@ -56,6 +56,15 @@ function EntryList({ title, entries }: { title: string; entries: StatBlockEntry[
           <li key={i} className="text-sm text-stone-300">
             <span className="font-semibold text-stone-100">{entry.name}.</span>{' '}
             {entry.description ?? entry.desc ?? ''}
+            {/* A distinct mono chip for the roll-able damage expression —
+                already-modeled structured data (StatBlockEntry.damageDice),
+                just not previously rendered anywhere in this component. */}
+            {entry.damageDice && (
+              <span className="ml-1.5 inline-block rounded border border-stone-700 bg-stone-800 px-1.5 py-0.5 font-mono text-xs text-amber-400 align-middle">
+                {entry.damageDice}
+                {entry.damageType ? ` ${entry.damageType}` : ''}
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -108,8 +117,17 @@ export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
   const { user } = useAuth();
   const unitSystem = user?.unitSystem ?? 'imperial';
   const proficiencyBonus = crToProficiencyBonus(monster.challenge_rating);
+  // monster.speed is a free-form JSONB blob — most seeded SRD rows store
+  // each value as an already-formatted string (e.g. "30 ft."), while a few
+  // ad-hoc/test rows store a plain number. Number(v) on the former produced
+  // NaN (a real, live bug, not something this pass introduced the shape
+  // of) — only convert through formatDistance when it's actually numeric;
+  // an already-formatted string renders as-is rather than double-converting.
   const speedText = Object.entries(monster.speed ?? {})
-    .map(([k, v]) => (k === 'walk' ? formatDistance(Number(v), unitSystem, t) : `${k} ${formatDistance(Number(v), unitSystem, t)}`))
+    .map(([k, v]) => {
+      const value = typeof v === 'number' ? formatDistance(v, unitSystem, t) : String(v);
+      return k === 'walk' ? value : `${k} ${value}`;
+    })
     .join(', ');
 
   const savingThrowsText = kvList(monster.saving_throws);
@@ -125,45 +143,49 @@ export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
   const reactions = asEntries(monster.reactions);
 
   return (
-    <div className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-4">
-      <header className="border-b border-stone-800 pb-2">
+    <div className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 space-y-3">
+      {/* Ledger-entry header — margin-note type line (size/type/alignment)
+          under the creature's name, fade-edge rule instead of a hard line. */}
+      <header>
         <h3 className="font-display text-lg font-medium text-amber-500">{monster.name}</h3>
         <p className="text-xs italic text-stone-400">
           {monster.size} {monster.creature_type}
           {monster.alignment ? `, ${monster.alignment}` : ''}
         </p>
       </header>
+      <div className="hr" />
 
       <div className="text-sm space-y-1">
         <p>
           <span className="font-semibold text-stone-100">{t('statBlock.armorClass')}</span>{' '}
-          <span className="text-stone-300">
+          <span className="font-mono text-stone-300 tabular-nums">
             {monster.armor_class}
             {monster.armor_class_notes ? ` (${monster.armor_class_notes})` : ''}
           </span>
         </p>
         <p>
           <span className="font-semibold text-stone-100">{t('statBlock.hitPoints')}</span>{' '}
-          <span className="text-stone-300">
+          <span className="font-mono text-stone-300 tabular-nums">
             {monster.hit_point_average} ({monster.hit_dice})
           </span>
         </p>
         <p>
           <span className="font-semibold text-stone-100">{t('statBlock.speed')}</span>{' '}
-          <span className="text-stone-300">{speedText || '—'}</span>
+          <span className="font-mono text-stone-300 tabular-nums">{speedText || '—'}</span>
         </p>
       </div>
 
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 border-y border-stone-800 py-3">
+      {/* Ability scores as one compact mono line rather than six boxes —
+          "STR 16 (+3)" reads like a ledger entry, and the mono digits keep
+          every modifier aligned and unambiguous at a glance. */}
+      <div className="font-mono text-sm text-stone-300 tabular-nums flex flex-wrap gap-x-3 gap-y-1 py-1">
         {ABILITIES.map(({ key, label }) => {
           const score = monster[key];
           const mod = abilityModifier(score);
           return (
-            <div key={key} className="text-center">
-              <div className="text-xs font-semibold tracking-wide text-stone-500">{label}</div>
-              <div className="text-lg font-bold text-stone-100">{score}</div>
-              <div className="text-xs text-amber-500 font-medium">{formatModifier(mod)}</div>
-            </div>
+            <span key={key}>
+              <span className="text-stone-500">{label}</span> {score} <span className="text-amber-500">({formatModifier(mod)})</span>
+            </span>
           );
         })}
       </div>
@@ -173,13 +195,13 @@ export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
           {savingThrowsText && (
             <p>
               <span className="font-semibold text-stone-100">{t('statBlock.savingThrows')}</span>{' '}
-              <span className="text-stone-300">{savingThrowsText}</span>
+              <span className="font-mono text-stone-300 tabular-nums">{savingThrowsText}</span>
             </p>
           )}
           {skillsText && (
             <p>
               <span className="font-semibold text-stone-100">{t('statBlock.skills')}</span>{' '}
-              <span className="text-stone-300">{skillsText}</span>
+              <span className="font-mono text-stone-300 tabular-nums">{skillsText}</span>
             </p>
           )}
           {vulnerabilities.length > 0 && (
@@ -214,11 +236,11 @@ export function StatBlock({ monster }: { monster: MonsterCatalogEntry }) {
           )}
           <p>
             <span className="font-semibold text-stone-100">{t('statBlock.challenge')}</span>{' '}
-            <span className="text-stone-300">
+            <span className="font-mono text-stone-300 tabular-nums">
               {formatCr(monster.challenge_rating)} ({monster.xp_value.toLocaleString()} XP)
             </span>{' '}
             <span className="font-semibold text-stone-100">{t('statBlock.proficiencyBonus')}</span>{' '}
-            <span className="text-stone-300">{formatModifier(proficiencyBonus)}</span>
+            <span className="font-mono text-stone-300 tabular-nums">{formatModifier(proficiencyBonus)}</span>
           </p>
         </div>
       </CollapsibleSection>

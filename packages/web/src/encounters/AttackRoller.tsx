@@ -312,7 +312,7 @@ function AttackRow({
 
       {applyDamageMutation.isError && <ErrorBanner message={errorMessage(applyDamageMutation.error)} />}
       {applyDamageMutation.data && (
-        <p className="text-[10px] text-stone-400">
+        <p className="text-[10px] text-stone-400 font-mono tabular-nums">
           {t('encounters.attackRoller.rolled', { diceTotal: applyDamageMutation.data.breakdown.diceTotal })}
           {applyDamageMutation.data.breakdown.modifier !== 0 &&
             ` ${applyDamageMutation.data.breakdown.modifier >= 0 ? '+' : ''}${applyDamageMutation.data.breakdown.modifier}`}
@@ -328,7 +328,7 @@ function AttackRow({
             <span className="text-red-400">{t('encounters.attackRoller.vulnerable')}</span>
           )}
           {!applyDamageMutation.data.breakdown.immune && (
-            <span className="text-amber-400 font-semibold">
+            <span className="text-amber-400 font-bold text-sm">
               {t('encounters.attackRoller.applied', { amount: applyDamageMutation.data.appliedDamage })}
             </span>
           )}

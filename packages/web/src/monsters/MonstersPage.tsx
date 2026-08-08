@@ -289,9 +289,9 @@ export function MonstersPage() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-stone-400">{m.creature_type}</td>
-                    <td className="px-3 py-2 text-stone-400">{m.challenge_rating}</td>
-                    <td className="px-3 py-2 text-stone-400">{m.armor_class}</td>
-                    <td className="px-3 py-2 text-stone-400">{m.hit_point_average}</td>
+                    <td className="px-3 py-2 font-mono text-stone-400 tabular-nums">{m.challenge_rating}</td>
+                    <td className="px-3 py-2 font-mono text-stone-400 tabular-nums">{m.armor_class}</td>
+                    <td className="px-3 py-2 font-mono text-stone-400 tabular-nums">{m.hit_point_average}</td>
                     <td className="px-3 py-2">
                       {(() => {
                         const alreadySpawned =
