@@ -337,7 +337,7 @@ export function CharacterSheetPage() {
       {/* HP panel */}
       <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">{t('characters.sheet.hitPoints')}</h3>
-        <HPBar current={character.hp_current} max={character.hp_max} temp={character.hp_temp} />
+        <HPBar current={character.hp_current} max={character.hp_max} temp={character.hp_temp} size="large" />
         {canAct && (
           <HpAdjustForm
             disabled={hpMutation.isPending}
@@ -371,7 +371,7 @@ export function CharacterSheetPage() {
             <label className="block text-xs text-stone-500 mb-1">{t('characters.common.armorClass')}</label>
             {character.armor_class_mode === 'auto' ? (
               <div className="flex items-center gap-1.5">
-                <span className="text-lg font-semibold text-stone-100">{character.armor_class}</span>
+                <span className="font-mono font-bold text-xl text-stone-100 tabular-nums">{character.armor_class}</span>
                 <span className="text-[10px] uppercase text-stone-500">{t('characters.sheet.autoLabel')}</span>
               </div>
             ) : editingCore ? (
@@ -379,10 +379,10 @@ export function CharacterSheetPage() {
                 type="number"
                 value={coreDraft.armor_class}
                 onChange={(e) => setCoreDraft((d) => (d ? { ...d, armor_class: Number(e.target.value) } : d))}
-                className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100"
+                className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100 font-mono"
               />
             ) : (
-              <div className="text-lg font-semibold text-stone-100">{character.armor_class}</div>
+              <div className="font-mono font-bold text-xl text-stone-100 tabular-nums">{character.armor_class}</div>
             )}
           </div>
           <div>
@@ -392,10 +392,10 @@ export function CharacterSheetPage() {
                 type="number"
                 value={coreDraft.speed}
                 onChange={(e) => setCoreDraft((d) => (d ? { ...d, speed: Number(e.target.value) } : d))}
-                className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100"
+                className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-stone-100 font-mono"
               />
             ) : (
-              <div className="text-lg font-semibold text-stone-100">
+              <div className="font-mono font-bold text-xl text-stone-100 tabular-nums">
                 {formatDistance(character.speed, user?.unitSystem ?? 'imperial', t)}
               </div>
             )}

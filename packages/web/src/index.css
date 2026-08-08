@@ -1,34 +1,28 @@
 @import "tailwindcss";
 
 /*
- * Typography (REVISION-PLAN.md §10.3). Fraunces (display serif, headings) +
- * Inter (body/UI sans), self-hosted via @fontsource (see main.tsx for the
- * CSS imports) rather than a Google Fonts CDN link, matching this repo's
- * no-external-runtime-dependency posture (local Postgres/Redis, local file
- * uploads — see README).
+ * Typography — "Field Ledger" visual direction. Bitter (slab serif, display/
+ * headings) + IBM Plex Sans (body/UI) + IBM Plex Mono (every number in the
+ * app), self-hosted via @fontsource (see main.tsx for the CSS imports)
+ * rather than a Google Fonts CDN link, matching this repo's no-external-
+ * runtime-dependency posture. Replaces the earlier Fraunces/Inter pairing.
  *
  * `--font-sans` is Tailwind v4's own token name for its default body/UI
- * font (see node_modules/tailwindcss/theme.css's `@theme default` block and
- * preflight.css's `--default-font-family`) — overriding it here both makes
- * the `font-sans` utility resolve to Inter AND makes Inter the default body
- * font via Tailwind's own preflight, with no extra `body { font-family }`
- * rule needed. `--font-display` is a new project-defined token (Tailwind has
- * no built-in equivalent) applied globally to heading elements below.
- *
- * Tailwind's default `--text-*` scale (theme.css) already matches the
- * smaller end of the target 12/14/16/20/26/34/44px scale exactly — xs=12,
- * sm=14, base=16, xl=20 — so it's left as-is rather than overridden; only
- * the larger heading sizes drift from the target (2xl=24/3xl=30/4xl=36/
- * 5xl=48 vs. target 26/34/44), which is close enough not to fight.
+ * font — overriding it here both makes the `font-sans` utility resolve to
+ * Plex Sans AND makes it the default body font via Tailwind's own preflight,
+ * with no extra `body { font-family }` rule needed. `--font-display` is a
+ * project-defined token applied globally to heading elements below.
+ * `--font-mono` overrides Tailwind's own monospace token — every existing
+ * `font-mono` utility (plus any new one added for a number display) resolves
+ * to Plex Mono for free.
  */
 @theme {
-  --font-display: 'Fraunces', ui-serif, serif;
-  --font-sans: 'Inter', ui-sans-serif, sans-serif;
+  --font-display: 'Bitter', ui-serif, serif;
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-  /* Nocturne visual redesign (docs/design-tokens.md) — corner radii and
-     elevation shadows, overriding Tailwind's own theme slots so every
-     existing rounded-md/rounded-lg/shadow-md usage repaints for free,
-     same zero-touch approach as the color remap below. */
+  /* Corner radii and elevation shadows — unchanged from the prior pass,
+     compatible with Field Ledger's flat, hairline-ruled surface language. */
   --radius-md: 8px;
   --radius-lg: 14px;
   --shadow-sm: 0 0 0 1px var(--color-stone-800);
@@ -36,11 +30,11 @@
   --shadow-lg: 0 0 0 1px var(--color-stone-500), 0 16px 40px rgba(0, 0, 0, 0.65);
 }
 
-/* Headings get the display serif globally — zero per-component class edits.
-   :where() keeps specificity at zero so any component-level font-family
-   utility (none currently exist) would still win outright. Preflight resets
-   h1-h6's font-size/font-weight to `inherit` but not font-family, so this
-   doesn't fight that reset. */
+/* Headings get the display slab serif globally — zero per-component class
+   edits. :where() keeps specificity at zero so any component-level
+   font-family utility still wins outright. Preflight resets h1-h6's
+   font-size/font-weight to `inherit` but not font-family, so this doesn't
+   fight that reset. */
 body :where(h1, h2, h3) {
   font-family: var(--font-display);
 }
@@ -53,68 +47,161 @@ body :where(h1, h2, h3) {
  * (`--color-amber-600` etc., see node_modules/tailwindcss/theme.css). Every
  * existing `bg-amber-600`/`text-stone-500`/etc. class anywhere in the app
  * re-colors automatically based on which theme is active, with zero
- * component changes.
- *
- * "Ember" (REVISION-PLAN.md §10.3's palette: `ember` #E2542A accent, `ink`
- * #16120F darkest bg, `parchment` #F3E9DC lightest bg) is now the default
- * and always wins with no `data-theme` attribute present, so a not-yet-
- * loaded user preference never flashes an old theme. "Crimson" (Visual
- * Redesign — Red Theme) and "Amber" (Tailwind's original amber/stone,
- * copied verbatim from theme.css) remain selectable alternates a user can
- * switch to (Customizable Styles per Role — see auth/AuthContext.tsx for
- * how `data-theme` gets set from the logged-in user's persisted `ui_theme`
- * column).
- *
- * All shades below were picked/verified against WCAG AA (4.5:1 normal text)
- * for every actual foreground/background pairing used in the app — see the
- * PR description for the contrast table. Two known gaps, both consistent
- * with pre-existing gaps in the crimson ramp (not new regressions):
- * `stone-700` on `stone-800` (input/card borders) sits around 1.8:1 (was
- * ~1.7:1 in crimson), and `amber-700` on `stone-800`/`stone-900` (badge/
- * hover borders, e.g. MonstersPage's homebrew badge) sits around 1.8-2.1:1
- * (was ~2.3-2.7:1 in crimson) — both short of the 3:1 non-text contrast
- * guideline. Tightening either further broke the rest of the ramp's
- * ordering, so borders stay subtle rather than fully AA in this pass, same
- * tradeoff the crimson theme already made.
+ * component changes. "Ember" is the default/no-attribute theme; "Crimson"
+ * and "Amber" remain selectable alternates (Customizable Styles per Role —
+ * see auth/AuthContext.tsx for how `data-theme` gets set from the logged-in
+ * user's persisted `ui_theme` column).
  */
 /*
- * Nocturne visual redesign (docs/design-tokens.md). Repaints the "ember" slot
- * in place with the new dark indigo/violet palette rather than adding a
+ * "Field Ledger" visual direction. Repaints the "ember" slot in place
+ * (same technique the prior Nocturne pass used) rather than adding a
  * fourth `data-theme` value — `users.ui_theme` is a closed DB enum
  * ('crimson' | 'amber' | 'ember') and this pass is presentation-only, no
- * schema changes (OPEN_QUESTIONS.md #10). "ember" stays the default/no-
- * attribute theme; only its hex values changed, so every existing
- * `bg-stone-950`/`text-amber-500`/etc. class across the app repaints with
- * zero component edits.
+ * schema changes. "Crimson" and "Amber" are untouched, still exactly what
+ * they were — this only repaints the default.
  *
- * Values are the source design's neutral / accent ramps mapped onto the
- * existing stone / amber slots at matching lightness steps (darkest ->
- * 950/900, lightest -> 100), verified against WCAG AA for every pairing
- * this app actually renders — see docs/design-tokens.md "Contrast findings".
- * amber-600 (the ramp's mid step) fails AA as a *filled button background*
- * with text on top (~4:1) — the shared Button component (components/ui/)
- * uses the source's own outline/ghost button shape instead of a filled chip
- * for exactly this reason; amber-600 stays fine for non-text fills (HP bars,
- * active-tab backgrounds, avatar swatches).
+ * Two color axes:
+ *  1. `stone-*` (neutral ramp) and `amber-*` (the "seal" wax-red accent,
+ *     interactive text/links/focus rings) — the two families this app's
+ *     override mechanism already covered before this pass.
+ *  2. `red-*`/`emerald-*`/`yellow-*`/`orange-*`/`sky-*` — semantic-state
+ *     colors (danger, heal/success, warning, HP-bloodied, info/temp-HP)
+ *     that several components (HPBar.tsx, HpAdjustForm.tsx, ErrorBanner)
+ *     reach for directly as *stock* Tailwind colors, entirely outside the
+ *     amber/stone system — so they've never repainted with any theme
+ *     change until now. Overriding them here recolors HP bands, HP-adjust
+ *     buttons, and error banners to the Field Ledger palette (brass/
+ *     wax-red/ochre/steel) with zero component edits, the same mechanism.
+ *     Only done for the default "ember" slot — Crimson/Amber keep using
+ *     stock Tailwind red/emerald/yellow/orange/sky exactly as before.
+ *
+ * LIGHT MODE: this app has never had one — every existing theme is a dark
+ * palette. Field Ledger adds light-mode support via `prefers-color-scheme`
+ * (the OS/browser setting), not a new persisted user preference — zero new
+ * app state, zero new flows, purely presentational. The neutral ramp's
+ * *numbering* is deliberately inverted between modes (dark: 950=darkest=bg,
+ * 100=lightest=text; light: 950=lightest=bg, 100=darkest=text) rather than
+ * introducing new semantic token names, so every existing `bg-stone-950`/
+ * `text-stone-100`/etc. class already in the app renders correctly in
+ * either mode with no component changes — the same zero-touch contract the
+ * whole override mechanism depends on. The accent/semantic ramps are NOT
+ * inverted the same way — they're independently recalibrated per mode so
+ * each stays legible against its own mode's background.
+ *
+ * Every foreground/background pairing this app actually renders was
+ * verified against WCAG AA (4.5:1 normal text, 3:1 UI/non-text) with a
+ * literal relative-luminance contrast calculation — not eyeballed. One
+ * known, deliberate gap, consistent with this app's existing precedent
+ * (documented the same way for the prior two redesigns): hairline
+ * decorative borders (`stone-700`/`stone-800`, and the tinted-badge borders
+ * on `red-800`) sit below the 3:1 non-text guideline. This app has never
+ * chased AA on purely decorative dividers — functional borders that need to
+ * actually be seen use `stone-600`/`stone-500` instead, which do pass.
  */
 :root,
 :root[data-theme="ember"] {
-  --color-amber-400: #b5abfc;
-  --color-amber-500: #968ae0;
-  --color-amber-600: #796cbf;
-  --color-amber-700: #5d5294;
-  --color-amber-950: #2b2741;
+  /* seal — wax-red interactive accent (links, active nav, focus rings,
+     primary-button outline). Never used as a filled background with text
+     on top — same "outline/ghost, not filled" rule the prior redesign
+     established (docs/design-tokens.md), still correct here. */
+  --color-amber-400: #d89483;
+  --color-amber-500: #d0806c;
+  --color-amber-600: #b25138;
+  --color-amber-700: #93432f;
+  --color-amber-950: #432219;
 
-  --color-stone-100: #f3f5fe;
-  --color-stone-200: #e4e7f5;
-  --color-stone-300: #cfd3e5;
-  --color-stone-400: #b2b6ca;
-  --color-stone-500: #9397ab;
-  --color-stone-600: #75798c;
-  --color-stone-700: #595d6c;
-  --color-stone-800: #3f424d;
-  --color-stone-900: #232532;
-  --color-stone-950: #161826;
+  /* stone — neutral leather/ink ramp. 950=darkest=page bg, 100=lightest=text. */
+  --color-stone-100: #efebe6;
+  --color-stone-200: #e1d9d0;
+  --color-stone-300: #cfc3b4;
+  --color-stone-400: #bbaa95;
+  --color-stone-500: #a58e73;
+  --color-stone-600: #7c6750;
+  --color-stone-700: #574838;
+  --color-stone-800: #41362a;
+  --color-stone-900: #322920;
+  --color-stone-950: #251f18;
+
+  /* red — danger/damage (ErrorBanner, delete/HP-damage buttons). */
+  --color-red-300: #e9aea5;
+  --color-red-400: #dd8b7e;
+  --color-red-600: #9f4538;
+  --color-red-700: #7a3429;
+  --color-red-800: #602c24;
+  --color-red-950: #341814;
+
+  /* emerald — heal/success (HP-heal buttons, "healthy" HP band). */
+  --color-emerald-400: #8fbd96;
+  --color-emerald-500: #639c6d;
+  --color-emerald-600: #446a4a;
+  --color-emerald-700: #3a5f40;
+  --color-emerald-800: #345139;
+  --color-emerald-900: #283e2c;
+  --color-emerald-950: #1c2c1e;
+
+  /* yellow — warning / "injured" HP band. */
+  --color-yellow-400: #debe73;
+  --color-yellow-600: #b68f35;
+
+  /* orange — "bloodied" HP band only. */
+  --color-orange-400: #de9e73;
+  --color-orange-600: #b66835;
+
+  /* sky — info / temp-HP indicator ("steel", faded ink-blue). */
+  --color-sky-400: #93b6c8;
+  --color-sky-500: #5e8ba1;
+  --color-sky-600: #4d7589;
+  --color-sky-700: #395a6a;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="crimson"]):not([data-theme="amber"]) {
+    --color-amber-400: #cf644a;
+    --color-amber-500: #b1492f;
+    --color-amber-600: #993f29;
+    --color-amber-700: #793220;
+    --color-amber-950: #f6e4df;
+
+    /* Same swatches as dark mode's stone ramp, numbering reversed — see
+       the header comment above for why. */
+    --color-stone-100: #28221a;
+    --color-stone-200: #382f24;
+    --color-stone-300: #4b3e30;
+    --color-stone-400: #5d4e3c;
+    --color-stone-500: #7c6750;
+    --color-stone-600: #b3a089;
+    --color-stone-700: #cbbeae;
+    --color-stone-800: #dbd2c7;
+    --color-stone-900: #e7e1da;
+    --color-stone-950: #efebe6;
+
+    --color-red-400: #c85341;
+    --color-red-500: #a54131;
+    --color-red-600: #8c392c;
+    --color-red-700: #6f2b20;
+    --color-red-800: #d9968c;
+    --color-red-950: #f6e2df;
+
+    --color-emerald-400: #74aa7d;
+    --color-emerald-500: #588960;
+    --color-emerald-600: #426c49;
+    --color-emerald-700: #305536;
+    --color-emerald-800: #a6c9ac;
+    --color-emerald-900: #cce0d0;
+    --color-emerald-950: #e5f0e7;
+
+    --color-yellow-400: #d3b369;
+    --color-yellow-600: #917127;
+    --color-yellow-700: #6a521b;
+
+    --color-orange-400: #d28756;
+    --color-orange-600: #8c4f27;
+
+    --color-sky-400: #2e5061;
+    --color-sky-500: #517b90;
+    --color-sky-600: #406577;
+    --color-sky-700: #2f4f60;
+  }
 }
 
 :root[data-theme="crimson"] {
@@ -172,10 +259,12 @@ body :where(h1, h2, h3) {
    :where() keeps specificity at zero so any component-level focus style
    (the form-input ring above) still wins outright if the two ever overlap,
    rather than fighting over cascade order.
-   Uses amber-500, not amber-600 — verified against every background this
-   ring can appear on (page/card/nested-card: 5.9/5.1/3.3:1); amber-600 dips
-   to 2.25:1 on a nested stone-800 surface, too low for a focus indicator
-   (docs/design-tokens.md). */
+   Uses amber-500 (the "seal" accent), not amber-600 — verified against
+   every background this ring can appear on in both light and dark mode
+   (page/card/nested-surface, 3.9–5.4:1 dark, 3.6–4.6:1 light), all above
+   the 3:1 non-text guideline. Reads correctly in either mode automatically
+   since it references the same CSS variable the theme/color-scheme blocks
+   above redefine — no separate light/dark rule needed here. */
 :where(button, a, [role="button"], [tabindex]):focus-visible {
   outline: 2px solid var(--color-amber-500);
   outline-offset: 2px;
@@ -201,9 +290,9 @@ body :where(h1, h2, h3) {
   }
 }
 
-/* Nocturne's signature rule (docs/design-tokens.md "Spacing, radius,
-   borders, shadows") — a freestanding divider that fades to transparent at
-   both ends instead of terminating in a hard line. components/ui/Table.tsx
+/* A freestanding divider that fades to transparent at both ends instead of
+   terminating in a hard line — reused as the "ledger page" fade-edge rule
+   Field Ledger's stat-block/card treatment builds on. components/ui/Table.tsx
    reimplements this same gradient per-row; this is the freestanding <hr>-
    equivalent for everywhere else. */
 .hr {

@@ -2,12 +2,12 @@ import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
 import type { UiTheme } from '../lib/types';
 
-// "Ember" now renders the Nocturne palette, not the old warm ember-orange
-// look (docs/design-tokens.md, OPEN_QUESTIONS.md #10) — the DB enum value
-// stays 'ember' (no schema change this pass), but the label a user actually
-// picks from is updated so it doesn't lie about what they're selecting.
+// "Ember" now renders the Field Ledger palette (previously Nocturne, before
+// that the original warm ember-orange look) — the DB enum value stays
+// 'ember' (no schema change this pass), but the label a user actually picks
+// from is updated each time so it doesn't lie about what they're selecting.
 const THEME_LABELS: Record<UiTheme, string> = {
-  ember: 'Nocturne',
+  ember: 'Field Ledger',
   crimson: 'Crimson',
   amber: 'Amber',
 };

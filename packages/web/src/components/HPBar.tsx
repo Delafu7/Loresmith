@@ -32,8 +32,25 @@ const BAND_KEY = {
   Down: 'hp.down',
 } as const;
 
-/** Exact-HP variant: current/max numeric bar with a temp-HP overlay segment. */
-export function HPBar({ current, max, temp = 0 }: { current: number; max: number; temp?: number }) {
+/**
+ * Exact-HP variant: current/max numeric bar with a temp-HP overlay segment.
+ * `size="large"` (Field Ledger visual pass, staged rollout — CharacterSheetPage
+ * only for now) makes the number the dominant element on screen, matching
+ * "combat numbers stay the most prominent thing on screen"; every other
+ * existing call site keeps today's compact size unchanged, still getting the
+ * font-mono/tabular-nums legibility win with no layout risk.
+ */
+export function HPBar({
+  current,
+  max,
+  temp = 0,
+  size = 'compact',
+}: {
+  current: number;
+  max: number;
+  temp?: number;
+  size?: 'compact' | 'large';
+}) {
   const { t } = useLocale();
   const pct = max > 0 ? Math.max(0, Math.min(100, (current / max) * 100)) : 0;
   const tempPct = max > 0 ? Math.max(0, Math.min(100 - pct, (temp / max) * 100)) : 0;
@@ -41,12 +58,18 @@ export function HPBar({ current, max, temp = 0 }: { current: number; max: number
 
   return (
     <div className="w-full">
-      <div className="flex items-baseline justify-between text-sm mb-1">
-        <span className="font-semibold text-stone-100">
+      <div className="flex items-baseline justify-between mb-1">
+        {/* Mono for unambiguous, column-aligned digits — the app's one
+            legibility-first typographic choice for combat numbers. */}
+        <span
+          className={`font-mono font-bold text-stone-100 tabular-nums ${size === 'large' ? 'text-2xl sm:text-3xl' : 'text-sm'}`}
+        >
           {current} / {max}
-          {temp > 0 && <span className="text-sky-400 font-normal"> (+{temp})</span>}
+          {temp > 0 && (
+            <span className={`text-sky-400 font-medium ${size === 'large' ? 'text-base sm:text-lg' : 'text-sm'}`}> (+{temp})</span>
+          )}
         </span>
-        <span className={`text-xs font-medium ${BAND_TEXT[band]}`}>{t(BAND_KEY[band])}</span>
+        <span className={`text-[11px] font-semibold uppercase tracking-wide ${BAND_TEXT[band]}`}>{t(BAND_KEY[band])}</span>
       </div>
       <div className="h-3 w-full rounded-full bg-stone-800 overflow-hidden flex" role="progressbar" aria-valuenow={current} aria-valuemin={0} aria-valuemax={max}>
         <div className={`h-full ${BAND_COLOR[band]} transition-all`} style={{ width: `${pct}%` }} />
