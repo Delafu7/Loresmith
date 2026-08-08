@@ -10,6 +10,7 @@ export const nav = {
   notes: 'Notes',
   diceRolls: 'Lancers de dés',
   assets: 'Ressources',
+  reference: 'Référence',
   catalog: 'Catalogue',
   members: 'Membres',
   settings: 'Paramètres',

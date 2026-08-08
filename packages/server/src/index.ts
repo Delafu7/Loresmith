@@ -35,6 +35,7 @@ import { notesRouter } from './routes/notes.js';
 import { diceRollsRouter } from './routes/diceRolls.js';
 import { diceRollRequestsRouter } from './routes/diceRollRequests.js';
 import { campaignAssetsRouter, assetsRouter } from './routes/assets.js';
+import { campaignReferenceRouter } from './routes/campaignReference.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { UPLOAD_ROOT } from './middleware/upload.js';
 import { errorHandler } from './middleware/errors.js';
@@ -115,6 +116,7 @@ async function main(): Promise<void> {
   app.use('/campaigns/:id/dice-roll-requests', diceRollRequestsRouter);
   app.use('/campaigns/:id/rests', campaignRestsRouter);
   app.use('/campaigns/:id/assets', campaignAssetsRouter);
+  app.use('/campaigns/:id/reference-notes', campaignReferenceRouter);
   app.use('/campaigns/:id/catalog', campaignCatalogRouter);
   app.use('/campaigns/:id/item-stash', campaignItemStashRouter);
   app.use('/campaigns', campaignsRouter); // handles /, /:id, /:id/members, /:id/sessions itself

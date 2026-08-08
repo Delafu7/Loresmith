@@ -36,6 +36,7 @@ import { CatalogEditorPage } from './catalog/CatalogEditorPage';
 import { CampaignMembersPage } from './campaigns/CampaignMembersPage';
 import { CampaignSettingsPage } from './campaigns/CampaignSettingsPage';
 import { AssetsPage } from './assets/AssetsPage';
+import { CampaignReferencePage } from './campaigns/CampaignReferencePage';
 import { ProfilePage } from './profile/ProfilePage';
 
 function App() {
@@ -116,6 +117,7 @@ function App() {
                   <Route path="notes" element={<NotesPage />} />
                   <Route path="dice-rolls" element={<DiceRollHistoryPage />} />
                   <Route path="assets" element={<AssetsPage />} />
+                  <Route path="reference" element={<CampaignReferencePage />} />
                   <Route path="catalog" element={<CatalogEditorPage />} />
                   <Route path="members" element={<CampaignMembersPage />} />
                   <Route path="settings" element={<CampaignSettingsPage />} />

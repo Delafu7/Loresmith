@@ -31,6 +31,7 @@ const SECTION_LABEL_KEYS: Record<string, TranslationKey> = {
   notes: 'nav.notes',
   'dice-rolls': 'nav.diceRolls',
   assets: 'nav.assets',
+  reference: 'nav.reference',
   catalog: 'nav.catalog',
   members: 'nav.members',
   settings: 'nav.settings',
@@ -196,6 +197,11 @@ export function CampaignShell() {
           <NavItem to="notes" onClick={onNavigate}>{t('nav.notes')}</NavItem>
           <NavItem to="dice-rolls" onClick={onNavigate}>{t('nav.diceRolls')}</NavItem>
           <NavItem to="assets" onClick={onNavigate}>{t('nav.assets')}</NavItem>
+          {/* Iteration 4 — DM-only crucial-info notes + a coin-value table
+              every member can see, both on one page; not gated like the
+              DM-only pages below (the page itself hides the notes section
+              for a non-DM viewer). */}
+          <NavItem to="reference" onClick={onNavigate}>{t('nav.reference')}</NavItem>
           {isDm && <NavItem to="catalog" onClick={onNavigate}>{t('nav.catalog')}</NavItem>}
           {isDm && <NavItem to="members" onClick={onNavigate}>{t('nav.members')}</NavItem>}
           {isDm && <NavItem to="settings" onClick={onNavigate}>{t('nav.settings')}</NavItem>}
