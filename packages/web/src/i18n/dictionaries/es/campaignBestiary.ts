@@ -28,6 +28,8 @@ export const campaignBestiary = {
     overriddenNote: 'Campos modificados: {fields}',
     sharedBadge: 'Compartida — usada en {count} campañas',
     basedOn: 'Basada en {name}',
+    uploadImage: 'Añadir imagen',
+    deleteImageConfirm: '¿Eliminar esta imagen? Esta acción no se puede deshacer.',
   },
   add: {
     heading: 'Añadir criaturas al bestiario de campaña',

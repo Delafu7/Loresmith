@@ -10,6 +10,10 @@ import { z } from 'zod';
 // later phase, so there is nothing for a caller to choose yet.
 export const createAssetFieldsSchema = z.object({
   characterId: z.string().uuid().optional(),
+  // Sibling to characterId — attaches this upload to a campaign bestiary
+  // entry's image gallery instead of a character portrait (services/
+  // assets.ts's authorizeAssetUpload/createAsset).
+  bestiaryEntryId: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
   // Player-supplied uploads always force this true server-side regardless of
   // what's sent (see services/assets.ts's createAsset) — only a DM's upload

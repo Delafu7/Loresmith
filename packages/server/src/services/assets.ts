@@ -51,9 +51,11 @@ export interface UploadedFileInfo {
  * Layer 2+3+4 for POST /campaigns/:id/assets: DM is always allowed. A player
  * is allowed only when explicitly targeting their OWN character's portrait
  * (characterId must be present and owned by them) — never a bare upload with
- * no target, and never someone else's character. Called BEFORE the file is
- * written to disk by the route (see routes/assets.ts), so an unauthorized
- * request never leaves a file behind.
+ * no target, and never someone else's character. A bestiaryEntryId target
+ * (Iteration 4's bestiary image gallery) is DM-only, same as every other
+ * bestiary-curation write in routes/campaignBestiary.ts. Called BEFORE the
+ * file is written to disk by the route (see routes/assets.ts), so an
+ * unauthorized request never leaves a file behind.
  */
 export async function authorizeAssetUpload(
   pool: Pool,
@@ -78,6 +80,28 @@ export async function authorizeAssetUpload(
   // Throws FORBIDDEN_NOT_OWNER unless actorId owns this character (DMs
   // already returned above, so this only ever runs for a player).
   await authorizeCharacterMutation(pool, actorId, character);
+}
+
+async function attachImageToBestiaryEntry(
+  client: Pick<Pool, 'query'>,
+  campaignId: string,
+  bestiaryEntryId: string,
+  assetId: string,
+): Promise<void> {
+  // Cross-campaign consistency, same service-layer discipline as
+  // authorizeAssetUpload's characterId check above — bestiaryEntryId must
+  // belong to THIS campaign, never confirmed to exist otherwise.
+  const entryRes = await client.query<{ campaign_id: string }>(
+    `SELECT campaign_id FROM campaign_bestiary_entries WHERE id = $1`,
+    [bestiaryEntryId],
+  );
+  if (entryRes.rows[0]?.campaign_id !== campaignId) throw notFound('Bestiary entry');
+
+  await client.query(
+    `INSERT INTO campaign_bestiary_entry_images (bestiary_entry_id, asset_id, sort_order)
+     SELECT $1, $2, COALESCE(MAX(sort_order) + 1, 0) FROM campaign_bestiary_entry_images WHERE bestiary_entry_id = $1`,
+    [bestiaryEntryId, assetId],
+  );
 }
 
 export async function createAsset(
@@ -112,6 +136,9 @@ export async function createAsset(
         asset.id,
         fields.characterId,
       ]);
+    }
+    if (fields.bestiaryEntryId !== undefined) {
+      await attachImageToBestiaryEntry(client, campaignId, fields.bestiaryEntryId, asset.id);
     }
 
     await client.query('COMMIT');

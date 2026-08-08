@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { CampaignBestiaryEntry, MonsterCatalogEntry } from '../lib/types';
+import type { CampaignAsset, CampaignBestiaryEntry, MonsterCatalogEntry } from '../lib/types';
 import type { BestiaryUpdatedEvent } from '../lib/socketTypes';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useSocket } from '../lib/SocketContext';
@@ -11,6 +11,7 @@ import { Button, ButtonLink } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Input, Textarea } from '../components/ui/Field';
 import { StatBlock } from '../components/StatBlock';
+import { ImageUploadField } from '../components/ImageUploadField';
 import { formatCrLabel } from './formatCr';
 
 // Task 1: the curated per-campaign bestiary — distinct from
@@ -196,6 +197,7 @@ export function CampaignBestiaryPage() {
                     <td colSpan={isDm ? 6 : 4} className="px-3 py-3 bg-stone-950/40">
                       <BestiaryEntryDetail
                         entry={entry}
+                        campaignId={campaignId}
                         isDm={isDm}
                         onUpdate={(body) => updateMutation.mutate({ entryId: entry.id, body })}
                         savePending={updateMutation.isPending}
@@ -237,6 +239,7 @@ export function CampaignBestiaryPage() {
 
 function BestiaryEntryDetail({
   entry,
+  campaignId,
   isDm,
   onUpdate,
   savePending,
@@ -244,6 +247,7 @@ function BestiaryEntryDetail({
   onDetachTag,
 }: {
   entry: CampaignBestiaryEntry;
+  campaignId: string;
   isDm: boolean;
   onUpdate: (body: Record<string, unknown>) => void;
   // UX finding #9 (Iteration 3 audit) — missing double-submit guard, same
@@ -253,6 +257,8 @@ function BestiaryEntryDetail({
   onDetachTag: (categoryId: string) => void;
 }) {
   const { t } = useLocale();
+  const queryClient = useQueryClient();
+  const bestiaryQueryKey = ['campaignBestiary', campaignId];
   const [customName, setCustomName] = useState(entry.custom_name ?? '');
   const [notes, setNotes] = useState(entry.notes ?? '');
   const [armorClassOverride, setArmorClassOverride] = useState(String(entry.stat_overrides.armor_class ?? ''));
@@ -270,6 +276,17 @@ function BestiaryEntryDetail({
     queryKey: ['catalog', 'monsters', sourceTemplateId],
     queryFn: () => api.get<{ monster: MonsterCatalogEntry }>(`/catalog/monsters/${sourceTemplateId}`),
     enabled: sourceTemplateId != null,
+  });
+
+  const imageVisibilityMutation = useMutation({
+    mutationFn: ({ assetId, visibleToPlayers }: { assetId: string; visibleToPlayers: boolean }) =>
+      api.patch<{ asset: CampaignAsset }>(`/assets/${assetId}/visibility`, { visibleToPlayers }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: bestiaryQueryKey }),
+  });
+
+  const imageDeleteMutation = useMutation({
+    mutationFn: (assetId: string) => api.delete<void>(`/assets/${assetId}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: bestiaryQueryKey }),
   });
 
   function saveDetails() {
@@ -362,6 +379,65 @@ function BestiaryEntryDetail({
       )}
 
       {!isDm && entry.notes && <p className="text-sm text-stone-300 italic">{entry.notes}</p>}
+
+      {(entry.images.length > 0 || isDm) && (
+        <div className="space-y-2">
+          {entry.images.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {entry.images.map((image) => (
+                <li key={image.id} className="relative">
+                  <img
+                    src={image.file_url}
+                    alt={image.title ?? entry.custom_name ?? entry.monster.name}
+                    className="h-20 w-20 rounded-md border border-stone-800 bg-stone-950 object-cover"
+                  />
+                  {isDm && (
+                    <div className="absolute -top-1.5 -right-1.5 flex gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          imageVisibilityMutation.mutate({ assetId: image.asset_id, visibleToPlayers: !image.visible_to_players })
+                        }
+                        disabled={imageVisibilityMutation.isPending}
+                        aria-label={image.visible_to_players ? t('assets.hideFromPlayers') : t('assets.revealToPlayers')}
+                        title={image.visible_to_players ? t('assets.hideFromPlayers') : t('assets.revealToPlayers')}
+                        className={`h-5 w-5 rounded-full border border-stone-950 bg-stone-900 text-[10px] leading-none disabled:opacity-50 ${
+                          image.visible_to_players ? 'text-stone-300' : 'text-amber-500'
+                        }`}
+                      >
+                        {image.visible_to_players ? '👁' : '🙈'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(t('campaignBestiary.detail.deleteImageConfirm'))) {
+                            imageDeleteMutation.mutate(image.asset_id);
+                          }
+                        }}
+                        disabled={imageDeleteMutation.isPending}
+                        aria-label={t('common.delete')}
+                        title={t('common.delete')}
+                        className="h-5 w-5 rounded-full border border-stone-950 bg-stone-900 text-[10px] leading-none text-red-400 hover:text-red-300 disabled:opacity-50"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {isDm && (
+            <ImageUploadField
+              campaignId={campaignId}
+              bestiaryEntryId={entry.id}
+              showVisibilityToggle
+              label={t('campaignBestiary.detail.uploadImage')}
+              onUploaded={() => void queryClient.invalidateQueries({ queryKey: bestiaryQueryKey })}
+            />
+          )}
+        </div>
+      )}
 
       {overriddenFields.length > 0 && (
         <p className="text-xs text-stone-500">

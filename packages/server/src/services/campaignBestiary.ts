@@ -39,6 +39,15 @@ interface BestiaryEntryWithMonsterRow extends BestiaryEntryRow {
   monster: Record<string, unknown>;
 }
 
+export interface BestiaryEntryImage {
+  id: string;
+  asset_id: string;
+  file_url: string;
+  title: string | null;
+  visible_to_players: boolean;
+  sort_order: number;
+}
+
 // Mechanical camelCase -> snake_case, mirrors routes/catalogHomebrew.ts's
 // toSnakeCaseColumns — exact here for the same reason (every monsters
 // column is plain snake_case with no unusual abbreviations).
@@ -51,7 +60,11 @@ function toSnakeCaseColumns(input: Record<string, unknown>): Record<string, unkn
   return out;
 }
 
-function toDto(row: BestiaryEntryWithMonsterRow, categories: campaignCategoriesService.CampaignCategory[]) {
+function toDto(
+  row: BestiaryEntryWithMonsterRow,
+  categories: campaignCategoriesService.CampaignCategory[],
+  images: BestiaryEntryImage[],
+) {
   return {
     id: row.id,
     campaign_id: row.campaign_id,
@@ -64,10 +77,51 @@ function toDto(row: BestiaryEntryWithMonsterRow, categories: campaignCategoriesS
     created_at: row.created_at,
     updated_at: row.updated_at,
     categories,
+    images,
     monster: row.monster,
     effective: { ...row.monster, ...row.stat_overrides },
     shared_campaign_count: row.shared_campaign_count,
   };
+}
+
+// Batched sibling of campaignCategoriesService.listCategoriesForEntities —
+// one query for N entries rather than N+1. visible_to_players (re-added by
+// 1784269793666) is filtered here in SQL for non-DM roles, same discipline
+// as listAssets/listCampaignBestiary's own filters.
+async function listBestiaryEntryImagesForEntities(
+  pool: Pool,
+  entryIds: string[],
+  role: CampaignRole,
+): Promise<Map<string, BestiaryEntryImage[]>> {
+  const map = new Map<string, BestiaryEntryImage[]>();
+  if (entryIds.length === 0) return map;
+
+  const values: unknown[] = [entryIds];
+  let where = 'cbei.bestiary_entry_id = ANY($1::uuid[])';
+  if (role !== 'dm') where += ' AND ca.visible_to_players = true';
+
+  const result = await pool.query<BestiaryEntryImage & { bestiary_entry_id: string }>(
+    `SELECT cbei.id, cbei.bestiary_entry_id, cbei.asset_id, cbei.sort_order,
+            ca.file_url, ca.title, ca.visible_to_players
+     FROM campaign_bestiary_entry_images cbei
+     JOIN campaign_assets ca ON ca.id = cbei.asset_id
+     WHERE ${where}
+     ORDER BY cbei.sort_order ASC, cbei.created_at ASC`,
+    values,
+  );
+  for (const row of result.rows) {
+    const list = map.get(row.bestiary_entry_id) ?? [];
+    list.push({
+      id: row.id,
+      asset_id: row.asset_id,
+      file_url: row.file_url,
+      title: row.title,
+      visible_to_players: row.visible_to_players,
+      sort_order: row.sort_order,
+    });
+    map.set(row.bestiary_entry_id, list);
+  }
+  return map;
 }
 
 // (SELECT COUNT(DISTINCT ...) ...) rather than a separate query per row —
@@ -106,8 +160,12 @@ export async function listCampaignBestiary(pool: Pool, campaignId: string, role:
     values,
   );
 
-  const categoriesByEntity = await campaignCategoriesService.listCategoriesForEntities(pool, ENTITY_TYPE, result.rows.map((r) => r.id));
-  return result.rows.map((row) => toDto(row, categoriesByEntity.get(row.id) ?? []));
+  const entryIds = result.rows.map((r) => r.id);
+  const [categoriesByEntity, imagesByEntity] = await Promise.all([
+    campaignCategoriesService.listCategoriesForEntities(pool, ENTITY_TYPE, entryIds),
+    listBestiaryEntryImagesForEntities(pool, entryIds, role),
+  ]);
+  return result.rows.map((row) => toDto(row, categoriesByEntity.get(row.id) ?? [], imagesByEntity.get(row.id) ?? []));
 }
 
 export async function getCampaignBestiaryEntry(pool: Pool, campaignId: string, entryId: string, role: CampaignRole) {
@@ -117,8 +175,11 @@ export async function getCampaignBestiaryEntry(pool: Pool, campaignId: string, e
   // entry's id gets NOT_FOUND, never FORBIDDEN.
   if (role !== 'dm' && !row.discovered) throw notFound('Bestiary entry');
 
-  const categoriesByEntity = await campaignCategoriesService.listCategoriesForEntities(pool, ENTITY_TYPE, [row.id]);
-  return toDto(row, categoriesByEntity.get(row.id) ?? []);
+  const [categoriesByEntity, imagesByEntity] = await Promise.all([
+    campaignCategoriesService.listCategoriesForEntities(pool, ENTITY_TYPE, [row.id]),
+    listBestiaryEntryImagesForEntities(pool, [row.id], role),
+  ]);
+  return toDto(row, categoriesByEntity.get(row.id) ?? [], imagesByEntity.get(row.id) ?? []);
 }
 
 export interface AddToCampaignBestiaryResult {

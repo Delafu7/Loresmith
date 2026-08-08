@@ -365,6 +365,9 @@ export interface CampaignBestiaryEntry {
   created_at: string;
   updated_at: string;
   categories: CampaignCategory[];
+  // Iteration 4 — this entry's image gallery, already role-filtered
+  // server-side (a player never receives a GM-only image's row at all).
+  images: BestiaryEntryImage[];
   // The unmodified catalog row.
   monster: MonsterCatalogEntry;
   // monster with stat_overrides shallow-merged on top — what the UI should
@@ -374,6 +377,15 @@ export interface CampaignBestiaryEntry {
   // curating this template, computed fresh server-side on every read. 1
   // means "just this campaign" — render no badge, not a redundant one.
   shared_campaign_count: number;
+}
+
+export interface BestiaryEntryImage {
+  id: string;
+  asset_id: string;
+  file_url: string;
+  title: string | null;
+  visible_to_players: boolean;
+  sort_order: number;
 }
 
 export type EncounterStatus = 'preparing' | 'active' | 'paused' | 'completed';

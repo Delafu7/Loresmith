@@ -31,6 +31,8 @@ export const campaignBestiary = {
     overriddenNote: 'Overridden fields: {fields}',
     sharedBadge: 'Shared — used in {count} campaigns',
     basedOn: 'Based on {name}',
+    uploadImage: 'Add image',
+    deleteImageConfirm: 'Delete this image? This cannot be undone.',
   },
   add: {
     heading: 'Add creatures to campaign bestiary',
