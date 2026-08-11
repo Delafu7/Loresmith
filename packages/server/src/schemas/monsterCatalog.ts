@@ -19,6 +19,11 @@ const statBlockEntrySchema = z.object({
   damageType: z.string().max(50).optional(),
   saveDc: z.number().int().positive().optional(),
   saveAbilityIndex: z.string().max(10).optional(),
+  // Phase 2 "legendary actions per-round counters" — only meaningful on a
+  // legendaryActions entry (a normal action/trait/reaction just never sets
+  // it); a missing value defaults to 1 wherever this is read, both server
+  // and client side, per the SRD default cost of a legendary action.
+  cost: z.number().int().positive().optional(),
 });
 
 const abilityScore = z.number().int().min(1).max(30);
@@ -55,6 +60,12 @@ const homebrewMonsterShape = {
   traits: z.array(statBlockEntrySchema).optional().nullable(),
   actions: z.array(statBlockEntrySchema).min(1),
   legendaryActions: z.array(statBlockEntrySchema).optional().nullable(),
+  // Phase 2 "legendary actions per-round counters" — the budget per round,
+  // not the count of legendaryActions entries above (a creature can have 3
+  // legendary actions worth 1/1/2 to spend against a budget of 3, not "3
+  // uses of any one action"). Null/omitted for a creature with no legendary
+  // actions at all.
+  legendaryActionCount: z.number().int().positive().optional().nullable(),
   reactions: z.array(statBlockEntrySchema).optional().nullable(),
   source: z.string().max(200).optional().nullable(),
   // Caps monster_instances at 1 per campaign for this catalog row (see

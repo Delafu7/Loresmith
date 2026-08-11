@@ -14,8 +14,10 @@ import {
   setEncounterModeSchema,
   setInitiativeSchema,
   setParticipantFactionSchema,
+  setParticipantHpVisibilitySchema,
   setParticipantPositionSchema,
   setParticipantVisibilitySchema,
+  spendLegendaryActionSchema,
   spawnParticipantsSchema,
   transitionDispositionSchema,
   updateEncounterSchema,
@@ -51,6 +53,7 @@ import {
   broadcastActionEconomyChanged,
   broadcastDiceRolled,
   broadcastFullStateResync,
+  broadcastLairActionAvailable,
   broadcastActionRecorded,
   broadcastEncounterOpened,
   pushEncounterRoomJoinForOwner,
@@ -88,6 +91,14 @@ campaignEncountersRouter.get('/:encounterId', async (req, res) => {
     pool, req.campaignId!, (req.params.encounterId as string), req.campaignRole!,
   );
   res.json({ encounter });
+});
+
+// Phase 3 "encounter XP budgeting" — DM-only (see services/encounters.ts's
+// getEncounterXpBudget header comment for why: difficulty is a planning
+// tool, not something a player needs or should see ahead of the fight).
+campaignEncountersRouter.get('/:encounterId/xp-budget', requireRole('dm'), async (req, res) => {
+  const xpBudget = await encountersService.getEncounterXpBudget(pool, req.campaignId!, (req.params.encounterId as string));
+  res.json({ xpBudget });
 });
 
 campaignEncountersRouter.patch('/:encounterId', requireRole('dm'), async (req, res) => {
@@ -261,9 +272,11 @@ encountersRouter.delete('/:id/participants/:pid', requireEncounterDm, async (req
 
 encountersRouter.patch('/:id/participants/:pid/initiative', requireEncounterDm, async (req, res) => {
   const input = setInitiativeSchema.parse(req.body);
-  const participant = await encountersService.setParticipantInitiative(
+  const result = await encountersService.setParticipantInitiative(
     pool, (req.params.id as string), (req.params.pid as string), input,
   );
+  await broadcastInitiativeRolled(getIo(req.app), result.encounter, result.participants);
+  const participant = result.participants.find((p) => p.id === req.params.pid);
   res.json({ participant });
 });
 
@@ -286,6 +299,18 @@ encountersRouter.post('/:id/advance-turn', requireEncounterDm, async (req, res) 
   const sync = { encounter_id: result.encounter.id, campaign_id: result.encounter.campaign_id, sync_seq: result.encounter.sync_seq };
   for (const expired of result.expiredEffects) {
     await broadcastEffectExpired(io, sync, expired, expired.effect_definition_name);
+  }
+  // Phase 2 "legendary actions per-round counters" + "lair actions
+  // (round-start trigger)" — both keyed on the same roundAdvanced boolean
+  // (see AdvanceTurnResult's own comment). TURN_ADVANCED above doesn't carry
+  // per-participant fields, so a resync is what actually gets a legendary
+  // reset to clients; lair actions additionally get their own explicit
+  // notification since that's a "DM, act now" prompt, not a quiet counter update.
+  if (result.roundAdvanced) {
+    await broadcastFullStateResync(io, result.encounter.id, result.encounter.campaign_id);
+    if (result.encounter.lair_actions && result.encounter.lair_actions.length > 0) {
+      broadcastLairActionAvailable(io, result.encounter);
+    }
   }
   res.json(result);
 });
@@ -442,6 +467,29 @@ encountersRouter.patch('/:id/participants/:pid/faction', requireEncounterDm, asy
 encountersRouter.patch('/:id/participants/:pid/visibility', requireEncounterDm, async (req, res) => {
   const input = setParticipantVisibilitySchema.parse(req.body);
   const { encounter, participant } = await encountersService.setParticipantVisibility(
+    pool, (req.params.id as string), (req.params.pid as string), input,
+  );
+  await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
+  res.json({ participant });
+});
+
+// Phase 2 "restore hp_visibility + banding" — DM-only, resyncs both roles
+// (same reasoning as .../visibility above: this changes what a player's HP
+// display actually shows).
+encountersRouter.patch('/:id/participants/:pid/hp-visibility', requireEncounterDm, async (req, res) => {
+  const input = setParticipantHpVisibilitySchema.parse(req.body);
+  const { encounter, participant } = await encountersService.setParticipantHpVisibility(
+    pool, (req.params.id as string), (req.params.pid as string), input,
+  );
+  await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
+  res.json({ participant });
+});
+
+// Phase 2 "legendary actions per-round counters" — DM-only, same resync
+// shape as the two routes just above.
+encountersRouter.post('/:id/participants/:pid/legendary-actions/spend', requireEncounterDm, async (req, res) => {
+  const input = spendLegendaryActionSchema.parse(req.body);
+  const { encounter, participant } = await encountersService.spendLegendaryAction(
     pool, (req.params.id as string), (req.params.pid as string), input,
   );
   await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);

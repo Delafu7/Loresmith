@@ -55,6 +55,27 @@ export async function listMagicSchools(pool: Pool) {
   return result.rows;
 }
 
+// Phase 2 "weapon mastery (2024)" — same "no campaign scoping" reasoning as
+// listAbilityScores/listSkills/listMagicSchools above (a fixed 8-row list,
+// not homebrewable).
+export async function listWeaponMasteryProperties(pool: Pool) {
+  const result = await pool.query(`SELECT * FROM weapon_mastery_properties ORDER BY name ASC`);
+  return result.rows;
+}
+
+// Phase 4 "Bastion tracking" sub-phase 1 — same "no campaign scoping"
+// reasoning as listWeaponMasteryProperties above (fixed catalog, not
+// homebrewable). Ordered by (facility_type, min_level, name) so basic
+// facilities sort before special ones and special ones sort by their
+// level-gate breakpoint, matching how docs/rules/bastions.md itself
+// presents the catalog.
+export async function listBastionFacilityCatalog(pool: Pool) {
+  const result = await pool.query(
+    `SELECT * FROM bastion_facility_catalog ORDER BY facility_type ASC, min_level ASC NULLS FIRST, name ASC`,
+  );
+  return result.rows;
+}
+
 export async function listConditions(pool: Pool, query: EditionOnlyQuery) {
   const values: unknown[] = [];
   const where = editionFilter('edition_scope', query.edition, values);

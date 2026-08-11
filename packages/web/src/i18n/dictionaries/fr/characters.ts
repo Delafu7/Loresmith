@@ -47,6 +47,8 @@ export const characters = {
     loadingCharacter: 'Chargement du personnage…',
     gmNotesTitle: 'Notes du MJ',
     gmNotesHint: 'Visibles uniquement par le MJ — jamais montrées aux joueurs, même au propriétaire du personnage.',
+    npcMotivationTitle: 'Que veut-il ?',
+    npcMotivationHint: 'Réservé au MJ — la motivation de ce PNJ, jamais montrée aux joueurs.',
   },
   abilityGenerator: {
     generateScores: 'Générer les scores :',
@@ -106,6 +108,7 @@ export const characters = {
     noItems: "Aucun objet pour le moment.",
     removeItem: 'Supprimer {name}',
     attunementTag: 'Harmonisation',
+    masteryLabel: 'Maîtrise : {name}',
     decreaseQty: 'Diminuer la quantité de {name}',
     increaseQty: 'Augmenter la quantité de {name}',
     equipped: 'Équipé',
@@ -126,6 +129,14 @@ export const characters = {
     encumbranceWeight: '{carried} / {capacity} lb',
     encumbered: 'Encombré — vitesse -10 pieds.',
     heavilyEncumbered: 'Très encombré — vitesse -20 pieds, désavantage aux tests, attaques et sauvegardes de Force/Dex/Con.',
+  },
+  currency: {
+    title: 'Monnaie',
+    cp: 'PC',
+    sp: 'PA',
+    ep: 'PE',
+    gp: 'PO',
+    pp: 'PPl',
   },
   resources: {
     title: 'Ressources',

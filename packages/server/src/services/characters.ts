@@ -9,6 +9,8 @@ import { computeAppliedDamage } from './damage.js';
 import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
 import { criticalDiceCount } from './diceEngine.js';
 import { findUserByEmail } from './users.js';
+import { resolveVisibilitySync } from './visibility.js';
+import { computeConcentrationDc, findActiveConcentrationEffect } from './concentration.js';
 import type {
   AssignCharacterOwnerInput,
   CreateCharacterInput,
@@ -88,12 +90,15 @@ export async function authorizeCharacterAction(
 // campaign now (hide/reveal was removed) — this is a plain read for every
 // role, `role` is kept only because callers already have it from the
 // membership check and other sibling functions share the signature shape.
-// Iteration 2's one concrete GM-only field — stripped from every read a
-// non-DM viewer receives, regardless of ownership (an owning player still
-// doesn't see the DM's private notes on their own character).
-export function redactGmNotes<T extends { gm_notes?: unknown }>(character: T, role: CampaignRole): T {
-  if (role === 'dm') return character;
-  return { ...character, gm_notes: undefined };
+// Iteration 2's one concrete GM-only field (gm_notes) — stripped from every
+// read a non-DM viewer receives, regardless of ownership (an owning player
+// still doesn't see the DM's private notes on their own character). Phase 3
+// "NPC 'what they want' field" added npc_motivation as a second GM-only
+// field with the exact same visibility rule — extended here rather than a
+// second near-identical redaction function.
+export function redactGmNotes<T extends { gm_notes?: unknown; npc_motivation?: unknown }>(character: T, role: CampaignRole): T {
+  if (resolveVisibilitySync({ mode: 'gm_only' }, null, role)) return character;
+  return { ...character, gm_notes: undefined, npc_motivation: undefined };
 }
 
 // Blocker fix: every function below that returns a character row as a side
@@ -254,6 +259,8 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
   // Iteration 2's one concrete GM-only field — DM-settable only, see the
   // role check in updateCharacter dropping it for non-DM patches.
   gmNotes: 'gm_notes',
+  // Phase 3 "NPC 'what they want' field" — same DM-only treatment as gmNotes.
+  npcMotivation: 'npc_motivation',
 };
 
 export interface UpdateCharacterResult {
@@ -285,6 +292,7 @@ export async function updateCharacter(
   }
   if (role !== 'dm') {
     delete patch.gmNotes;
+    delete patch.npcMotivation;
   }
   if ('hitDiceRemaining' in patch) {
     // JSONB column needs an explicit column + serialization; handled separately below.
@@ -557,6 +565,13 @@ export interface ApplyDamageResult {
     vulnerabilityApplied: boolean;
     immune: boolean;
   };
+  // Phase 2 "concentration-broken save prompt" — set only when this damage
+  // actually landed (appliedDamage > 0) AND the character was concentrating
+  // on something. The route broadcasts CONCENTRATION_CHECK_PROMPTED from
+  // this; resolving the save (roll + DM removing the effect on failure)
+  // happens through the existing dice-rolls/DELETE-effect endpoints, not
+  // here.
+  concentrationCheck: { effectId: string; effectDefinitionId: string; effectName: string; dc: number } | null;
 }
 
 export async function applyDamage(
@@ -600,9 +615,15 @@ export async function applyDamage(
 
     const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(row, { delta: -applied.appliedDamage, tempDelta: 0 });
 
+    // Phase 2 "HP/damage undo" — snapshot the PRE-damage values so
+    // undoLastDamage can restore exactly this application, same "snapshot
+    // before you overwrite" idiom as combat_participants.last_action_
+    // economy_snapshot (applyActionEconomy, above in this file).
+    const hpSnapshot = { hp_current: row.hp_current, hp_temp: row.hp_temp };
+
     const result = await client.query(
-      `UPDATE characters SET hp_current = $1, hp_temp = $2, updated_at = now() WHERE id = $3 RETURNING *`,
-      [hpCurrent, hpTemp, characterId],
+      `UPDATE characters SET hp_current = $1, hp_temp = $2, last_hp_snapshot = $4::jsonb, updated_at = now() WHERE id = $3 RETURNING *`,
+      [hpCurrent, hpTemp, characterId, JSON.stringify(hpSnapshot)],
     );
 
     const encounterSyncs = await client.query<EncounterHpSyncTarget>(
@@ -628,6 +649,9 @@ export async function applyDamage(
       );
     }
 
+    const concentrationEffect =
+      applied.appliedDamage > 0 ? await findActiveConcentrationEffect(client, { characterId, monsterInstanceId: null }) : null;
+
     await client.query('COMMIT');
     return {
       character: redactGmNotes(result.rows[0], role),
@@ -636,7 +660,67 @@ export async function applyDamage(
       rawTotal: applied.rawTotal,
       appliedDamage: applied.appliedDamage,
       breakdown: applied.breakdown,
+      concentrationCheck: concentrationEffect
+        ? {
+            effectId: concentrationEffect.id,
+            effectDefinitionId: concentrationEffect.effect_definition_id,
+            effectName: concentrationEffect.name,
+            dc: computeConcentrationDc(applied.appliedDamage),
+          }
+        : null,
     };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export interface UndoLastDamageResult {
+  character: Record<string, unknown>;
+  encounterSyncs: EncounterHpSyncTarget[];
+}
+
+// Phase 2 "HP/damage undo" — DM-only, same "undo is a rewind tool, not a
+// player self-action" split as undoActionEconomy (services/encounters.ts),
+// even though applyDamage itself allows the controller too. Restores
+// exactly the pre-damage hp_current/hp_temp captured in last_hp_snapshot;
+// does NOT restore a concentration effect a failed save may have removed in
+// the meantime — undoing HP and re-granting a lost concentration effect are
+// two different "oops" scenarios, and only the first one is in scope here.
+export async function undoLastDamage(pool: Pool, actorId: string, characterId: string): Promise<UndoLastDamageResult> {
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  const role = await requireMembership(pool, character.campaign_id, actorId);
+  requireDm(role);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<{ last_hp_snapshot: { hp_current: number; hp_temp: number } | null }>(
+      `SELECT last_hp_snapshot FROM characters WHERE id = $1 FOR UPDATE`,
+      [characterId],
+    );
+    const snapshot = locked.rows[0]?.last_hp_snapshot;
+    if (!snapshot) throw new AppError('CONFLICT', 'Nothing to undo for that character');
+
+    const result = await client.query(
+      `UPDATE characters SET hp_current = $1, hp_temp = $2, last_hp_snapshot = NULL, updated_at = now() WHERE id = $3 RETURNING *`,
+      [snapshot.hp_current, snapshot.hp_temp, characterId],
+    );
+
+    const encounterSyncs = await client.query<EncounterHpSyncTarget>(
+      `UPDATE encounters e
+       SET sync_seq = sync_seq + 1
+       FROM combat_participants cp
+       WHERE cp.character_id = $1 AND cp.encounter_id = e.id
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
+      [characterId],
+    );
+
+    await client.query('COMMIT');
+    return { character: redactGmNotes(result.rows[0], role), encounterSyncs: encounterSyncs.rows };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

@@ -4,4 +4,5 @@ export const hp = {
   bloodied: 'Ensanglanté',
   critical: 'Critique',
   down: 'À terre',
+  hidden: 'Inconnu',
 };

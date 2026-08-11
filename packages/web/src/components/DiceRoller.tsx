@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { formatModifier } from '../lib/dnd-math';
 import type { DiceRoll, DiceRollKeep, DiceRollType } from '../lib/types';
+import { DiceRollVisibilityPicker, useDiceRollVisibilityState } from './DiceRollVisibilityPicker';
 import { ErrorBanner, errorMessage } from './Feedback';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -34,6 +35,13 @@ export interface DiceRollerProps {
    * a discarded one under disadvantage). Optional: every other existing
    * caller ignores it and behaves exactly as before. */
   onRoll?: (roll: DiceRoll) => void;
+  /** Phase 2 "hidden-roll option in contextual rollers" — opt-in per call
+   * site (SkillsPanel/SavingThrowsPanel/AttackRoller pass this; other
+   * DiceRoller embeds like InventoryPanel/ActionEconomyPanel don't, since a
+   * hidden item-use or initiative roll isn't a real DM use case). No effect
+   * for a non-DM viewer — the picker only ever renders for role === 'dm',
+   * same gating QuickDiceRoller.tsx already used. */
+  allowHiddenRoll?: boolean;
 }
 
 /**
@@ -56,17 +64,29 @@ export function DiceRoller({
   triggerLabel,
   className = '',
   onRoll,
+  allowHiddenRoll = false,
 }: DiceRollerProps) {
   const { t } = useLocale();
-  const { campaignId } = useCampaignShell();
+  const { campaignId, role } = useCampaignShell();
+  const isDm = role === 'dm';
+  const showVisibilityPicker = allowHiddenRoll && isDm;
   const [keep, setKeep] = useState<DiceRollKeep>('normal');
   const [result, setResult] = useState<DiceRoll | null>(null);
+  // Collapsed by default (Phase 2) — these embeds are dense per-row lists
+  // (every skill/save gets its own DiceRoller), so the full visibility
+  // picker only appears once the DM opens it via the 👁/🙈 toggle below,
+  // rather than bloating every row's height for the common (public) case.
+  const [pickerOpen, setPickerOpen] = useState(false);
   const effectiveTriggerLabel = triggerLabel ?? t('dice.rollerRollButton');
   const keepOptions: Array<{ value: DiceRollKeep; label: string }> = [
     { value: 'disadvantage', label: t('dice.rollerDisadvantage') },
     { value: 'normal', label: t('dice.rollerNormal') },
     { value: 'advantage', label: t('dice.rollerAdvantage') },
   ];
+  const { visibility, setVisibility, visibleToUserId, setVisibleToUserId, members } = useDiceRollVisibilityState(
+    campaignId,
+    showVisibilityPicker,
+  );
 
   const rollMutation = useMutation({
     mutationFn: () =>
@@ -80,6 +100,8 @@ export function DiceRoller({
         characterId,
         monsterInstanceId,
         encounterId,
+        visibility: showVisibilityPicker ? visibility : undefined,
+        visibleToUserId: showVisibilityPicker && visibility === 'private' ? visibleToUserId || undefined : undefined,
       }),
     onSuccess: (data) => {
       setResult(data.roll);
@@ -129,7 +151,28 @@ export function DiceRoller({
         >
           {rollMutation.isPending ? '…' : effectiveTriggerLabel}
         </button>
+        {showVisibilityPicker && (
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            aria-expanded={pickerOpen}
+            aria-label={t('dice.rollerVisibilityToggleAria')}
+            title={t(visibility === 'public' ? 'dice.visibilityPublic' : visibility === 'gm_only' ? 'dice.visibilityGmOnly' : 'dice.visibilityPrivate')}
+            className="text-xs opacity-70 hover:opacity-100"
+          >
+            {visibility === 'public' ? '👁' : '🙈'}
+          </button>
+        )}
       </div>
+      {showVisibilityPicker && pickerOpen && (
+        <DiceRollVisibilityPicker
+          visibility={visibility}
+          onVisibilityChange={setVisibility}
+          visibleToUserId={visibleToUserId}
+          onVisibleToUserIdChange={setVisibleToUserId}
+          members={members}
+        />
+      )}
       {rollMutation.isError && <ErrorBanner message={errorMessage(rollMutation.error)} />}
       {result && (
         <div aria-live="polite">

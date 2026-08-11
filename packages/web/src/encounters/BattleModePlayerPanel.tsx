@@ -15,7 +15,7 @@ import type { Character, CharacterItem } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useItemsCatalog } from '../lib/useCatalog';
 import type { EncounterLiveState } from './useEncounterLive';
-import { HPBar } from '../components/HPBar';
+import { ParticipantHpDisplay } from '../components/ParticipantHpDisplay';
 import { EmptyState, ErrorBanner, errorMessage } from '../components/Feedback';
 import { DiceRoller } from '../components/DiceRoller';
 import { TurnTorch } from '../components/TurnTorch';
@@ -149,7 +149,7 @@ function PlayerPanelBody({
           </span>
         </div>
         <div className="mt-2">
-          <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} size="large" />
+          <ParticipantHpDisplay hp={participant.hp} size="large" />
         </div>
         <p className="text-xs text-stone-500 mt-1" title={t('encounters.tracker.armorClass')}>
           <span className="font-mono tabular-nums">AC {participant.armorClass}</span>

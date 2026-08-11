@@ -9,7 +9,7 @@ import type {
   DiceRollType,
   DiceRollVisibility,
 } from '../lib/types';
-import type { DiceRolledEvent, DiceRollRequestedEvent, DiceRollRequestUpdatedEvent, DiceRollVoidedEvent } from '../lib/socketTypes';
+import type { DiceRolledEvent, DiceRollMaskedEvent, DiceRollRequestedEvent, DiceRollRequestUpdatedEvent, DiceRollVoidedEvent } from '../lib/socketTypes';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useAuth } from '../auth/AuthContext';
 import { useSocket } from '../lib/SocketContext';
@@ -46,6 +46,11 @@ export function DiceRollHistoryPage() {
   const [historyRolls, setHistoryRolls] = useState<DiceRoll[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [liveRolls, setLiveRolls] = useState<DiceRoll[]>([]);
+  // Phase 2 "hidden rolls record occurrence" — masked stubs (gm_only/private
+  // rolls this viewer isn't allowed to see the value of) get their own list,
+  // rendered as a distinct minimal row rather than forced into DiceRoll's
+  // full shape with fake result data.
+  const [maskedRolls, setMaskedRolls] = useState<DiceRollMaskedEvent[]>([]);
   // Tracks which cursor's page has already been merged into historyRolls,
   // so a background refetch of the *same* cursor (e.g. window refocus)
   // doesn't re-append and duplicate rows. Starts at `undefined`, distinct
@@ -93,13 +98,21 @@ export function DiceRollHistoryPage() {
     setHistoryRolls([]);
     setNextCursor(null);
     setLiveRolls([]);
+    setMaskedRolls([]);
     appliedCursorRef.current = undefined;
   }
 
   useEffect(() => {
-    function onDiceRolled(payload: DiceRolledEvent) {
+    function onDiceRolled(payload: DiceRolledEvent | DiceRollMaskedEvent) {
       if (payload.campaignId !== campaignId) return;
       if (characterFilter && payload.characterId !== characterFilter) return;
+      if (payload.masked) {
+        setMaskedRolls((prev) => {
+          if (prev.some((r) => r.id === payload.id)) return prev;
+          return [payload, ...prev];
+        });
+        return;
+      }
       setLiveRolls((prev) => {
         if (prev.some((r) => r.id === payload.id)) return prev; // rare double-delivery dedupe
         return [socketPayloadToDiceRoll(payload), ...prev];
@@ -121,7 +134,7 @@ export function DiceRollHistoryPage() {
   }, [socket, campaignId, characterFilter]);
 
   const isInitialLoading = pageQuery.isLoading && cursor === null && historyRolls.length === 0;
-  const isEmpty = !isInitialLoading && liveRolls.length === 0 && historyRolls.length === 0;
+  const isEmpty = !isInitialLoading && liveRolls.length === 0 && historyRolls.length === 0 && maskedRolls.length === 0;
   const characters = charactersQuery.data?.characters ?? [];
 
   return (
@@ -155,6 +168,9 @@ export function DiceRollHistoryPage() {
       {isEmpty && <EmptyState message={t('dice.historyNoRolls')} />}
 
       <ul className="space-y-2">
+        {maskedRolls.map((roll) => (
+          <MaskedDiceRollRow key={`masked-${roll.id}`} roll={roll} />
+        ))}
         {liveRolls.map((roll) => (
           <DiceRollRow key={`live-${roll.id}`} roll={roll} campaignId={campaignId} />
         ))}
@@ -292,6 +308,34 @@ function DiceRollRow({ roll, campaignId }: { roll: DiceRoll; campaignId: string 
           </button>
         )}
       </div>
+    </li>
+  );
+}
+
+// Phase 2 "hidden rolls record occurrence" — the minimal row for a
+// DiceRollMaskedEvent: no dice faces, no result, just "something was
+// rolled" plus whatever's not spoiler-sensitive (roller, type, context).
+function MaskedDiceRollRow({ roll }: { roll: DiceRollMaskedEvent }) {
+  const { t } = useLocale();
+  const label = roll.characterId
+    ? t('dice.historyCharacterLabel', { id: roll.characterId })
+    : roll.monsterInstanceId
+      ? t('dice.historyMonsterLabel', { id: roll.monsterInstanceId })
+      : t('dice.historyUserLabel', { id: roll.userId });
+
+  return (
+    <li className="rounded-md bg-stone-900 shadow-sm p-3 flex items-center justify-between gap-3 flex-wrap opacity-80">
+      <div className="min-w-0">
+        <div className="text-sm text-stone-200 truncate">
+          <span className="text-stone-300">{label}</span>
+          <span className="text-stone-600"> · </span>
+          <span className="capitalize text-stone-400">{roll.rollType.replace('_', ' ')}</span>
+          {roll.rollContext && <span className="text-stone-500"> — {roll.rollContext}</span>}
+          <RollBadge tone="violet">{t(VISIBILITY_BADGE_KEYS[roll.visibility as 'gm_only' | 'private'])}</RollBadge>
+        </div>
+        <div className="text-xs text-stone-500">{relativeTime(roll.createdAt, t)}</div>
+      </div>
+      <span className="text-sm italic text-stone-500 flex-shrink-0">{t('dice.historyHiddenResult')}</span>
     </li>
   );
 }

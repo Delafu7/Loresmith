@@ -268,6 +268,7 @@ function AttackRow({
             characterId={rollerCharacterId ?? undefined}
             monsterInstanceId={rollerMonsterInstanceId ?? undefined}
             encounterId={encounterId}
+            allowHiddenRoll
           />
         )}
         {parsedDamage && (

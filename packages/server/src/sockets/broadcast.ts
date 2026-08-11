@@ -24,6 +24,9 @@ import { getEncounterCombatSnapshot, getEncounterMap, formatMapForWire } from '.
 import type { EncounterMapRow } from '../services/encounters.js';
 import type { CampaignRole } from '../services/authz.js';
 import { isActionVisibleToPlayers, type CombatActionView } from '../services/combatActions.js';
+import { isRollVisibleToViewer } from '../services/diceRolls.js';
+import { resolveVisibilitySync } from '../services/visibility.js';
+import { bandHp, type HpBand } from '../domain/hpBanding.js';
 
 export function getIo(app: Application): Server {
   const io = app.get('io') as Server | undefined;
@@ -141,7 +144,10 @@ async function emitToEncounterRespectingVisibility(
 ): Promise<void> {
   const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, campaignId, encounterRoom(encounterId));
   if (dmSocketIds.length > 0) io.to(dmSocketIds).emit(event, payload);
-  if (visibleToPlayers && playerSocketIds.length > 0) io.to(playerSocketIds).emit(event, payload);
+  // 'role_split' mode (services/visibility.ts, Phase 1.1).
+  if (resolveVisibilitySync({ mode: 'role_split', visibleToPlayers }, null, 'player') && playerSocketIds.length > 0) {
+    io.to(playerSocketIds).emit(event, payload);
+  }
 }
 
 // ---- Events with no visibility split (identical payload for DM + players) ----
@@ -186,7 +192,9 @@ export async function broadcastInitiativeRolled(
 
   if (dmSocketIds.length > 0) io.to(dmSocketIds).emit('INITIATIVE_ROLLED', toWire(participants));
   if (playerSocketIds.length > 0) {
-    const visible = participants.filter((p) => p.visible_to_players !== false);
+    // 'role_split' mode (services/visibility.ts, Phase 1.1) — this used to
+    // hand-roll its own copy of the visible_to_players !== false check.
+    const visible = participants.filter((p) => resolveVisibilitySync({ mode: 'role_split', visibleToPlayers: p.visible_to_players }, null, 'player'));
     io.to(playerSocketIds).emit('INITIATIVE_ROLLED', toWire(visible));
   }
 }
@@ -202,6 +210,20 @@ export function broadcastTurnAdvanced(
     currentRound: encounter.current_round,
     currentTurnIndex: encounter.current_turn_index,
     activeParticipantId: active?.id ?? null,
+  });
+}
+
+// Phase 2 "lair actions (round-start trigger)" — plain room-wide broadcast,
+// no DM/player split, same "not sensitive info" precedent as MAP_UPDATED/
+// TOKEN_MOVED: a lair action is a narratively-visible event at the table,
+// not secret DM state. Only fired by the advance-turn route when the round
+// actually just advanced AND the encounter has lair actions configured —
+// see AdvanceTurnResult's roundAdvanced comment.
+export function broadcastLairActionAvailable(io: Server, encounter: EncounterLike): void {
+  io.to(encounterRoom(encounter.id)).emit('LAIR_ACTION_AVAILABLE', {
+    ...envelope(encounter),
+    currentRound: encounter.current_round,
+    lairActions: encounter.lair_actions,
   });
 }
 
@@ -471,12 +493,16 @@ export async function broadcastArmorClassChanged(
 
 // ---- HP_CHANGED ----
 //
-// HP is always visible to every campaign member ONCE a participant row is
-// visible at all (the old per-field exact/banded/hidden hp_visibility was
-// removed along with the rest of hide/reveal). M2: that's a narrower claim
-// than the comment used to make — a currently-hidden (visible_to_players =
-// false) participant's HP must still not reach a player socket, same as
-// every other per-participant event in this file.
+// M2: a currently-hidden (visible_to_players = false) participant's HP must
+// still not reach a player socket, same as every other per-participant
+// event in this file. Phase 2 added a second, field-level split on top of
+// that row-level one: even for a VISIBLE participant, hp_visibility decides
+// whether a player gets exact numbers, a computed band, or nothing — see
+// resolveHpForViewer above buildFullStateSyncPayload. Unlike most events in
+// this file, this can't reuse emitToEncounterRespectingVisibility's
+// "same payload, DM unconditional / player conditional" shape, since the DM
+// and player payloads now genuinely differ in CONTENT, not just presence —
+// same reason broadcastInitiativeRolled computes two payloads instead of one.
 
 export interface HpChangeTarget {
   encounterId: string;
@@ -491,26 +517,42 @@ export interface HpChangeTarget {
   delta: number;
 }
 
-export async function broadcastHpChanged(io: Server, target: HpChangeTarget): Promise<void> {
-  const visible = await isParticipantIdVisibleToPlayers(pool, target.participantId);
-  await emitToEncounterRespectingVisibility(
-    io,
-    target.campaignId,
-    target.encounterId,
-    'HP_CHANGED',
-    {
-      encounterId: target.encounterId,
-      campaignId: target.campaignId,
-      seq: target.seq,
-      serverTimestamp: Date.now(),
-      participantId: target.participantId,
-      characterId: target.characterId,
-      monsterInstanceId: target.monsterInstanceId,
-      changeType: target.delta > 0 ? 'heal' : target.delta < 0 ? 'damage' : 'none',
-      hp: { hpCurrent: target.hpCurrent, hpMax: target.hpMax, hpTemp: target.hpTemp },
-    },
-    visible,
+async function fetchParticipantVisibilityAndHpVisibility(
+  poolOrClient: Pool | PoolClient,
+  participantId: string,
+): Promise<{ visibleToPlayers: boolean; hpVisibility: 'exact' | 'banded' | 'hidden' }> {
+  const res = await poolOrClient.query<{ visible_to_players: boolean; hp_visibility: 'exact' | 'banded' | 'hidden' }>(
+    `SELECT visible_to_players, hp_visibility FROM combat_participants WHERE id = $1`,
+    [participantId],
   );
+  const row = res.rows[0];
+  // Missing row (already removed) defaults to visible/banded — never the
+  // wrong direction to fail in, matching isParticipantIdVisibleToPlayers.
+  return { visibleToPlayers: row?.visible_to_players !== false, hpVisibility: row?.hp_visibility ?? 'banded' };
+}
+
+export async function broadcastHpChanged(io: Server, target: HpChangeTarget): Promise<void> {
+  const { visibleToPlayers, hpVisibility } = await fetchParticipantVisibilityAndHpVisibility(pool, target.participantId);
+  const hpFields = { hpCurrent: target.hpCurrent, hpMax: target.hpMax, hpTemp: target.hpTemp, hpVisibility };
+  const basePayload = {
+    encounterId: target.encounterId,
+    campaignId: target.campaignId,
+    seq: target.seq,
+    serverTimestamp: Date.now(),
+    participantId: target.participantId,
+    characterId: target.characterId,
+    monsterInstanceId: target.monsterInstanceId,
+    changeType: target.delta > 0 ? ('heal' as const) : target.delta < 0 ? ('damage' as const) : ('none' as const),
+  };
+
+  const isCharacter = target.characterId != null;
+  const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, target.campaignId, encounterRoom(target.encounterId));
+  if (dmSocketIds.length > 0) {
+    io.to(dmSocketIds).emit('HP_CHANGED', { ...basePayload, hp: resolveHpForViewer(hpFields, 'dm', isCharacter) });
+  }
+  if (visibleToPlayers && playerSocketIds.length > 0) {
+    io.to(playerSocketIds).emit('HP_CHANGED', { ...basePayload, hp: resolveHpForViewer(hpFields, 'player', isCharacter) });
+  }
 }
 
 // ---- REVEAL_CHANGED ----
@@ -647,6 +689,62 @@ export async function broadcastEffectExpired(io: Server, sync: EffectSyncTarget,
   await emitToEncounterRespectingVisibility(io, sync.campaign_id, sync.encounter_id, 'EFFECT_EXPIRED', payload, visible);
 }
 
+// ---- CONCENTRATION_CHECK_PROMPTED ----
+//
+// Phase 2 "concentration-broken save prompt" — targeted, not room-wide or
+// role-split: DM + the concentrating character's controller (controller_
+// user_id falling back to owner_user_id, mirroring requireControllerOrDm's
+// own audience), computed fresh from campaign_members same as
+// diceRollRecipientSocketIds (never trust a cached role on the socket).
+// A monster instance has no controller (controllerUserId is null) — DM
+// only, which is correct: nothing here is for a player to act on.
+export interface ConcentrationCheckTarget {
+  encounterId: string;
+  campaignId: string;
+  characterId: string | null;
+  monsterInstanceId: string | null;
+  effectId: string;
+  effectDefinitionId: string;
+  effectName: string;
+  dc: number;
+  damage: number;
+  controllerUserId: string | null;
+}
+
+export async function broadcastConcentrationCheckPrompted(io: Server, target: ConcentrationCheckTarget): Promise<void> {
+  const room = campaignRoom(target.campaignId);
+  const sockets = await io.in(room).fetchSockets();
+  if (sockets.length === 0) return;
+
+  const userIds = [...new Set(sockets.map((s) => (s.data as SocketData).userId))];
+  const roleRes = await pool.query<{ user_id: string; role: CampaignRole }>(
+    `SELECT user_id, role FROM campaign_members WHERE campaign_id = $1 AND user_id = ANY($2::uuid[])`,
+    [target.campaignId, userIds],
+  );
+  const roleByUser = new Map(roleRes.rows.map((r) => [r.user_id, r.role]));
+
+  const recipientIds = sockets
+    .filter((s) => {
+      const userId = (s.data as SocketData).userId;
+      return roleByUser.get(userId) === 'dm' || (target.controllerUserId != null && userId === target.controllerUserId);
+    })
+    .map((s) => s.id);
+  if (recipientIds.length === 0) return;
+
+  io.to(recipientIds).emit('CONCENTRATION_CHECK_PROMPTED', {
+    encounterId: target.encounterId,
+    campaignId: target.campaignId,
+    serverTimestamp: Date.now(),
+    characterId: target.characterId,
+    monsterInstanceId: target.monsterInstanceId,
+    effectId: target.effectId,
+    effectDefinitionId: target.effectDefinitionId,
+    effectName: target.effectName,
+    dc: target.dc,
+    damage: target.damage,
+  });
+}
+
 // ---- FULL_STATE_SYNC — always a fresh DB read, never cached ----
 
 // One participant's currently-active effects, keyed the same way a
@@ -684,13 +782,56 @@ function formatEffectForWire(e: ActiveEffectRow) {
   };
 }
 
-// HP/armor class/effect *fields* are still always-visible for any row a
-// viewer can see at all (hide/reveal for those was removed; the one
-// remaining redaction, monster-instance weaknesses, isn't part of this
+// Armor class/effect *fields* are still always-visible for any row a viewer
+// can see at all (hide/reveal for those was removed; the one remaining
+// field-level redaction, monster-instance weaknesses, isn't part of this
 // payload — it's read via GET /monster-instances/:id, which still redacts).
-// What DOES split by role now (nav point 1): whether a participant ROW is
-// present at all — a non-DM viewer never receives a hidden (visible_to_players
-// = false) participant, full stop, not even a redacted stub.
+// HP is the one exception, reintroduced by Phase 2 (1784269801666_restore-
+// hp-visibility.ts) — see resolveHpForViewer just below. What ALSO splits by
+// role (nav point 1): whether a participant ROW is present at all — a
+// non-DM viewer never receives a hidden (visible_to_players = false)
+// participant, full stop, not even a redacted stub.
+
+export type HpForWire =
+  | { hpVisibility: 'exact' | 'banded' | 'hidden'; hpCurrent: number; hpMax: number; hpTemp: number }
+  | { hpVisibility: 'banded'; band: HpBand }
+  | { hpVisibility: 'hidden' };
+
+// Pure and exported for the same reason buildDiceRollBroadcastPayloads is
+// (Phase 2 "hidden rolls record occurrence") — directly unit-testable
+// without a socket.io harness. The DM branch returns the row's REAL
+// hp_visibility (so the DM's own UI can show what a player currently sees)
+// alongside the true numbers regardless of that setting; a non-DM viewer
+// gets numbers only when the setting is 'exact', a computed band only when
+// 'banded', and nothing at all when 'hidden'.
+//
+// `isCharacter` (character_id != null, i.e. NOT a monster instance) always
+// forces the exact branch too, even for a non-DM viewer, regardless of
+// hp_visibility — the confirmed scope for this feature was "monster HP
+// gets its hidden/qualitative state back," never party HP. combat_participants
+// still defaults every new row (PCs included) to hp_visibility='banded', so
+// without this the whole party's own HP would go banded-by-default, which
+// no one asked for and no player-facing UI should ever let happen. This is
+// also this app's pre-Phase-2 baseline for characters specifically — HP was
+// always visible to every campaign member for every participant before this
+// feature existed; Phase 2 narrows that to monster instances only, not
+// narrower still to "just your own PC" (which would need a per-USER
+// payload, not the per-ROLE one this whole file computes once and shares
+// across every connected player).
+export function resolveHpForViewer(
+  hp: { hpCurrent: number; hpMax: number; hpTemp: number; hpVisibility: 'exact' | 'banded' | 'hidden' },
+  viewerRole: CampaignRole,
+  isCharacter: boolean,
+): HpForWire {
+  if (viewerRole === 'dm' || isCharacter || hp.hpVisibility === 'exact') {
+    return { hpVisibility: hp.hpVisibility, hpCurrent: hp.hpCurrent, hpMax: hp.hpMax, hpTemp: hp.hpTemp };
+  }
+  if (hp.hpVisibility === 'banded') {
+    return { hpVisibility: 'banded', band: bandHp(hp.hpCurrent, hp.hpMax) };
+  }
+  return { hpVisibility: 'hidden' };
+}
+
 export async function buildFullStateSyncPayload(
   poolOrClient: Pool | PoolClient,
   encounterId: string,
@@ -744,9 +885,14 @@ export async function buildFullStateSyncPayload(
     faction: p.faction,
     imageUrl: p.image_url,
     armorClass: p.armor_class,
-    hp: { hpCurrent: p.hp_current, hpMax: p.hp_max, hpTemp: p.hp_temp },
+    hp: resolveHpForViewer(
+      { hpCurrent: p.hp_current, hpMax: p.hp_max, hpTemp: p.hp_temp, hpVisibility: p.hp_visibility },
+      viewerRole,
+      p.character_id != null,
+    ),
     effects: (effectsByTarget.get(effectTargetKey(p.character_id, p.monster_instance_id)) ?? []).map(formatEffectForWire),
     visibleToPlayers: p.visible_to_players,
+    legendaryActionsRemaining: p.legendary_actions_remaining,
   }));
 
   // DM always gets every row; a non-DM viewer never receives one with
@@ -848,19 +994,29 @@ export interface DiceRollBroadcastRow {
   created_at: Date | string;
 }
 
-// Iteration 3 §2.4 visibility — mirrors services/diceRolls.ts's
-// isRollVisibleToViewer exactly (DM always, the roller's own roll always,
-// 'public' to everyone, 'private' only to its one named target), just
-// expressed over live sockets instead of a DB row. A single fetchSockets()
-// call, filtered in JS, rather than the room-split-then-refetch pattern
-// used elsewhere in this file — dice rolls don't need the two-payload
-// shape those other events use, since 'public'/'gm_only'/'private' collapse
-// to one recipient SET, not two different payloads for two different roles.
-async function diceRollRecipientSocketIds(io: Server, campaignId: string, roll: DiceRollBroadcastRow): Promise<string[]> {
+// Iteration 3 §2.4 visibility, reusing services/diceRolls.ts's
+// isRollVisibleToViewer directly (this used to hand-roll its own copy of
+// that exact rule — collapsed onto services/visibility.ts's shared logic as
+// part of Phase 1.1) — just expressed over live sockets instead of a DB row.
+// A single fetchSockets() call, filtered in JS, rather than the room-split-
+// then-refetch pattern used elsewhere in this file.
+//
+// Returns BOTH sets (Phase 2 "hidden rolls record occurrence"): `fullIds`
+// gets the real DICE_ROLLED payload, `maskedIds` is everyone else in the
+// room who's still allowed to know a roll HAPPENED (a masked stub — see
+// broadcastDiceRolled) without seeing its value. broadcastDiceRollVoided
+// deliberately keeps using only `fullIds` (via diceRollRecipientSocketIds
+// below) — a socket that never got told a hidden roll happened must not be
+// told it was voided either.
+async function splitDiceRollRecipients(
+  io: Server,
+  campaignId: string,
+  roll: DiceRollBroadcastRow,
+): Promise<{ fullIds: string[]; maskedIds: string[] }> {
   const room = campaignRoom(campaignId);
   const sockets = await io.in(room).fetchSockets();
-  if (sockets.length === 0) return [];
-  if (roll.visibility === 'public') return sockets.map((s) => s.id);
+  if (sockets.length === 0) return { fullIds: [], maskedIds: [] };
+  if (roll.visibility === 'public') return { fullIds: sockets.map((s) => s.id), maskedIds: [] };
 
   const userIds = [...new Set(sockets.map((s) => (s.data as SocketData).userId))];
   const roleRes = await pool.query<{ user_id: string; role: CampaignRole }>(
@@ -869,15 +1025,18 @@ async function diceRollRecipientSocketIds(io: Server, campaignId: string, roll: 
   );
   const roleByUser = new Map(roleRes.rows.map((r) => [r.user_id, r.role]));
 
-  return sockets
-    .filter((s) => {
-      const userId = (s.data as SocketData).userId;
-      if (roleByUser.get(userId) === 'dm') return true;
-      if (userId === roll.user_id) return true;
-      if (roll.visibility === 'private' && userId === roll.visible_to_user_id) return true;
-      return false;
-    })
-    .map((s) => s.id);
+  const fullIds: string[] = [];
+  const maskedIds: string[] = [];
+  for (const s of sockets) {
+    const userId = (s.data as SocketData).userId;
+    if (isRollVisibleToViewer(roll, userId, roleByUser.get(userId) ?? 'player')) fullIds.push(s.id);
+    else maskedIds.push(s.id);
+  }
+  return { fullIds, maskedIds };
+}
+
+async function diceRollRecipientSocketIds(io: Server, campaignId: string, roll: DiceRollBroadcastRow): Promise<string[]> {
+  return (await splitDiceRollRecipients(io, campaignId, roll)).fullIds;
 }
 
 // ---- BESTIARY_UPDATED (Task 1 — per-campaign bestiary) ----
@@ -914,10 +1073,17 @@ export function broadcastResourcePoolChanged(
   });
 }
 
-export async function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRollBroadcastRow): Promise<void> {
-  const payload = {
+// Pure and exported so Phase 2's "hidden rolls record occurrence" masking
+// rule is directly unit-testable — this codebase has no socket.io test
+// harness precedent (see broadcastVisibility.integration.test.ts's header
+// comment), so the actual io.to(...).emit(...) plumbing below stays
+// untested the same way every other broadcast in this file is, but the
+// payload SHAPE (what a masked recipient can and can't see) doesn't have to.
+export function buildDiceRollBroadcastPayloads(campaignId: string, roll: DiceRollBroadcastRow, serverTimestamp: number) {
+  const full = {
+    masked: false as const,
     campaignId,
-    serverTimestamp: Date.now(),
+    serverTimestamp,
     id: roll.id,
     rollType: roll.roll_type,
     rollContext: roll.roll_context,
@@ -936,9 +1102,32 @@ export async function broadcastDiceRolled(io: Server, campaignId: string, roll: 
     userId: roll.user_id,
     createdAt: roll.created_at,
   };
+  // id/roller/context/type present, every result-bearing field stripped.
+  // Previously a socket that couldn't see a gm_only/private roll got NO
+  // event at all — a hidden saving throw against the party looked, live,
+  // like nothing happened.
+  const masked = {
+    masked: true as const,
+    campaignId,
+    serverTimestamp,
+    id: roll.id,
+    rollType: roll.roll_type,
+    rollContext: roll.roll_context,
+    visibility: roll.visibility,
+    characterId: roll.character_id,
+    monsterInstanceId: roll.monster_instance_id,
+    encounterId: roll.encounter_id,
+    userId: roll.user_id,
+    createdAt: roll.created_at,
+  };
+  return { full, masked };
+}
 
-  const recipientIds = await diceRollRecipientSocketIds(io, campaignId, roll);
-  if (recipientIds.length > 0) io.to(recipientIds).emit('DICE_ROLLED', payload);
+export async function broadcastDiceRolled(io: Server, campaignId: string, roll: DiceRollBroadcastRow): Promise<void> {
+  const { full, masked } = buildDiceRollBroadcastPayloads(campaignId, roll, Date.now());
+  const { fullIds, maskedIds } = await splitDiceRollRecipients(io, campaignId, roll);
+  if (fullIds.length > 0) io.to(fullIds).emit('DICE_ROLLED', full);
+  if (maskedIds.length > 0) io.to(maskedIds).emit('DICE_ROLLED', masked);
 }
 
 // Void, not delete (Iteration 3 §2.4) — same recipient set as the original

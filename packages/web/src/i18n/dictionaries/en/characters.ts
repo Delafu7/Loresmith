@@ -61,6 +61,8 @@ export const characters = {
     loadingCharacter: 'Loading character…',
     gmNotesTitle: 'GM notes',
     gmNotesHint: 'Only visible to the DM — never shown to players, even the character\'s owner.',
+    npcMotivationTitle: 'What do they want?',
+    npcMotivationHint: 'DM-only — this NPC\'s driving motivation, never shown to players.',
   },
   abilityGenerator: {
     generateScores: 'Generate scores:',
@@ -120,6 +122,7 @@ export const characters = {
     noItems: 'No items yet.',
     removeItem: 'Remove {name}',
     attunementTag: 'Attunement',
+    masteryLabel: 'Mastery: {name}',
     decreaseQty: 'Decrease {name} quantity',
     increaseQty: 'Increase {name} quantity',
     equipped: 'Equipped',
@@ -140,6 +143,14 @@ export const characters = {
     encumbranceWeight: '{carried} / {capacity} lb',
     encumbered: 'Encumbered — speed -10 ft.',
     heavilyEncumbered: 'Heavily encumbered — speed -20 ft., disadvantage on Str/Dex/Con checks, attacks, and saves.',
+  },
+  currency: {
+    title: 'Currency',
+    cp: 'CP',
+    sp: 'SP',
+    ep: 'EP',
+    gp: 'GP',
+    pp: 'PP',
   },
   resources: {
     title: 'Resources',

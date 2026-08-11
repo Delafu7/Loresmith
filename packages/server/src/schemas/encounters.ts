@@ -6,9 +6,23 @@ export const createEncounterSchema = z.object({
 export type CreateEncounterInput = z.infer<typeof createEncounterSchema>;
 
 // Status transitions go through dedicated /start and /end actions rather
-// than a free-form PATCH — PATCH only touches the encounter's display name.
+// than a free-form PATCH — PATCH only touches display/setup metadata
+// (name, and now lairActions), never status/mode/turn state.
+const lairActionEntrySchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().min(1).max(20000),
+});
 export const updateEncounterSchema = z.object({
   name: z.string().min(1).max(200).optional(),
+  // Phase 2 "lair actions (round-start trigger)" — a lair belongs to a
+  // place/scene, not a monster type, so the DM sets this up per-encounter
+  // at prep time rather than it coming from a monster's own catalog row.
+  lairActions: z.array(lairActionEntrySchema).optional().nullable(),
+  // Phase 3 "terrain/complications on encounters" — free text, visible to
+  // every campaign member (unlike lairActions above).
+  terrainNotes: z.string().max(5000).optional().nullable(),
+  // Phase 3 "locations and factions".
+  locationId: z.string().uuid().optional().nullable(),
 });
 export type UpdateEncounterInput = z.infer<typeof updateEncounterSchema>;
 
@@ -80,6 +94,22 @@ export const setParticipantVisibilitySchema = z.object({
   visible: z.boolean(),
 });
 export type SetParticipantVisibilityInput = z.infer<typeof setParticipantVisibilitySchema>;
+
+// Phase 2 "restore hp_visibility + banding" — DM-only toggle for how much
+// of a participant's HP a non-DM viewer sees. Orthogonal to `visible`
+// above: a participant can be fully visible on the roster with its HP
+// banded or hidden.
+export const setParticipantHpVisibilitySchema = z.object({
+  hpVisibility: z.enum(['exact', 'banded', 'hidden']),
+});
+export type SetParticipantHpVisibilityInput = z.infer<typeof setParticipantHpVisibilitySchema>;
+
+// Phase 2 "legendary actions per-round counters" — cost defaults to 1
+// (the SRD default) when omitted, matching StatBlockEntry.cost's own default.
+export const spendLegendaryActionSchema = z.object({
+  cost: z.number().int().positive().optional(),
+});
+export type SpendLegendaryActionInput = z.infer<typeof spendLegendaryActionSchema>;
 
 // Encounter-level disposition (orthogonal to combat_participants.faction —
 // see 1784269787666_add-encounter-disposition.ts's header comment). Only

@@ -1,35 +1,38 @@
 import { useLocale } from '../i18n/LocaleContext';
+import type { HpBand } from '../lib/types';
 
 // Decorative status label only (Healthy/Injured/.../Down) — computed
-// client-side from the always-visible exact HP numbers. Not related to the
-// old hide/reveal "banded" visibility mode, which was removed; HP is always
-// exact for every role now. `HpBand` stays the internal English-keyed enum
-// (used for color lookups and as a stable identifier) — only the displayed
-// label is translated, via i18n's `hp.*` keys.
-type HpBand = 'Healthy' | 'Injured' | 'Bloodied' | 'Critical' | 'Down';
-
-const BAND_COLOR: Record<HpBand, string> = {
-  Healthy: 'bg-emerald-600',
-  Injured: 'bg-yellow-600',
-  Bloodied: 'bg-orange-600',
-  Critical: 'bg-red-600',
-  Down: 'bg-stone-700',
+// client-side from the always-visible exact HP numbers. Not related to
+// combat_participants.hp_visibility (Phase 2's reintroduced per-participant
+// exact/banded/hidden mode, see ParticipantHpDisplay.tsx) — this component
+// is used everywhere HP numbers are simply always visible regardless of
+// that mechanic (character sheets, dashboard, monster stat blocks): those
+// endpoints don't redact HP at all. `HpBand` (lib/types.ts) is shared with
+// that mechanic purely so the two don't invent two vocabularies for the
+// same five-way split — only the displayed label is translated, via i18n's
+// `hp.*` keys.
+export const HP_BAND_COLOR: Record<HpBand, string> = {
+  healthy: 'bg-emerald-600',
+  injured: 'bg-yellow-600',
+  bloodied: 'bg-orange-600',
+  critical: 'bg-red-600',
+  down: 'bg-stone-700',
 };
 
 const BAND_TEXT: Record<HpBand, string> = {
-  Healthy: 'text-emerald-400',
-  Injured: 'text-yellow-400',
-  Bloodied: 'text-orange-400',
-  Critical: 'text-red-400',
-  Down: 'text-stone-400',
+  healthy: 'text-emerald-400',
+  injured: 'text-yellow-400',
+  bloodied: 'text-orange-400',
+  critical: 'text-red-400',
+  down: 'text-stone-400',
 };
 
-const BAND_KEY = {
-  Healthy: 'hp.healthy',
-  Injured: 'hp.injured',
-  Bloodied: 'hp.bloodied',
-  Critical: 'hp.critical',
-  Down: 'hp.down',
+export const HP_BAND_KEY = {
+  healthy: 'hp.healthy',
+  injured: 'hp.injured',
+  bloodied: 'hp.bloodied',
+  critical: 'hp.critical',
+  down: 'hp.down',
 } as const;
 
 /**
@@ -69,21 +72,24 @@ export function HPBar({
             <span className={`text-sky-400 font-medium ${size === 'large' ? 'text-base sm:text-lg' : 'text-sm'}`}> (+{temp})</span>
           )}
         </span>
-        <span className={`text-[11px] font-semibold uppercase tracking-wide ${BAND_TEXT[band]}`}>{t(BAND_KEY[band])}</span>
+        <span className={`text-[11px] font-semibold uppercase tracking-wide ${BAND_TEXT[band]}`}>{t(HP_BAND_KEY[band])}</span>
       </div>
       <div className="h-3 w-full rounded-full bg-stone-800 overflow-hidden flex" role="progressbar" aria-valuenow={current} aria-valuemin={0} aria-valuemax={max}>
-        <div className={`h-full ${BAND_COLOR[band]} transition-all`} style={{ width: `${pct}%` }} />
+        <div className={`h-full ${HP_BAND_COLOR[band]} transition-all`} style={{ width: `${pct}%` }} />
         {tempPct > 0 && <div className="h-full bg-sky-500 transition-all" style={{ width: `${tempPct}%` }} />}
       </div>
     </div>
   );
 }
 
-function bandFor(current: number, max: number): HpBand {
-  if (current <= 0) return 'Down';
+// Exported for Token.tsx's map-overlay HP bar, which needs the same
+// exact-numbers-to-band computation for its own (differently-shaped)
+// indicator rather than a second hand-rolled copy of these thresholds.
+export function bandFor(current: number, max: number): HpBand {
+  if (current <= 0) return 'down';
   const pct = max > 0 ? current / max : 0;
-  if (pct > 0.75) return 'Healthy';
-  if (pct > 0.5) return 'Injured';
-  if (pct > 0.25) return 'Bloodied';
-  return 'Critical';
+  if (pct > 0.75) return 'healthy';
+  if (pct > 0.5) return 'injured';
+  if (pct > 0.25) return 'bloodied';
+  return 'critical';
 }

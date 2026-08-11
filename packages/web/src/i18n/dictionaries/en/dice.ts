@@ -18,6 +18,7 @@ export const dice = {
   historyMinutesAgo: '{count}m ago',
   historyHoursAgo: '{count}h ago',
   historyDaysAgo: '{count}d ago',
+  historyHiddenResult: 'Hidden',
   // DiceRoller.tsx (also shared by QuickDiceRoller.tsx's own keep toggle)
   rollerDisadvantage: 'Disadv',
   rollerNormal: 'Normal',
@@ -25,6 +26,7 @@ export const dice = {
   rollerRollModeLabel: 'Roll mode',
   rollerRollButton: 'Roll',
   rollerTriggerAria: 'Roll {context}',
+  rollerVisibilityToggleAria: 'Roll visibility options',
   rollerKept: 'Kept',
   rollerNotKept: 'Not kept',
   // QuickDiceRoller.tsx

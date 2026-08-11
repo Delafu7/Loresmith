@@ -100,6 +100,8 @@ export const monsters = {
     traitsLabel: 'Traits',
     actionsLabel: 'Actions',
     legendaryActionsLabel: 'Legendary actions',
+    legendaryActionCountLabel: 'Legendary action budget per round',
+    legendaryActionCountPlaceholder: 'e.g. 3',
     reactionsLabel: 'Reactions',
     addEntry: '+ Add entry',
     addRow: '+ Add',

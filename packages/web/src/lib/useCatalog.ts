@@ -11,6 +11,7 @@ import type {
   SkillCatalog,
   SpellCatalogEntry,
   SubclassCatalog,
+  WeaponMasteryPropertyCatalog,
 } from './types';
 
 // Read-only reference data (PLAN.md §4.1: no write endpoints, seeded by
@@ -37,6 +38,14 @@ export function useDamageTypesCatalog() {
   return useQuery({
     queryKey: ['catalog', 'damage-types'],
     queryFn: () => api.get<{ damageTypes: DamageTypeCatalog[] }>('/catalog/damage-types'),
+    staleTime: Infinity,
+  });
+}
+
+export function useWeaponMasteryPropertiesCatalog() {
+  return useQuery({
+    queryKey: ['catalog', 'weapon-mastery-properties'],
+    queryFn: () => api.get<{ weaponMasteryProperties: WeaponMasteryPropertyCatalog[] }>('/catalog/weapon-mastery-properties'),
     staleTime: Infinity,
   });
 }

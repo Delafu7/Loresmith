@@ -22,6 +22,8 @@ import { BattleModeDmPanel, type MutationLike } from './BattleModeDmPanel';
 import { BattleModePlayerPanel } from './BattleModePlayerPanel';
 import { InitiativeStrip } from './InitiativeStrip';
 import { CombatLogPanel } from './CombatLogPanel';
+import { ConcentrationCheckPrompt } from './ConcentrationCheckPrompt';
+import { LairActionBanner, LairActionsEditor, TerrainNotesPanel } from './LairActions';
 import { DispositionBadge, DispositionHistoryPanel } from './DispositionPanel';
 import { ParticipantSheetPanel } from './ParticipantSheetPanel';
 import { SessionOverlayPanel } from './SessionOverlayPanel';
@@ -175,36 +177,43 @@ export function SessionScreen({
   // instead: with no map to look at, hiding the roster behind a click left
   // that page looking almost empty by default.
   const managePanel = isDm ? (
-    <BattleModeDmPanel
-      encounterId={encounter.id}
-      status={live.encounter.status}
-      live={live}
-      characters={characters}
-      monsterInstances={monsterInstances}
-      monsters={monsters}
-      expandedParticipantId={expandedParticipantId}
-      setExpandedParticipantId={setExpandedParticipantId}
-      startMutation={startMutation}
-      endMutation={endMutation}
-      startCombatMutation={startCombatMutation}
-      endCombatMutation={endCombatMutation}
-      dispositionMutation={dispositionMutation}
-      forceFullscreenMutation={forceFullscreenMutation}
-      rollInitiativeMutation={rollInitiativeMutation}
-      advanceTurnMutation={advanceTurnMutation}
-      removeParticipantMutation={removeParticipantMutation}
-      visibilityMutation={visibilityMutation}
-      hpMutation={hpMutation}
-      applyEffectMutation={applyEffectMutation}
-      removeEffectMutation={removeEffectMutation}
-    />
+    <>
+      <TerrainNotesPanel campaignId={campaignId} encounter={encounter} isDm />
+      <LairActionsEditor campaignId={campaignId} encounter={encounter} />
+      <BattleModeDmPanel
+        encounterId={encounter.id}
+        status={live.encounter.status}
+        live={live}
+        characters={characters}
+        monsterInstances={monsterInstances}
+        monsters={monsters}
+        expandedParticipantId={expandedParticipantId}
+        setExpandedParticipantId={setExpandedParticipantId}
+        startMutation={startMutation}
+        endMutation={endMutation}
+        startCombatMutation={startCombatMutation}
+        endCombatMutation={endCombatMutation}
+        dispositionMutation={dispositionMutation}
+        forceFullscreenMutation={forceFullscreenMutation}
+        rollInitiativeMutation={rollInitiativeMutation}
+        advanceTurnMutation={advanceTurnMutation}
+        removeParticipantMutation={removeParticipantMutation}
+        visibilityMutation={visibilityMutation}
+        hpMutation={hpMutation}
+        applyEffectMutation={applyEffectMutation}
+        removeEffectMutation={removeEffectMutation}
+      />
+    </>
   ) : (
-    <BattleModePlayerPanel
-      encounterId={encounter.id}
-      live={live}
-      myCharacterIds={myCharacterIds}
-      characters={characters}
-    />
+    <>
+      <TerrainNotesPanel campaignId={campaignId} encounter={encounter} isDm={false} />
+      <BattleModePlayerPanel
+        encounterId={encounter.id}
+        live={live}
+        myCharacterIds={myCharacterIds}
+        characters={characters}
+      />
+    </>
   );
 
   return (
@@ -297,11 +306,14 @@ export function SessionScreen({
         {overlay === 'log' && (
           <div className="space-y-4">
             <DispositionHistoryPanel encounterId={encounter.id} />
-            <CombatLogPanel encounterId={encounter.id} />
+            <CombatLogPanel encounterId={encounter.id} participants={live.participants} />
           </div>
         )}
         {overlay === 'chat' && <EmptyState message={t('encounters.sheet.chatComingSoon')} />}
       </SessionOverlayPanel>
+
+      <ConcentrationCheckPrompt encounterId={encounter.id} isDm={isDm} />
+      <LairActionBanner encounterId={encounter.id} />
 
       {showDiceRoller && (
         // Bottom-LEFT and above SessionOverlayPanel's z-40 backdrop+drawer

@@ -10,7 +10,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { ActionRecordedEvent, CombatActionWire } from '../lib/socketTypes';
+import type { ActionRecordedEvent, CombatActionWire, EffectExpiredEvent } from '../lib/socketTypes';
+import type { SnapshotParticipant } from '../lib/types';
 import { useSocket } from '../lib/SocketContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Button } from '../components/ui/Button';
@@ -37,13 +38,27 @@ const RESULT_KEYS: Record<string, TranslationKey> = {
 
 const PAGE_SIZE = 30;
 
-export function CombatLogPanel({ encounterId }: { encounterId: string }) {
+// A condition/effect wearing off used to clear silently (useEncounterLive.ts's
+// onEffectExpired only ever mutated the participant's effects array) — the DM
+// had no way to notice short of staring at the badges. This is a client-only,
+// non-persisted notice (there's no combat_actions row for an expiry, so it
+// can't reuse CombatActionWire/ACTION_RECORDED's server-paginated shape),
+// shown at the top of the same log surface rather than inventing a separate
+// toast system.
+interface ExpiryNotice {
+  key: string;
+  effectName: string;
+  targetName: string;
+}
+
+export function CombatLogPanel({ encounterId, participants }: { encounterId: string; participants?: SnapshotParticipant[] }) {
   const { t } = useLocale();
   const { socket } = useSocket();
   const [offset, setOffset] = useState(0);
   const [historyActions, setHistoryActions] = useState<CombatActionWire[]>([]);
   const [liveActions, setLiveActions] = useState<CombatActionWire[]>([]);
   const [hasMore, setHasMore] = useState(true);
+  const [expiryNotices, setExpiryNotices] = useState<ExpiryNotice[]>([]);
 
   const pageQuery = useQuery({
     queryKey: ['encounter', encounterId, 'actions', offset],
@@ -71,8 +86,25 @@ export function CombatLogPanel({ encounterId }: { encounterId: string }) {
     };
   }, [socket, encounterId]);
 
+  useEffect(() => {
+    function onEffectExpired(payload: EffectExpiredEvent) {
+      if (payload.encounterId !== encounterId) return;
+      const target = participants?.find((p) =>
+        payload.targetType === 'character' ? p.characterId === payload.targetId : p.monsterInstanceId === payload.targetId,
+      );
+      setExpiryNotices((prev) => [
+        { key: `${payload.effectId}-${payload.seq}`, effectName: payload.name, targetName: target?.name ?? '?' },
+        ...prev,
+      ].slice(0, 20));
+    }
+    socket.on('EFFECT_EXPIRED', onEffectExpired);
+    return () => {
+      socket.off('EFFECT_EXPIRED', onEffectExpired);
+    };
+  }, [socket, encounterId, participants]);
+
   const isInitialLoading = pageQuery.isLoading && offset === 0 && historyActions.length === 0;
-  const isEmpty = !isInitialLoading && liveActions.length === 0 && historyActions.length === 0;
+  const isEmpty = !isInitialLoading && liveActions.length === 0 && historyActions.length === 0 && expiryNotices.length === 0;
 
   return (
     <div className="space-y-2">
@@ -82,6 +114,11 @@ export function CombatLogPanel({ encounterId }: { encounterId: string }) {
       {isEmpty && <EmptyState message={t('encounters.combatLog.empty')} />}
 
       <ol className="space-y-1.5">
+        {expiryNotices.map((notice) => (
+          <li key={notice.key} className="rounded-md border border-amber-900/40 bg-amber-950/10 px-2.5 py-1.5 text-xs text-amber-300">
+            {t('encounters.combatLog.effectExpired', { effect: notice.effectName, target: notice.targetName })}
+          </li>
+        ))}
         {liveActions.map((action) => (
           <CombatLogRow key={`live-${action.id}`} action={action} />
         ))}

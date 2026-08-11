@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { formatModifier } from '../lib/dnd-math';
-import { DICE_SIDES, type CampaignMember, type DiceRoll, type DiceRollKeep, type DiceRollVisibility } from '../lib/types';
+import { DICE_SIDES, type DiceRoll, type DiceRollKeep } from '../lib/types';
 import { DieFace, keptDieIndex } from './DiceRoller';
+import { DiceRollVisibilityPicker, useDiceRollVisibilityState } from './DiceRollVisibilityPicker';
 import { ErrorBanner, errorMessage } from './Feedback';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -29,12 +30,6 @@ export function parseDiceExpression(input: string): ParsedExpression | null {
   if (count < 1 || count > 20) return null;
   return { count, sides, modifier };
 }
-
-const VISIBILITY_LABEL_KEYS = {
-  public: 'dice.visibilityPublic',
-  gm_only: 'dice.visibilityGmOnly',
-  private: 'dice.visibilityPrivate',
-} as const;
 
 export interface QuickDiceRollerProps {
   characterId?: string;
@@ -63,13 +58,7 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
   // Iteration 3 §2.4 — DM-only. Never shown to a player: rollDice rejects
   // anything but 'public' from a non-DM anyway, so hiding the picker here
   // just avoids offering a control that would 403.
-  const [visibility, setVisibility] = useState<DiceRollVisibility>('public');
-  const [visibleToUserId, setVisibleToUserId] = useState('');
-  const membersQuery = useQuery({
-    queryKey: ['campaign', campaignId, 'members'],
-    queryFn: () => api.get<{ members: CampaignMember[] }>(`/campaigns/${campaignId}/members`),
-    enabled: isDm,
-  });
+  const { visibility, setVisibility, visibleToUserId, setVisibleToUserId, members } = useDiceRollVisibilityState(campaignId, isDm);
 
   // Iteration 3 §2.3/2.4 "both physical and digital dice matter equally" —
   // a manual-entry toggle that swaps the roll button for per-die number
@@ -217,40 +206,13 @@ export function QuickDiceRoller({ characterId, monsterInstanceId, encounterId, c
       {isDm && (
         <div className="flex flex-wrap items-center gap-2 border-t border-stone-800 pt-2">
           <span className="text-[11px] text-stone-500">{t('dice.visibilityLabel')}</span>
-          <div
-            role="radiogroup"
-            aria-label={t('dice.visibilityLabel')}
-            className="inline-flex rounded-md border border-stone-700 overflow-hidden text-[10px] leading-none"
-          >
-            {(['public', 'gm_only', 'private'] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                role="radio"
-                aria-checked={visibility === v}
-                onClick={() => setVisibility(v)}
-                className={`px-1.5 py-1.5 transition-colors ${
-                  visibility === v ? 'bg-amber-950 text-amber-400 font-semibold' : 'bg-stone-900 text-stone-400 hover:bg-stone-800'
-                }`}
-              >
-                {t(VISIBILITY_LABEL_KEYS[v])}
-              </button>
-            ))}
-          </div>
-          {visibility === 'private' && (
-            <select
-              value={visibleToUserId}
-              onChange={(e) => setVisibleToUserId(e.target.value)}
-              className="rounded-md bg-stone-800 border border-stone-700 px-2 py-1 text-xs text-stone-100"
-            >
-              <option value="">{t('dice.visibilityPickPlayer')}</option>
-              {(membersQuery.data?.members ?? []).map((m) => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.display_name}
-                </option>
-              ))}
-            </select>
-          )}
+          <DiceRollVisibilityPicker
+            visibility={visibility}
+            onVisibilityChange={setVisibility}
+            visibleToUserId={visibleToUserId}
+            onVisibleToUserIdChange={setVisibleToUserId}
+            members={members}
+          />
         </div>
       )}
 

@@ -84,7 +84,11 @@ export async function spawnParticipants(
       hit_point_average: number;
       hit_dice: string;
       dex: number;
-    }>(`SELECT id, name, is_unique, hit_point_average, hit_dice, dex FROM monsters WHERE id = $1 FOR UPDATE`, [input.monsterId]);
+      legendary_action_count: number | null;
+    }>(
+      `SELECT id, name, is_unique, hit_point_average, hit_dice, dex, legendary_action_count FROM monsters WHERE id = $1 FOR UPDATE`,
+      [input.monsterId],
+    );
     const monster = monsterRes.rows[0];
     if (!monster) throw notFound('Monster');
 
@@ -160,12 +164,16 @@ export async function spawnParticipants(
       const initiativeRoll = input.groupInitiative ? sharedInitiative! : rollDie(20) + mod;
       const initiativeTiebreak = mod;
 
+      // Phase 2 "legendary actions per-round counters" — a freshly-spawned
+      // legendary monster starts this encounter with its full budget; NULL
+      // for a non-legendary monster (legendary_action_count NULL), same as
+      // every other creature.
       const participantRes = await client.query<SpawnedParticipant>(
         `INSERT INTO combat_participants
-           (encounter_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, faction)
-         VALUES ($1,$2,$3,$4,$5,$6,'enemy')
+           (encounter_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, faction, legendary_actions_remaining)
+         VALUES ($1,$2,$3,$4,$5,$6,'enemy',$7)
          RETURNING *`,
-        [encounterId, instanceId, initiativeRoll, initiativeTiebreak, turnOrder, joinedRound],
+        [encounterId, instanceId, initiativeRoll, initiativeTiebreak, turnOrder, joinedRound, monster.legendary_action_count],
       );
       turnOrder += 1;
       spawned.push(participantRes.rows[0]!);

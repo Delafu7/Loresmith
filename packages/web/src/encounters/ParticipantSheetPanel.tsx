@@ -25,9 +25,9 @@ import type { StatBlockEntry } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useItemsCatalog } from '../lib/useCatalog';
 import { Portrait } from '../components/Portrait';
-import { HPBar } from '../components/HPBar';
+import { ParticipantHpDisplay } from '../components/ParticipantHpDisplay';
 import { EffectBadge } from '../components/EffectBadge';
-import { EmptyState } from '../components/Feedback';
+import { EmptyState, ErrorBanner, errorMessage } from '../components/Feedback';
 import { useLocale } from '../i18n/LocaleContext';
 import { ParticipantStatLookup, CharacterAttackRoller, attackTargetsFor } from './CombatTracker';
 import { AttackRoller, type NormalizedAttack } from './AttackRoller';
@@ -87,9 +87,29 @@ export function ParticipantSheetPanel({
         </button>
       </div>
 
-      <HPBar current={participant.hp.hpCurrent} max={participant.hp.hpMax} temp={participant.hp.hpTemp} size="large" />
+      <div className="flex items-center gap-2">
+        <ParticipantHpDisplay hp={participant.hp} size="large" />
+        {isDm && <UndoDamageButton participant={participant} />}
+      </div>
 
-      {isDm && <FactionSelect encounterId={encounterId} participant={participant} />}
+      {/* Phase 2 "legendary actions per-round counters" — always visible
+          (no redaction mechanism for this, same as AC/effects); the spend
+          control itself is DM-only, since monsters have no player controller. */}
+      {participant.legendaryActionsRemaining != null && (
+        <LegendaryActionsTracker encounterId={encounterId} participant={participant} isDm={isDm} />
+      )}
+
+      {isDm && (
+        <div className="flex flex-wrap items-center gap-3">
+          <FactionSelect encounterId={encounterId} participant={participant} />
+          <InitiativeEditor encounterId={encounterId} participant={participant} />
+          {/* Phase 2 "restore hp_visibility + banding" — meaningless for a
+              character participant (resolveHpForViewer always shows the
+              party's own HP exact regardless), so only offered for a
+              monster instance, matching the confirmed "monster HP" scope. */}
+          {participant.monsterInstanceId != null && <HpVisibilitySelect encounterId={encounterId} participant={participant} />}
+        </div>
+      )}
 
       {participant.effects.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -159,6 +179,149 @@ function FactionSelect({ encounterId, participant }: { encounterId: string; part
         {FACTION_OPTIONS.map((f) => (
           <option key={f.value} value={f.value}>
             {t(`encounters.battleMap.faction.${f.labelKey}`)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// DM-only manual initiative override — the endpoint re-sequences turn_order
+// for the whole encounter server-side (services/encounters.ts's
+// setParticipantInitiative), so this control only needs to submit the one
+// changed value; every participant's position updates via the same
+// INITIATIVE_ROLLED broadcast roll-initiative already uses (useEncounterLive.ts's
+// onInitiativeRolled), not a local cache write, same discipline as FactionSelect.
+function InitiativeEditor({ encounterId, participant }: { encounterId: string; participant: SnapshotParticipant }) {
+  const { t } = useLocale();
+  const [value, setValue] = useState(String(participant.initiativeRoll));
+  const mutation = useMutation({
+    mutationFn: (initiativeRoll: number) =>
+      api.patch(`/encounters/${encounterId}/participants/${participant.participantId}/initiative`, {
+        initiativeRoll,
+        initiativeTiebreak: participant.initiativeTiebreak,
+      }),
+  });
+
+  const commit = () => {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed === participant.initiativeRoll) {
+      setValue(String(participant.initiativeRoll));
+      return;
+    }
+    mutation.mutate(parsed);
+  };
+
+  return (
+    <label className="flex items-center gap-2 text-xs text-stone-400">
+      {t('encounters.sheet.initiativeLabel')}
+      <input
+        type="number"
+        value={value}
+        disabled={mutation.isPending}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+        className="min-h-9 w-16 rounded border border-stone-700 bg-stone-800 text-stone-200 text-xs px-2 font-mono tabular-nums"
+      />
+    </label>
+  );
+}
+
+// Phase 2 "HP/damage undo" — DM-only, mirrors ActionEconomyPanel.tsx's own
+// undo button (same "server tracks the last snapshot, this button just
+// asks for it back" shape). Targets whichever endpoint matches this
+// participant — a character or a monster instance never share one row.
+function UndoDamageButton({ participant }: { participant: SnapshotParticipant }) {
+  const { t } = useLocale();
+  const mutation = useMutation({
+    mutationFn: () =>
+      participant.characterId != null
+        ? api.post(`/characters/${participant.characterId}/hp/undo`)
+        : api.post(`/monster-instances/${participant.monsterInstanceId}/hp/undo`),
+  });
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <button
+        type="button"
+        title={t('encounters.sheet.undoDamageTitle')}
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate()}
+        className="text-[10px] uppercase text-stone-500 hover:text-amber-400 border border-stone-800 hover:border-amber-700 rounded px-1.5 py-0.5 disabled:opacity-40"
+      >
+        {t('encounters.sheet.undoDamage')}
+      </button>
+      {mutation.isError && <ErrorBanner message={errorMessage(mutation.error)} />}
+    </div>
+  );
+}
+
+// Phase 2 "legendary actions per-round counters" — one pip per point of
+// budget (not per legendaryActions entry, since entries can cost more than
+// 1), clicked to spend exactly 1 point at a time; the server resets the
+// whole counter every round (advanceTurn), this component never resets
+// anything itself.
+function LegendaryActionsTracker({
+  encounterId,
+  participant,
+  isDm,
+}: {
+  encounterId: string;
+  participant: SnapshotParticipant;
+  isDm: boolean;
+}) {
+  const { t } = useLocale();
+  const spendMutation = useMutation({
+    mutationFn: () => api.post(`/encounters/${encounterId}/participants/${participant.participantId}/legendary-actions/spend`, {}),
+  });
+  const remaining = participant.legendaryActionsRemaining ?? 0;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 text-xs text-stone-400">
+        {t('encounters.sheet.legendaryActionsLabel', { remaining })}
+        {isDm && (
+          <button
+            type="button"
+            disabled={remaining <= 0 || spendMutation.isPending}
+            onClick={() => spendMutation.mutate()}
+            className="rounded-md border border-stone-700 px-2 py-0.5 text-[10px] text-amber-400 hover:border-amber-700 disabled:opacity-40"
+          >
+            {t('encounters.sheet.spendLegendaryAction')}
+          </button>
+        )}
+      </div>
+      {spendMutation.isError && <ErrorBanner message={errorMessage(spendMutation.error)} />}
+    </div>
+  );
+}
+
+const HP_VISIBILITY_OPTIONS = ['exact', 'banded', 'hidden'] as const;
+
+// DM-only, same PATCH-then-resync shape as setParticipantVisibility's own
+// route (routes/encounters.ts) — the server broadcasts a role-split
+// FULL_STATE_SYNC resync itself, so this needs no local cache write, same
+// discipline as FactionSelect/InitiativeEditor above.
+function HpVisibilitySelect({ encounterId, participant }: { encounterId: string; participant: SnapshotParticipant }) {
+  const { t } = useLocale();
+  const mutation = useMutation({
+    mutationFn: (hpVisibility: (typeof HP_VISIBILITY_OPTIONS)[number]) =>
+      api.patch(`/encounters/${encounterId}/participants/${participant.participantId}/hp-visibility`, { hpVisibility }),
+  });
+  return (
+    <label className="flex items-center gap-2 text-xs text-stone-400">
+      {t('encounters.sheet.hpVisibilityLabel')}
+      <select
+        value={participant.hp.hpVisibility}
+        disabled={mutation.isPending}
+        onChange={(e) => mutation.mutate(e.target.value as (typeof HP_VISIBILITY_OPTIONS)[number])}
+        className="min-h-9 rounded border border-stone-700 bg-stone-800 text-stone-200 text-xs px-2"
+      >
+        {HP_VISIBILITY_OPTIONS.map((v) => (
+          <option key={v} value={v}>
+            {t(`encounters.sheet.hpVisibility.${v}`)}
           </option>
         ))}
       </select>

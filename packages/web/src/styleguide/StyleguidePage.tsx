@@ -71,7 +71,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     initiativeRoll: 18,
     initiativeTiebreak: null,
     turnOrder: 0,
-    hp: { hpCurrent: 58, hpMax: 64, hpTemp: 0 },
+    hp: { hpVisibility: 'exact', hpCurrent: 58, hpMax: 64, hpTemp: 0 },
     effects: [
       {
         effectId: '1',
@@ -97,7 +97,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     size: 'Medium',
     faction: 'player',
     imageUrl: null,
-    visibleToPlayers: true,
+    visibleToPlayers: true, legendaryActionsRemaining: null,
   },
   {
     participantId: '2',
@@ -107,7 +107,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     initiativeRoll: 16,
     initiativeTiebreak: null,
     turnOrder: 1,
-    hp: { hpCurrent: 12, hpMax: 48, hpTemp: 0 },
+    hp: { hpVisibility: 'exact', hpCurrent: 12, hpMax: 48, hpTemp: 0 },
     effects: [],
     posX: 0,
     posY: 0,
@@ -123,7 +123,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     size: 'Large',
     faction: 'enemy',
     imageUrl: null,
-    visibleToPlayers: true,
+    visibleToPlayers: true, legendaryActionsRemaining: null,
   },
   {
     participantId: '3',
@@ -133,7 +133,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     initiativeRoll: 9,
     initiativeTiebreak: null,
     turnOrder: 2,
-    hp: { hpCurrent: 18, hpMax: 26, hpTemp: 0 },
+    hp: { hpVisibility: 'exact', hpCurrent: 18, hpMax: 26, hpTemp: 0 },
     effects: [],
     posX: 5,
     posY: 5,
@@ -149,7 +149,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     size: 'Small',
     faction: 'enemy',
     imageUrl: null,
-    visibleToPlayers: true,
+    visibleToPlayers: true, legendaryActionsRemaining: null,
   },
 ];
 

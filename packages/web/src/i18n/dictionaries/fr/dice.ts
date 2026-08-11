@@ -13,6 +13,7 @@ export const dice = {
   historyMinutesAgo: 'il y a {count} min',
   historyHoursAgo: 'il y a {count} h',
   historyDaysAgo: 'il y a {count} j',
+  historyHiddenResult: 'Masqué',
   // Kept as tight as English's own 'Disadv'/'Adv' — this three-button
   // toggle renders inline in very dense rows (one per ability score in
   // SavingThrowsPanel). Note: that row overflows its grid cell even in
@@ -25,6 +26,7 @@ export const dice = {
   rollerRollModeLabel: 'Mode de lancer',
   rollerRollButton: 'Lancer',
   rollerTriggerAria: 'Lancer {context}',
+  rollerVisibilityToggleAria: 'Options de visibilité du lancer',
   rollerKept: 'Conservé',
   rollerNotKept: 'Non conservé',
   quickHeading: 'Lancer des dés',

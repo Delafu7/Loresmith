@@ -6,4 +6,6 @@ export const hp = {
   bloodied: 'Bloodied',
   critical: 'Critical',
   down: 'Down',
+  // Phase 2 — a combat participant whose hp_visibility is 'hidden'.
+  hidden: 'Unknown',
 };

@@ -7,6 +7,7 @@ import { MONSTER_INSTANCE_STAT_BLOCK_SQL } from '../domain/revealFields.js';
 import { computeAppliedDamage } from './damage.js';
 import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
 import { criticalDiceCount } from './diceEngine.js';
+import { computeConcentrationDc, findActiveConcentrationEffect } from './concentration.js';
 import type {
   CreateMonsterInstanceInput,
   MonsterInstanceHpDeltaInput,
@@ -353,6 +354,9 @@ export interface ApplyMonsterInstanceDamageResult {
   diceRoll: { diceTotal: number; rolls: number[] };
   rawTotal: number;
   appliedDamage: number;
+  // Phase 2 "concentration-broken save prompt" — see ApplyDamageResult's
+  // sibling field (services/characters.ts) for the full rationale.
+  concentrationCheck: { effectId: string; effectDefinitionId: string; effectName: string; dc: number } | null;
   breakdown: {
     diceTotal: number;
     modifier: number;
@@ -411,13 +415,17 @@ export async function applyMonsterInstanceDamage(
 
     const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(row, { delta: -applied.appliedDamage, tempDelta: 0 });
 
+    // Phase 2 "HP/damage undo" — see services/characters.ts's applyDamage
+    // sibling comment for the full rationale.
+    const hpSnapshot = { hp_current: row.hp_current, hp_temp: row.hp_temp };
+
     const result = await client.query(
       `UPDATE monster_instances mi
-       SET hp_current = $1, hp_temp = $2
+       SET hp_current = $1, hp_temp = $2, last_hp_snapshot = $4::jsonb
        FROM monsters m
        WHERE mi.id = $3 AND m.id = mi.monster_id
        RETURNING mi.*, m.hit_point_average`,
-      [hpCurrent, hpTemp, instanceId],
+      [hpCurrent, hpTemp, instanceId, JSON.stringify(hpSnapshot)],
     );
 
     const encounterSyncs = await client.query<EncounterHpSyncTarget>(
@@ -443,6 +451,9 @@ export async function applyMonsterInstanceDamage(
       );
     }
 
+    const concentrationEffect =
+      applied.appliedDamage > 0 ? await findActiveConcentrationEffect(client, { characterId: null, monsterInstanceId: instanceId }) : null;
+
     await client.query('COMMIT');
     return {
       monsterInstance: result.rows[0],
@@ -451,7 +462,68 @@ export async function applyMonsterInstanceDamage(
       rawTotal: applied.rawTotal,
       appliedDamage: applied.appliedDamage,
       breakdown: applied.breakdown,
+      concentrationCheck: concentrationEffect
+        ? {
+            effectId: concentrationEffect.id,
+            effectDefinitionId: concentrationEffect.effect_definition_id,
+            effectName: concentrationEffect.name,
+            dc: computeConcentrationDc(applied.appliedDamage),
+          }
+        : null,
     };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export interface UndoLastMonsterInstanceDamageResult {
+  monsterInstance: Record<string, unknown>;
+  encounterSyncs: EncounterHpSyncTarget[];
+}
+
+// Phase 2 "HP/damage undo" — see services/characters.ts's undoLastDamage
+// sibling for the full rationale. Every monster-instance mutation is
+// already DM-only (requireDm below), so there's no "controller vs DM" split
+// to preserve the way undoLastDamage has for characters.
+export async function undoLastMonsterInstanceDamage(pool: Pool, actorId: string, instanceId: string): Promise<UndoLastMonsterInstanceDamageResult> {
+  const instance = await fetchInstanceOrThrow(pool, instanceId);
+  const role = await requireMembership(pool, instance.campaign_id, actorId);
+  requireDm(role);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<{ last_hp_snapshot: { hp_current: number; hp_temp: number } | null }>(
+      `SELECT last_hp_snapshot FROM monster_instances WHERE id = $1 FOR UPDATE`,
+      [instanceId],
+    );
+    const snapshot = locked.rows[0]?.last_hp_snapshot;
+    if (!snapshot) throw new AppError('CONFLICT', 'Nothing to undo for that monster instance');
+
+    const result = await client.query(
+      `UPDATE monster_instances mi
+       SET hp_current = $1, hp_temp = $2, last_hp_snapshot = NULL
+       FROM monsters m
+       WHERE mi.id = $3 AND m.id = mi.monster_id
+       RETURNING mi.*, m.hit_point_average`,
+      [snapshot.hp_current, snapshot.hp_temp, instanceId],
+    );
+
+    const encounterSyncs = await client.query<EncounterHpSyncTarget>(
+      `UPDATE encounters e
+       SET sync_seq = sync_seq + 1
+       FROM combat_participants cp
+       WHERE cp.monster_instance_id = $1 AND cp.encounter_id = e.id
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
+      [instanceId],
+    );
+
+    await client.query('COMMIT');
+    return { monsterInstance: result.rows[0], encounterSyncs: encounterSyncs.rows };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

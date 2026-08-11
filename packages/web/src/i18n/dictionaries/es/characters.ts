@@ -47,6 +47,8 @@ export const characters = {
     loadingCharacter: 'Cargando personaje…',
     gmNotesTitle: 'Notas del DJ',
     gmNotesHint: 'Solo visibles para el DJ — nunca se muestran a los jugadores, ni siquiera al propietario del personaje.',
+    npcMotivationTitle: '¿Qué quiere?',
+    npcMotivationHint: 'Solo para el DJ — la motivación de este PNJ, nunca visible para los jugadores.',
   },
   abilityGenerator: {
     generateScores: 'Generar puntuaciones:',
@@ -106,6 +108,7 @@ export const characters = {
     noItems: 'Aún no hay objetos.',
     removeItem: 'Eliminar {name}',
     attunementTag: 'Sintonización',
+    masteryLabel: 'Maestría: {name}',
     decreaseQty: 'Disminuir cantidad de {name}',
     increaseQty: 'Aumentar cantidad de {name}',
     equipped: 'Equipado',
@@ -126,6 +129,14 @@ export const characters = {
     encumbranceWeight: '{carried} / {capacity} lb',
     encumbered: 'Sobrecargado — velocidad -10 pies.',
     heavilyEncumbered: 'Muy sobrecargado — velocidad -20 pies, desventaja en pruebas, ataques y salvaciones de Fue/Des/Con.',
+  },
+  currency: {
+    title: 'Monedas',
+    cp: 'PC',
+    sp: 'PP',
+    ep: 'PE',
+    gp: 'PO',
+    pp: 'PPl',
   },
   resources: {
     title: 'Recursos',

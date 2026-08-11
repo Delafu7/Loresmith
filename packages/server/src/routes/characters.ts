@@ -19,6 +19,7 @@ import { createCharacterAttackSchema, updateCharacterAttackSchema } from '../sch
 import { createCharacterSpellSchema, spellRowQuerySchema, updateCharacterSpellSchema } from '../schemas/characterSpells.js';
 import { applyTargetEffectSchema } from '../schemas/effects.js';
 import { resourceAmountSchema } from '../schemas/resources.js';
+import { updateCharacterCurrencySchema } from '../schemas/characterCurrency.js';
 import { applyDamageSchema } from '../schemas/damage.js';
 import * as charactersService from '../services/characters.js';
 import * as characterControlService from '../services/characterControl.js';
@@ -27,9 +28,11 @@ import * as characterAttacksService from '../services/characterAttacks.js';
 import * as characterSpellsService from '../services/characterSpells.js';
 import * as effectsService from '../services/effects.js';
 import * as resourcePoolsService from '../services/resourcePools.js';
+import * as characterCurrencyService from '../services/characterCurrency.js';
 import {
   getIo,
   broadcastHpChanged,
+  broadcastConcentrationCheckPrompted,
   broadcastEffectApplied,
   broadcastEffectExpired,
   broadcastArmorClassChanged,
@@ -230,13 +233,56 @@ charactersRouter.post('/:id/apply-damage', async (req, res) => {
       }),
     ),
   );
+  if (result.concentrationCheck) {
+    const controllerUserId = (result.character.controller_user_id ?? result.character.owner_user_id ?? null) as string | null;
+    await Promise.all(
+      result.encounterSyncs.map((sync) =>
+        broadcastConcentrationCheckPrompted(io, {
+          encounterId: sync.encounter_id,
+          campaignId: sync.campaign_id,
+          characterId: (req.params.id as string),
+          monsterInstanceId: null,
+          effectId: result.concentrationCheck!.effectId,
+          effectDefinitionId: result.concentrationCheck!.effectDefinitionId,
+          effectName: result.concentrationCheck!.effectName,
+          dc: result.concentrationCheck!.dc,
+          damage: result.appliedDamage,
+          controllerUserId,
+        }),
+      ),
+    );
+  }
   res.json({
     character: result.character,
     diceRoll: result.diceRoll,
     rawTotal: result.rawTotal,
     appliedDamage: result.appliedDamage,
     breakdown: result.breakdown,
+    concentrationCheck: result.concentrationCheck,
   });
+});
+
+// Phase 2 "HP/damage undo" — mirrors .../action-economy/undo's DM-only shape.
+charactersRouter.post('/:id/hp/undo', async (req, res) => {
+  const result = await charactersService.undoLastDamage(pool, req.user!.id, (req.params.id as string));
+  const io = getIo(req.app);
+  await Promise.all(
+    result.encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: (req.params.id as string),
+        monsterInstanceId: null,
+        hpCurrent: result.character.hp_current as number,
+        hpMax: result.character.hp_max as number,
+        hpTemp: result.character.hp_temp as number,
+        delta: 0,
+      }),
+    ),
+  );
+  res.json({ character: result.character });
 });
 
 charactersRouter.patch('/:id/exhaustion', async (req, res) => {
@@ -387,6 +433,19 @@ charactersRouter.post('/:id/resources/:key/recover', async (req, res) => {
   );
   broadcastResourcePoolChanged(getIo(req.app), campaignId, (req.params.id as string), resource);
   res.json({ resource });
+});
+
+// ---- Currency (character_currency, Phase 1.5) ----
+
+charactersRouter.get('/:id/currency', async (req, res) => {
+  const currency = await characterCurrencyService.getCharacterCurrency(pool, req.user!.id, (req.params.id as string));
+  res.json({ currency });
+});
+
+charactersRouter.patch('/:id/currency', async (req, res) => {
+  const input = updateCharacterCurrencySchema.parse(req.body);
+  const currency = await characterCurrencyService.updateCharacterCurrency(pool, req.user!.id, (req.params.id as string), input);
+  res.json({ currency });
 });
 
 // ---- Effects applied outside combat (encounter_id = null) — DM-only, see

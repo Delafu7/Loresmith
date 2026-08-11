@@ -96,6 +96,8 @@ export const monsters = {
     traitsLabel: 'Rasgos',
     actionsLabel: 'Acciones',
     legendaryActionsLabel: 'Acciones legendarias',
+    legendaryActionCountLabel: 'Presupuesto de acciones legendarias por ronda',
+    legendaryActionCountPlaceholder: 'p. ej. 3',
     reactionsLabel: 'Reacciones',
     addEntry: '+ Añadir entrada',
     addRow: '+ Añadir',

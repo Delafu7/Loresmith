@@ -98,6 +98,10 @@ interface FormState {
   traits: EntryDraft[];
   actions: EntryDraft[];
   legendaryActions: EntryDraft[];
+  // Phase 2 "legendary actions per-round counters" — empty string means
+  // null (no legendary actions at all), same "empty = unset" convention as
+  // every other optional numeric field in this form (armorClassNotes etc.).
+  legendaryActionCount: string;
   reactions: EntryDraft[];
   source: string;
   artAssetId: string | null;
@@ -137,6 +141,7 @@ function emptyForm(): FormState {
     traits: [],
     actions: [emptyEntry()],
     legendaryActions: [],
+    legendaryActionCount: '',
     reactions: [],
     source: '',
     artAssetId: null,
@@ -187,6 +192,7 @@ function monsterToForm(m: MonsterCatalogEntry): FormState {
     traits: Array.isArray(m.traits) ? (m.traits as StatBlockEntry[]).map(entryToDraft) : [],
     actions: Array.isArray(m.actions) && m.actions.length > 0 ? (m.actions as StatBlockEntry[]).map(entryToDraft) : [emptyEntry()],
     legendaryActions: Array.isArray(m.legendary_actions) ? (m.legendary_actions as StatBlockEntry[]).map(entryToDraft) : [],
+    legendaryActionCount: m.legendary_action_count != null ? String(m.legendary_action_count) : '',
     reactions: Array.isArray(m.reactions) ? (m.reactions as StatBlockEntry[]).map(entryToDraft) : [],
     source: m.source ?? '',
     artAssetId: m.art_asset_id,
@@ -239,6 +245,7 @@ function buildPayload(form: FormState) {
     traits: form.traits.map(draftToEntry).filter((e): e is StatBlockEntry => e !== null),
     actions: form.actions.map(draftToEntry).filter((e): e is StatBlockEntry => e !== null),
     legendaryActions: form.legendaryActions.map(draftToEntry).filter((e): e is StatBlockEntry => e !== null),
+    legendaryActionCount: form.legendaryActionCount.trim() ? Number(form.legendaryActionCount) : null,
     reactions: form.reactions.map(draftToEntry).filter((e): e is StatBlockEntry => e !== null),
     source: form.source.trim() || null,
     artAssetId: form.artAssetId,
@@ -280,6 +287,7 @@ function previewMonster(form: FormState): MonsterCatalogEntry {
     traits: payload.traits,
     actions: payload.actions,
     legendary_actions: payload.legendaryActions,
+    legendary_action_count: payload.legendaryActionCount,
     reactions: payload.reactions,
     source: payload.source,
     is_homebrew: true,
@@ -725,6 +733,18 @@ export function CreatureEditorPage() {
         entries={form.legendaryActions}
         onChange={(entries) => update('legendaryActions', entries)}
       />
+      {form.legendaryActions.length > 0 && (
+        <Field label={t('monsters.editor.legendaryActionCountLabel')}>
+          <input
+            type="number"
+            min={1}
+            value={form.legendaryActionCount}
+            onChange={(e) => update('legendaryActionCount', e.target.value)}
+            placeholder={t('monsters.editor.legendaryActionCountPlaceholder')}
+            className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+          />
+        </Field>
+      )}
       <StatEntryListEditor
         label={t('monsters.editor.reactionsLabel')}
         entries={form.reactions}

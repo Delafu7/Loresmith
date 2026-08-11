@@ -1,7 +1,11 @@
 // Socket.io event payload shapes, mirroring packages/server/src/sockets/broadcast.ts.
-// Every broadcast carries {encounterId, campaignId, seq, serverTimestamp}. HP is
-// always visible to every role now (hide/reveal was removed) — every event
-// carries the same exact `hp` shape regardless of who receives it.
+// Every broadcast carries {encounterId, campaignId, seq, serverTimestamp}.
+//
+// HP is the one field that does NOT carry the same shape regardless of who
+// receives it (Phase 2 "restore hp_visibility + banding", reversing the
+// prior "HP always visible" state for this field specifically — see
+// HpForWire below and sockets/broadcast.ts's resolveHpForViewer, its
+// server-side source of truth).
 
 import type {
   ActiveEffectSummary,
@@ -12,6 +16,7 @@ import type {
   EncounterDisposition,
   EncounterMode,
   EncounterStatus,
+  ParticipantHp,
   ResourcePool,
 } from './types';
 
@@ -69,7 +74,9 @@ export interface HpChangedEvent extends Envelope {
   characterId: string | null;
   monsterInstanceId: string | null;
   changeType: 'damage' | 'heal' | 'none';
-  hp: { hpCurrent: number; hpMax: number; hpTemp: number };
+  // ParticipantHp (lib/types.ts) mirrors sockets/broadcast.ts's HpForWire —
+  // see that type's own doc comment for the shape/why.
+  hp: ParticipantHp;
 }
 
 // Battle map (Phase 3.3) — same shape on FULL_STATE_SYNC.map, MAP_UPDATED,
@@ -107,7 +114,7 @@ export interface FullStateSyncEvent extends Envelope {
     initiativeRoll: number;
     initiativeTiebreak: number | null;
     turnOrder: number;
-    hp: { hpCurrent: number; hpMax: number; hpTemp: number };
+    hp: ParticipantHp;
     effects: ActiveEffectSummary[];
     posX: number | null;
     posY: number | null;
@@ -124,8 +131,18 @@ export interface FullStateSyncEvent extends Envelope {
     faction: 'player' | 'ally' | 'enemy' | 'neutral';
     imageUrl: string | null;
     visibleToPlayers: boolean;
+    legendaryActionsRemaining: number | null;
   }>;
   map: MapConfig | null;
+}
+
+// Phase 2 "lair actions (round-start trigger)" — room-wide, no DM/player
+// split (see sockets/broadcast.ts's broadcastLairActionAvailable). Only
+// fired by the advance-turn route when the round actually just advanced and
+// the encounter has lair actions configured.
+export interface LairActionAvailableEvent extends Envelope {
+  currentRound: number;
+  lairActions: Array<{ name: string; description: string }> | null;
 }
 
 // REFACTOR-PLAN.md §3 — DM override for a participant's board faction.
@@ -214,6 +231,25 @@ export interface EffectAppliedEvent extends Envelope {
 
 export type EffectExpiredEvent = EffectAppliedEvent;
 
+// CONCENTRATION_CHECK_PROMPTED (Phase 2) — deliberately does NOT extend
+// Envelope: it's a targeted event (DM + the concentrating character's
+// controller only, see sockets/broadcast.ts's broadcastConcentrationCheckPrompted),
+// not something every connected socket receives, so there's no `seq` for
+// FULL_STATE_SYNC gap-checking to apply to — same reasoning DiceRolledEvent
+// already uses for the same shape of event.
+export interface ConcentrationCheckPromptedEvent {
+  encounterId: string;
+  campaignId: string;
+  serverTimestamp: number;
+  characterId: string | null;
+  monsterInstanceId: string | null;
+  effectId: string;
+  effectDefinitionId: string;
+  effectName: string;
+  dc: number;
+  damage: number;
+}
+
 // REVEAL_CHANGED — the one surviving DM/player redaction split: a monster
 // instance's damage vulnerabilities/resistances/immunities can be
 // individually hidden/revealed. One event per field per PATCH, same "not
@@ -240,6 +276,7 @@ export interface RevealChangedEvent extends Envelope {
 // event only reaches a socket that's allowed to see the roll, so nothing to
 // branch on client-side.
 export interface DiceRolledEvent {
+  masked: false;
   campaignId: string;
   serverTimestamp: number;
   id: string;
@@ -254,6 +291,26 @@ export interface DiceRolledEvent {
   isCritical: boolean;
   visibility: DiceRollVisibility;
   isManual: boolean;
+  characterId: string | null;
+  monsterInstanceId: string | null;
+  encounterId: string | null;
+  userId: string;
+  createdAt: string;
+}
+
+// Phase 2 "hidden rolls record occurrence" — sent instead of DiceRolledEvent
+// (same event name, discriminated by `masked`) to a socket that isn't
+// allowed to see a gm_only/private roll's value: id/roller/context/type
+// present, every result-bearing field simply absent, so a hidden roll is at
+// least visible as "something happened" rather than invisible.
+export interface DiceRollMaskedEvent {
+  masked: true;
+  campaignId: string;
+  serverTimestamp: number;
+  id: string;
+  rollType: DiceRollType;
+  rollContext: string | null;
+  visibility: DiceRollVisibility;
   characterId: string | null;
   monsterInstanceId: string | null;
   encounterId: string | null;
@@ -376,6 +433,8 @@ export interface ServerToClientEvents {
   HP_CHANGED: (payload: HpChangedEvent) => void;
   EFFECT_APPLIED: (payload: EffectAppliedEvent) => void;
   EFFECT_EXPIRED: (payload: EffectExpiredEvent) => void;
+  CONCENTRATION_CHECK_PROMPTED: (payload: ConcentrationCheckPromptedEvent) => void;
+  LAIR_ACTION_AVAILABLE: (payload: LairActionAvailableEvent) => void;
   REVEAL_CHANGED: (payload: RevealChangedEvent) => void;
   FULL_STATE_SYNC: (payload: FullStateSyncEvent) => void;
   MAP_UPDATED: (payload: MapUpdatedEvent) => void;
@@ -385,7 +444,7 @@ export interface ServerToClientEvents {
   PARTICIPANT_AC_CHANGED: (payload: ParticipantAcChangedEvent) => void;
   PARTICIPANT_FACTION_CHANGED: (payload: ParticipantFactionChangedEvent) => void;
   ACTION_ECONOMY_CHANGED: (payload: ActionEconomyChangedEvent) => void;
-  DICE_ROLLED: (payload: DiceRolledEvent) => void;
+  DICE_ROLLED: (payload: DiceRolledEvent | DiceRollMaskedEvent) => void;
   DICE_ROLL_VOIDED: (payload: DiceRollVoidedEvent) => void;
   DICE_ROLL_REQUESTED: (payload: DiceRollRequestedEvent) => void;
   DICE_ROLL_REQUEST_UPDATED: (payload: DiceRollRequestUpdatedEvent) => void;

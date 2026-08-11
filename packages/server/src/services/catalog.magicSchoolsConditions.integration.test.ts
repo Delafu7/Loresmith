@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';
-import { listMagicSchools, listConditions } from './catalog.js';
+import { listMagicSchools, listConditions, listWeaponMasteryProperties } from './catalog.js';
 
 describe('listMagicSchools / listConditions (integration, live seeded DB)', () => {
   it('lists every seeded magic school, alphabetically, with no campaign scoping', async () => {
@@ -29,5 +29,15 @@ describe('listMagicSchools / listConditions (integration, live seeded DB)', () =
     const filtered = await listConditions(pool, { edition: '2024' });
     expect(filtered.length).toBeLessThanOrEqual(all.length);
     expect(filtered.every((c) => c.edition_scope === '2024' || c.edition_scope === 'both')).toBe(true);
+  });
+
+  // Phase 2 "weapon mastery (2024)" — same "no campaign scoping" read as the
+  // two lists above.
+  it('lists exactly the 8 SRD weapon mastery properties', async () => {
+    const properties = await listWeaponMasteryProperties(pool);
+    expect(properties.map((p) => p.index_key as string).sort()).toEqual(
+      ['cleave', 'graze', 'nick', 'push', 'sap', 'slow', 'topple', 'vex'],
+    );
+    expect(properties.every((p) => typeof p.name === 'string' && typeof p.description === 'string')).toBe(true);
   });
 });

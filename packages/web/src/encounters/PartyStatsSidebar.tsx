@@ -8,7 +8,7 @@
 // sheet the way Token.tsx's single click deliberately does.
 import type { Character, SnapshotParticipant } from '../lib/types';
 import { Portrait } from '../components/Portrait';
-import { HPBar } from '../components/HPBar';
+import { ParticipantHpDisplay } from '../components/ParticipantHpDisplay';
 import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
 import { CONTROL_BADGE_DOT_COLOR, controlBadgeFor, controlBadgeLabel } from './controlBadge';
@@ -68,7 +68,7 @@ export function PartyStatsSidebar({
                 <span className="truncate text-sm font-medium text-stone-100">{p.name}</span>
                 <span className="flex-shrink-0 text-[11px] text-stone-500">{t('encounters.tracker.armorClass')} {p.armorClass}</span>
               </div>
-              <HPBar current={p.hp.hpCurrent} max={p.hp.hpMax} temp={p.hp.hpTemp} />
+              <ParticipantHpDisplay hp={p.hp} />
             </div>
           </button>
         </li>

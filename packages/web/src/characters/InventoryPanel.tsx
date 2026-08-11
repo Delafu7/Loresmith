@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Character, CharacterItem, Encumbrance, ItemCatalogEntry, ItemRarity, UpdateCharacterItemBody } from '../lib/types';
-import { useDamageTypesCatalog, useItemsCatalog } from '../lib/useCatalog';
+import { useDamageTypesCatalog, useItemsCatalog, useWeaponMasteryPropertiesCatalog } from '../lib/useCatalog';
 import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { DiceRoller } from '../components/DiceRoller';
 import { parseDiceExpression } from '../components/QuickDiceRoller';
@@ -301,6 +301,7 @@ export function InventoryPanel({
               str={str}
               dex={dex}
               proficiencyBonus={proficiencyBonus}
+              edition={edition}
               onUpdate={(patch) => updateMutation.mutate({ itemRowId: item.id, patch })}
               onRemove={() => removeMutation.mutate(item.id)}
               removePending={removeMutation.isPending}
@@ -333,6 +334,7 @@ function ItemCard({
   str,
   dex,
   proficiencyBonus,
+  edition,
   onUpdate,
   onRemove,
   removePending,
@@ -344,6 +346,7 @@ function ItemCard({
   str: number;
   dex: number;
   proficiencyBonus: number;
+  edition: '2014' | '2024' | 'both';
   onUpdate: (patch: UpdateCharacterItemBody) => void;
   onRemove: () => void;
   // UX finding #9 (Iteration 3 audit) — missing double-submit guard, same
@@ -355,6 +358,13 @@ function ItemCard({
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState(item.notes ?? '');
   const name = item.custom_name || catalogEntry?.name || `Item #${item.item_id}`;
+  // Phase 2 "weapon mastery (2024)" — a fixed game concept, not a per-DM
+  // toggle: a 2014-edition campaign simply doesn't have this mechanic, so
+  // it never surfaces regardless of whether the seeded weapon row happens
+  // to carry a mastery key (items are edition_scope='both', shared).
+  const masteryKey = edition === '2024' && catalogEntry?.item_type === 'weapon' ? (catalogEntry.properties?.mastery as string | undefined) : undefined;
+  const masteryQuery = useWeaponMasteryPropertiesCatalog();
+  const mastery = masteryKey ? masteryQuery.data?.weaponMasteryProperties.find((m) => m.index_key === masteryKey) : undefined;
   // Attack-roll trigger only makes sense for an equipped weapon a player is
   // allowed to roll for (see the `editable` reuse comment in
   // SkillsPanel.tsx) — a stowed weapon or non-weapon item gets no trigger.
@@ -377,6 +387,17 @@ function ItemCard({
             {catalogEntry && <span className="capitalize">{catalogEntry.item_type.replace('_', ' ')}</span>}
             {catalogEntry?.requires_attunement && <span className="text-violet-400">{t('characters.inventory.attunementTag')}</span>}
           </div>
+          {/* Informational only — this app has no attack-flow linkage from a
+              structured character_attacks row back to the catalog weapon
+              that created it (see AttackRoller.tsx), so the mastery effect
+              itself (push/sap/slow/...) is DM-adjudicated, not
+              auto-applied, matching this file's own "display-only, DM
+              adjudicates" precedent for stealth-disadvantage/str-requirement. */}
+          {mastery && (
+            <div className="mt-1 text-xs text-amber-400" title={mastery.description}>
+              {t('characters.inventory.masteryLabel', { name: mastery.name })}
+            </div>
+          )}
         </div>
         {editable && (
           <button

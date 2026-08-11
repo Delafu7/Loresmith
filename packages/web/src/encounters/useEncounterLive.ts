@@ -28,7 +28,7 @@ import type {
   TokenMovedEvent,
   TurnAdvancedEvent,
 } from '../lib/socketTypes';
-import type { EncounterDisposition, EncounterMode, EncounterStatus, ParticipantHp, SnapshotParticipant } from '../lib/types';
+import type { EncounterDisposition, EncounterMode, EncounterStatus, SnapshotParticipant } from '../lib/types';
 
 export interface EncounterLiveState {
   seq: number;
@@ -223,7 +223,7 @@ export function useEncounterLive(encounterId: string | undefined) {
           ...prev,
           seq: payload.seq,
           participants: prev.participants.map((p) =>
-            p.participantId === payload.participantId ? { ...p, hp: payload.hp as ParticipantHp } : p,
+            p.participantId === payload.participantId ? { ...p, hp: payload.hp } : p,
           ),
         }));
       });

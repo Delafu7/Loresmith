@@ -11,7 +11,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { Character, EncounterDisposition, EncounterStatus, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
 import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 import type { EncounterLiveState } from './useEncounterLive';
-import { HPBar } from '../components/HPBar';
+import { ParticipantHpDisplay } from '../components/ParticipantHpDisplay';
 import { HpAdjustForm } from '../components/HpAdjustForm';
 import { EffectBadge } from '../components/EffectBadge';
 import { EffectApplyDialog } from '../components/EffectApplyDialog';
@@ -153,8 +153,7 @@ export function BattleModeDmPanel({
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 font-mono tabular-nums">
                   <span className="text-stone-300" title={t('encounters.tracker.hitPoints')}>
-                    {p.hp.hpCurrent}/{p.hp.hpMax}
-                    {p.hp.hpTemp > 0 && <span className="text-sky-400"> (+{p.hp.hpTemp})</span>}
+                    <ParticipantHpDisplay hp={p.hp} variant="text" />
                   </span>
                   <span className="text-stone-500 border border-stone-700 rounded px-1" title={t('encounters.tracker.armorClass')}>
                     AC {p.armorClass}
@@ -224,7 +223,7 @@ export function BattleModeDmPanel({
                 </div>
               </div>
               <div className="mt-1.5">
-                <HPBar current={p.hp.hpCurrent} max={p.hp.hpMax} temp={p.hp.hpTemp} />
+                <ParticipantHpDisplay hp={p.hp} />
               </div>
               {expandedParticipantId === p.participantId && (
                 <>

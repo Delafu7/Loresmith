@@ -16,6 +16,7 @@ import type { ParticipantHp, SnapshotParticipant } from '../lib/types';
 import { footprintCellsFor } from './creatureSize';
 import { CONTROL_BADGE_DOT_COLOR, controlBadgeLabel, type ControlBadgeKind } from './controlBadge';
 import { useLocale } from '../i18n/LocaleContext';
+import { HP_BAND_COLOR, bandFor } from '../components/HPBar';
 
 function portraitSizeFor(spanPx: number): PortraitSize {
   if (spanPx <= 36) return 'sm';
@@ -39,27 +40,27 @@ const FACTION_BORDER: Record<SnapshotParticipant['faction'], string> = {
   neutral: 'border-stone-500',
 };
 
-const HP_BAR_COLOR: Record<string, string> = {
-  Healthy: 'bg-emerald-600',
-  Injured: 'bg-yellow-600',
-  Bloodied: 'bg-orange-600',
-  Critical: 'bg-red-600',
-  Down: 'bg-stone-600',
-};
-
-function bandForExact(current: number, max: number): keyof typeof HP_BAR_COLOR {
-  if (max <= 0 || current <= 0) return 'Down';
-  const pct = current / max;
-  if (pct > 0.75) return 'Healthy';
-  if (pct > 0.5) return 'Injured';
-  if (pct > 0.25) return 'Bloodied';
-  return 'Critical';
-}
-
+// Phase 2 "restore hp_visibility + banding" — a token whose participant hp
+// is 'hidden' shows no bar at all (nothing rendered); 'banded' shows a
+// full-width bar in the band's color rather than a percentage-filled one,
+// since a width proportional to an unknown exact value would imply false
+// precision. Reuses HPBar.tsx's band→color mapping/threshold function
+// (HP_BAND_COLOR/bandFor) rather than a third hand-rolled copy.
 function TokenHpIndicator({ hp }: { hp: ParticipantHp }) {
   const { t } = useLocale();
+  if (hp.hpVisibility === 'hidden' && !('hpCurrent' in hp)) return null;
+
+  if (!('hpCurrent' in hp)) {
+    // hp.hpVisibility === 'banded' here (the only other non-numeric case).
+    return (
+      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 h-1.5 w-[85%] rounded-full bg-stone-900 overflow-hidden" aria-label={t('encounters.battleMap.hp')}>
+        <div className={`h-full w-full ${HP_BAND_COLOR[hp.band]}`} />
+      </div>
+    );
+  }
+
   const pct = hp.hpMax > 0 ? Math.max(0, Math.min(100, (hp.hpCurrent / hp.hpMax) * 100)) : 0;
-  const band = bandForExact(hp.hpCurrent, hp.hpMax);
+  const band = bandFor(hp.hpCurrent, hp.hpMax);
   return (
     <div
       className="absolute -bottom-1 left-1/2 -translate-x-1/2 h-1.5 w-[85%] rounded-full bg-stone-900 overflow-hidden"
@@ -69,7 +70,7 @@ function TokenHpIndicator({ hp }: { hp: ParticipantHp }) {
       aria-valuemin={0}
       aria-valuemax={hp.hpMax}
     >
-      <div className={`h-full ${HP_BAR_COLOR[band]}`} style={{ width: `${pct}%` }} />
+      <div className={`h-full ${HP_BAND_COLOR[band]}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }

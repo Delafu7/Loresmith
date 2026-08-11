@@ -19,7 +19,14 @@ import * as monsterCatalogService from '../services/monsterCatalog.js';
 import * as effectsService from '../services/effects.js';
 import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import { requireMembership, getMembership } from '../services/authz.js';
-import { getIo, broadcastHpChanged, broadcastEffectApplied, broadcastEffectExpired, broadcastRevealChanged } from '../sockets/broadcast.js';
+import {
+  getIo,
+  broadcastHpChanged,
+  broadcastEffectApplied,
+  broadcastEffectExpired,
+  broadcastRevealChanged,
+  broadcastConcentrationCheckPrompted,
+} from '../sockets/broadcast.js';
 
 // Mounted at /catalog/monsters (bestiary browse)
 export const monsterCatalogRouter = Router();
@@ -218,13 +225,57 @@ monsterInstancesRouter.post('/:id/apply-damage', async (req, res) => {
       }),
     ),
   );
+  if (result.concentrationCheck) {
+    // No controller for a monster instance — DM only, see
+    // broadcastConcentrationCheckPrompted's own comment.
+    await Promise.all(
+      result.encounterSyncs.map((sync) =>
+        broadcastConcentrationCheckPrompted(io, {
+          encounterId: sync.encounter_id,
+          campaignId: sync.campaign_id,
+          characterId: null,
+          monsterInstanceId: (req.params.id as string),
+          effectId: result.concentrationCheck!.effectId,
+          effectDefinitionId: result.concentrationCheck!.effectDefinitionId,
+          effectName: result.concentrationCheck!.effectName,
+          dc: result.concentrationCheck!.dc,
+          damage: result.appliedDamage,
+          controllerUserId: null,
+        }),
+      ),
+    );
+  }
   res.json({
     monsterInstance: result.monsterInstance,
     diceRoll: result.diceRoll,
     rawTotal: result.rawTotal,
     appliedDamage: result.appliedDamage,
     breakdown: result.breakdown,
+    concentrationCheck: result.concentrationCheck,
   });
+});
+
+// Phase 2 "HP/damage undo" — mirrors .../action-economy/undo's DM-only shape.
+monsterInstancesRouter.post('/:id/hp/undo', async (req, res) => {
+  const result = await monstersService.undoLastMonsterInstanceDamage(pool, req.user!.id, (req.params.id as string));
+  const io = getIo(req.app);
+  await Promise.all(
+    result.encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: null,
+        monsterInstanceId: (req.params.id as string),
+        hpCurrent: result.monsterInstance.hp_current as number,
+        hpMax: (result.monsterInstance.hp_max_override as number | null) ?? (result.monsterInstance.hit_point_average as number),
+        hpTemp: result.monsterInstance.hp_temp as number,
+        delta: 0,
+      }),
+    ),
+  );
+  res.json({ monsterInstance: result.monsterInstance });
 });
 
 monsterInstancesRouter.get('/:id/effects', async (req, res) => {
