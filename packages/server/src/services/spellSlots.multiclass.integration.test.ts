@@ -10,10 +10,22 @@
 // back at the end -- nothing ever commits, so there is nothing to clean up
 // and zero risk to the seeded demo campaign (Kessia Duskbane, the real
 // Paladin 3 / Warlock 2 demo PC this logic was built against, is never
-// touched). Temp characters below reference the first existing
-// campaign/user rows purely as FK targets (a read-only reference, never a
-// mutation, since the whole transaction is rolled back) rather than
-// creating yet more throwaway rows that would need explicit cleanup.
+// touched).
+//
+// The campaign/user FK targets are created fresh, INSIDE this same
+// transaction, in beforeAll -- an earlier version instead reused "whatever
+// campaign/user happens to exist right now" (`SELECT ... ORDER BY id LIMIT
+// 1`), which is unsafe with UUID primary keys: that query has no notion of
+// "the stable seeded demo row" and can land on some OTHER integration test
+// file's own throwaway campaign. Under a full-suite run those files create
+// and DELETE their fixtures concurrently against the same live DB, so the
+// borrowed campaign could be deleted out from under this test mid-run,
+// producing a real foreign key violation that then poisons this file's one
+// shared transaction (25P02 "current transaction is aborted") for every
+// test after it, since nothing here uses a SAVEPOINT to isolate individual
+// tests within the shared transaction. A row inserted here, by contrast, is
+// only ever visible inside this transaction until the ROLLBACK below, so
+// nothing else can ever see or delete it out from under this test.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PoolClient } from 'pg';
@@ -34,13 +46,33 @@ describe('multiclass spell slots + prerequisites (integration, rolled-back trans
     client = await pool.connect();
     await client.query('BEGIN');
 
-    const campaignRes = await client.query<{ id: string }>(`SELECT id FROM campaigns ORDER BY id LIMIT 1`);
-    if (campaignRes.rows.length === 0) throw new Error('Expected at least one seeded campaign to exist');
-    campaignId = campaignRes.rows[0]!.id;
-
-    const userRes = await client.query<{ id: string }>(`SELECT id FROM users ORDER BY id LIMIT 1`);
-    if (userRes.rows.length === 0) throw new Error('Expected at least one seeded user to exist');
+    // A throwaway campaign + user created INSIDE this same uncommitted
+    // transaction, not borrowed from "whatever campaign/user happens to
+    // exist right now" (that used to be `SELECT ... ORDER BY id LIMIT 1`).
+    // With UUID primary keys, "ORDER BY id" carries no notion of "the
+    // stable seeded demo row" -- it can just as easily land on some OTHER
+    // integration test file's own throwaway campaign. Under a full-suite
+    // run those files create and DELETE their fixtures concurrently against
+    // the same live DB, so a campaign picked here could be deleted out from
+    // under this test before the INSERT INTO characters below runs,
+    // producing a real FK violation that then poisons this file's one
+    // shared transaction for every later test (nothing here uses a
+    // SAVEPOINT). Rows inserted here are only ever visible inside this
+    // transaction until the ROLLBACK in afterAll, so nothing else can ever
+    // see or delete them -- the same isolation guarantee the file header
+    // already relies on for cleanup, just applied to the FK targets too.
+    const userRes = await client.query<{ id: string }>(
+      `INSERT INTO users (email, display_name, password_hash) VALUES ('spell-slots-test-owner@example.test', 'Spell Slots Test Owner', 'x') RETURNING id`,
+    );
     userId = userRes.rows[0]!.id;
+
+    const campaignRes = await client.query<{ id: string }>(
+      `INSERT INTO campaigns (name, dm_user_id, srd_edition)
+       VALUES ('Spell Slots Test Campaign (throwaway, rolled back)', $1, '2024')
+       RETURNING id`,
+      [userId],
+    );
+    campaignId = campaignRes.rows[0]!.id;
 
     async function classIdFor(indexKey: string): Promise<string> {
       const res = await client.query<{ id: string }>(
