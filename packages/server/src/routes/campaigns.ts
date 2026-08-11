@@ -132,12 +132,12 @@ campaignsRouter.post('/:id/sessions', requireCampaignMember(), requireRole('dm')
 });
 
 campaignsRouter.get('/:id/sessions', requireCampaignMember(), async (req, res) => {
-  const sessions = await campaignsService.listSessionLogs(pool, req.campaignId!);
+  const sessions = await campaignsService.listSessionLogs(pool, req.campaignId!, req.campaignRole!);
   res.json({ sessions });
 });
 
 campaignsRouter.get('/:id/sessions/:sid', requireCampaignMember(), async (req, res) => {
-  const session = await campaignsService.getSessionLog(pool, req.campaignId!, (req.params.sid as string));
+  const session = await campaignsService.getSessionLog(pool, req.campaignId!, (req.params.sid as string), req.campaignRole!);
   res.json({ session });
 });
 

@@ -7,7 +7,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { SessionLog } from '../lib/types';
+import type { Location, SessionLog } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Field, Input, Textarea } from '../components/ui/Field';
@@ -23,10 +23,14 @@ interface SessionLogFormValues {
   title: string;
   playedAt: string;
   recap: string;
+  playerRecap: string;
+  // Phase 3 "locations and factions" — same "empty = unset" convention as
+  // NotesPage.tsx's characterId/locationId fields.
+  locationId: string;
 }
 
 function emptySessionLogForm(): SessionLogFormValues {
-  return { sessionNumber: '', title: '', playedAt: '', recap: '' };
+  return { sessionNumber: '', title: '', playedAt: '', recap: '', playerRecap: '', locationId: '' };
 }
 
 // z.string().date().optional().nullable() (and the same for title/recap)
@@ -49,6 +53,13 @@ export function SessionLogPage() {
     queryFn: () => api.get<{ sessions: SessionLog[] }>(`/campaigns/${campaignId}/sessions`),
   });
 
+  const locationsQuery = useQuery({
+    queryKey: ['locations', campaignId],
+    queryFn: () => api.get<{ locations: Location[] }>(`/campaigns/${campaignId}/locations`),
+  });
+  const locations = locationsQuery.data?.locations ?? [];
+  const locationName = (locationId: string | null) => locations.find((l) => l.id === locationId)?.name;
+
   // Draft-persisted create form (see lib/useFormDraft.ts) so a half-written
   // entry survives an accidental navigation away.
   const [form, setForm, clearDraft] = useFormDraft(`draft:sessionLog:new:${campaignId}`, emptySessionLogForm);
@@ -60,6 +71,8 @@ export function SessionLogPage() {
         title: emptyToNull(form.title),
         playedAt: emptyToNull(form.playedAt),
         recap: emptyToNull(form.recap),
+        playerRecap: emptyToNull(form.playerRecap),
+        locationId: form.locationId || undefined,
       }),
     onSuccess: () => {
       setForm(emptySessionLogForm());
@@ -119,6 +132,29 @@ export function SessionLogPage() {
           <Field label={t('sessionLog.recapLabel')} htmlFor="sessionLogRecap">
             <Textarea id="sessionLogRecap" rows={5} value={form.recap} onChange={(e) => setForm((f) => ({ ...f, recap: e.target.value }))} />
           </Field>
+          <Field label={t('sessionLog.playerRecapLabel')} htmlFor="sessionLogPlayerRecap">
+            <Textarea
+              id="sessionLogPlayerRecap"
+              rows={5}
+              value={form.playerRecap}
+              onChange={(e) => setForm((f) => ({ ...f, playerRecap: e.target.value }))}
+            />
+          </Field>
+          <Field label={t('notes.linkedLocationLabel')} htmlFor="sessionLogLocation">
+            <select
+              id="sessionLogLocation"
+              value={form.locationId}
+              onChange={(e) => setForm((f) => ({ ...f, locationId: e.target.value }))}
+              className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+            >
+              <option value="">{t('notes.linkedLocationNone')}</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </Field>
           {createMutation.isError && <ErrorBanner message={errorMessage(createMutation.error)} />}
           <Button type="submit" variant="primary" disabled={createMutation.isPending}>
             {createMutation.isPending ? t('sessionLog.saving') : t('sessionLog.saveEntry')}
@@ -173,7 +209,22 @@ export function SessionLogPage() {
                 )}
               </div>
               {session.played_at && <p className="text-xs text-stone-500">{t('sessionLog.played', { date: session.played_at })}</p>}
-              {session.recap && <p className="text-sm text-stone-300 whitespace-pre-wrap">{session.recap}</p>}
+              {session.location_id && locationName(session.location_id) && (
+                <p className="text-xs text-amber-400">{t('notes.linkedLocationTag', { name: locationName(session.location_id)! })}</p>
+              )}
+              {isDm ? (
+                <>
+                  {session.recap && <p className="text-sm text-stone-300 whitespace-pre-wrap">{session.recap}</p>}
+                  {session.player_recap && (
+                    <p className="mt-2 text-sm text-stone-400 whitespace-pre-wrap">
+                      <span className="text-xs text-stone-500">{t('sessionLog.playerRecapLabel')}: </span>
+                      {session.player_recap}
+                    </p>
+                  )}
+                </>
+              ) : (
+                session.player_recap && <p className="text-sm text-stone-300 whitespace-pre-wrap">{session.player_recap}</p>
+              )}
               <p className="text-xs text-stone-500">
                 {t('sessionLog.createdUpdated', { created: formatTimestamp(session.created_at), updated: formatTimestamp(session.updated_at) })}
               </p>
@@ -182,7 +233,12 @@ export function SessionLogPage() {
         ))}
       </ul>
 
-      <SessionLogEditModal campaignId={campaignId} session={editingSession} onClose={() => setEditingSession(null)} />
+      <SessionLogEditModal
+        campaignId={campaignId}
+        session={editingSession}
+        locations={locations}
+        onClose={() => setEditingSession(null)}
+      />
     </div>
   );
 }
@@ -195,17 +251,29 @@ export function SessionLogPage() {
 function SessionLogEditModal({
   campaignId,
   session,
+  locations,
   onClose,
 }: {
   campaignId: string;
   session: SessionLog | null;
+  locations: Location[];
   onClose: () => void;
 }) {
   if (session === null) return null;
-  return <SessionLogEditForm campaignId={campaignId} session={session} onClose={onClose} />;
+  return <SessionLogEditForm campaignId={campaignId} session={session} locations={locations} onClose={onClose} />;
 }
 
-function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: string; session: SessionLog; onClose: () => void }) {
+function SessionLogEditForm({
+  campaignId,
+  session,
+  locations,
+  onClose,
+}: {
+  campaignId: string;
+  session: SessionLog;
+  locations: Location[];
+  onClose: () => void;
+}) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
 
@@ -220,6 +288,8 @@ function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: stri
     title: session.title ?? '',
     playedAt: session.played_at ?? '',
     recap: session.recap ?? '',
+    playerRecap: session.player_recap ?? '',
+    locationId: session.location_id ?? '',
   }));
 
   const updateMutation = useMutation({
@@ -229,6 +299,8 @@ function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: stri
         title: emptyToNull(form.title),
         playedAt: emptyToNull(form.playedAt),
         recap: emptyToNull(form.recap),
+        playerRecap: emptyToNull(form.playerRecap),
+        locationId: form.locationId || null,
       }),
     onSuccess: () => {
       clearDraft();
@@ -276,6 +348,29 @@ function SessionLogEditForm({ campaignId, session, onClose }: { campaignId: stri
             value={form.recap}
             onChange={(e) => setForm((f) => ({ ...f, recap: e.target.value }))}
           />
+        </Field>
+        <Field label={t('sessionLog.playerRecapLabel')} htmlFor="sessionLogEditPlayerRecap">
+          <Textarea
+            id="sessionLogEditPlayerRecap"
+            rows={5}
+            value={form.playerRecap}
+            onChange={(e) => setForm((f) => ({ ...f, playerRecap: e.target.value }))}
+          />
+        </Field>
+        <Field label={t('notes.linkedLocationLabel')} htmlFor="sessionLogEditLocation">
+          <select
+            id="sessionLogEditLocation"
+            value={form.locationId}
+            onChange={(e) => setForm((f) => ({ ...f, locationId: e.target.value }))}
+            className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+          >
+            <option value="">{t('notes.linkedLocationNone')}</option>
+            {locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
         </Field>
         {updateMutation.isError && <ErrorBanner message={errorMessage(updateMutation.error)} />}
         <div className="flex gap-2">

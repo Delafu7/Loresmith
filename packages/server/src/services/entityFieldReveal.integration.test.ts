@@ -126,4 +126,31 @@ describe('weakness reveal read-path redaction (integration, live DB, throwaway f
       updateMonsterInstanceReveals(pool, playerUserId, instanceId, { fields: [{ fieldKey: 'damage_resistances', revealed: true }] }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN_ROLE' });
   });
+
+  it('every toggle appends to entity_field_reveal_events without overwriting prior history (Phase 1.2)', async () => {
+    await updateMonsterInstanceReveals(pool, dmUserId, instanceId, { fields: [{ fieldKey: 'damage_vulnerabilities', revealed: true }] });
+    await updateMonsterInstanceReveals(pool, dmUserId, instanceId, { fields: [{ fieldKey: 'damage_vulnerabilities', revealed: false }] });
+    await updateMonsterInstanceReveals(pool, dmUserId, instanceId, { fields: [{ fieldKey: 'damage_vulnerabilities', revealed: true, playerOverride: 'glows faintly' }] });
+
+    const events = await pool.query<{ revealed: boolean; player_override: string | null; actor_user_id: string }>(
+      `SELECT revealed, player_override, actor_user_id FROM entity_field_reveal_events
+       WHERE monster_instance_id = $1 AND field_key = 'damage_vulnerabilities' ORDER BY created_at ASC`,
+      [instanceId],
+    );
+    expect(events.rows.map((r) => ({ revealed: r.revealed, override: r.player_override }))).toEqual([
+      { revealed: true, override: null },
+      { revealed: false, override: null },
+      { revealed: true, override: 'glows faintly' },
+    ]);
+    expect(events.rows.every((r) => r.actor_user_id === dmUserId)).toBe(true);
+
+    // Current-state table still only has the latest value — history lives
+    // solely in entity_field_reveal_events, this is not a duplicate source of truth.
+    const current = await pool.query<{ revealed: boolean; player_override: string | null }>(
+      `SELECT revealed, player_override FROM entity_field_reveals WHERE monster_instance_id = $1 AND field_key = 'damage_vulnerabilities'`,
+      [instanceId],
+    );
+    expect(current.rows).toHaveLength(1);
+    expect(current.rows[0]).toEqual({ revealed: true, player_override: 'glows faintly' });
+  });
 });

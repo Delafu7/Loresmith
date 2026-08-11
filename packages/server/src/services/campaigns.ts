@@ -3,6 +3,7 @@ import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
 import { findUserByEmail } from './users.js';
 import type { CampaignRole } from './authz.js';
+import { resolveVisibilitySync } from './visibility.js';
 import type {
   AddMemberInput,
   CreateCampaignInput,
@@ -180,28 +181,38 @@ export async function removeMember(pool: Pool, campaignId: string, targetUserId:
 
 // ---- Session log (game-night log, NOT the HTTP auth session) ----
 
-export async function listSessionLogs(pool: Pool, campaignId: string) {
+// Phase 1.4 — recap is the DM's full write-up (spoilers, prep notes) and is
+// never sent to a non-DM viewer; player_recap is what they get instead.
+// Same shape as redactGmNotes (characters.ts), routed through the same
+// 'gm_only' rule (services/visibility.ts).
+function redactSessionRecap<T extends { recap?: unknown }>(session: T, role: CampaignRole): T {
+  if (resolveVisibilitySync({ mode: 'gm_only' }, null, role)) return session;
+  return { ...session, recap: undefined };
+}
+
+export async function listSessionLogs(pool: Pool, campaignId: string, role: CampaignRole) {
   const result = await pool.query(
     `SELECT * FROM sessions WHERE campaign_id = $1 ORDER BY session_number ASC`,
     [campaignId],
   );
-  return result.rows;
+  return result.rows.map((row) => redactSessionRecap(row, role));
 }
 
-export async function getSessionLog(pool: Pool, campaignId: string, sessionId: string) {
+export async function getSessionLog(pool: Pool, campaignId: string, sessionId: string, role: CampaignRole) {
   const result = await pool.query(`SELECT * FROM sessions WHERE id = $1 AND campaign_id = $2`, [sessionId, campaignId]);
   const row = result.rows[0];
   if (!row) throw notFound('Session log entry');
-  return row;
+  return redactSessionRecap(row, role);
 }
 
 export async function createSessionLog(pool: Pool, campaignId: string, input: CreateSessionLogInput) {
   try {
     const result = await pool.query(
-      `INSERT INTO sessions (campaign_id, session_number, title, played_at, recap)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [campaignId, input.sessionNumber, input.title ?? null, input.playedAt ?? null, input.recap ?? null],
+      `INSERT INTO sessions (campaign_id, session_number, title, played_at, recap, player_recap)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [campaignId, input.sessionNumber, input.title ?? null, input.playedAt ?? null, input.recap ?? null, input.playerRecap ?? null],
     );
+    // DM-only response (route requires role 'dm' to create) — no redaction needed.
     return result.rows[0];
   } catch (err: unknown) {
     if (isUniqueViolation(err)) {
@@ -220,8 +231,9 @@ export async function updateSessionLog(pool: Pool, campaignId: string, sessionId
   if (input.title !== undefined) { sets.push(`title = $${i++}`); values.push(input.title); }
   if (input.playedAt !== undefined) { sets.push(`played_at = $${i++}`); values.push(input.playedAt); }
   if (input.recap !== undefined) { sets.push(`recap = $${i++}`); values.push(input.recap); }
+  if (input.playerRecap !== undefined) { sets.push(`player_recap = $${i++}`); values.push(input.playerRecap); }
 
-  if (sets.length === 0) return getSessionLog(pool, campaignId, sessionId);
+  if (sets.length === 0) return getSessionLog(pool, campaignId, sessionId, 'dm');
 
   sets.push('updated_at = now()');
   values.push(sessionId, campaignId);

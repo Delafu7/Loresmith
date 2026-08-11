@@ -41,6 +41,9 @@ export const createSessionLogSchema = z.object({
   title: z.string().max(200).optional().nullable(),
   playedAt: z.string().date().optional().nullable(), // 'YYYY-MM-DD'
   recap: z.string().max(20000).optional().nullable(),
+  // Player-facing version of recap — DM-only recap is redacted for
+  // non-DM viewers (services/campaigns.ts's redactSessionRecap).
+  playerRecap: z.string().max(20000).optional().nullable(),
 });
 export type CreateSessionLogInput = z.infer<typeof createSessionLogSchema>;
 

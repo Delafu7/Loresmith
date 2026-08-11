@@ -109,4 +109,29 @@ describe('gm_notes redaction on mutation responses (integration, live DB, throwa
     const result = await applyHpDelta(pool, dmUserId, pcId, { delta: 0, tempDelta: 0 });
     expect((result.character as Record<string, unknown>).gm_notes).toBe(SECRET);
   });
+
+  // Phase 3 "NPC 'what they want' field" — npc_motivation reuses gm_notes'
+  // exact redaction rule (see redactGmNotes's own comment); this locks in
+  // both halves of that: a DM can write it, a non-DM write is silently
+  // dropped (not an error), and a non-DM read never sees it regardless of
+  // who wrote it.
+  describe('npc_motivation (Phase 3)', () => {
+    const MOTIVATION = 'Secretly wants the crown for themselves.';
+
+    it('a DM can set npc_motivation via updateCharacter, and it is redacted for the owning player on read', async () => {
+      const asDm = await updateCharacter(pool, dmUserId, pcId, { npcMotivation: MOTIVATION } as Parameters<typeof updateCharacter>[3]);
+      expect((asDm.character as Record<string, unknown>).npc_motivation).toBe(MOTIVATION);
+
+      const asPlayer = await applyHpDelta(pool, playerUserId, pcId, { delta: 0, tempDelta: 0 });
+      expect((asPlayer.character as Record<string, unknown>).npc_motivation).toBeUndefined();
+    });
+
+    it('a non-DM write to npc_motivation is silently dropped, not an error, and does not change the stored value', async () => {
+      await updateCharacter(pool, playerUserId, pcId, { npcMotivation: 'Player tries to plant a fake motivation.' } as Parameters<
+        typeof updateCharacter
+      >[3]);
+      const raw = await pool.query<{ npc_motivation: string | null }>(`SELECT npc_motivation FROM characters WHERE id = $1`, [pcId]);
+      expect(raw.rows[0]!.npc_motivation).toBe(MOTIVATION);
+    });
+  });
 });

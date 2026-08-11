@@ -61,6 +61,16 @@ export async function resolveReveals(
  * the true value, revealed with no override -> the true value untouched.
  * Call this on the raw row right before it's sent to a player-role response,
  * never on a DM-role one.
+ *
+ * Deliberately NOT routed through services/visibility.ts (Phase 1.1): every
+ * other mechanism there answers a boolean "can this viewer see this entity"
+ * question, keyed on role/ownership. This answers a different question —
+ * "what VALUE does this specific field show" (true value / DM's player-
+ * facing override / null) — and `state.revealed` is already the fully
+ * resolved per-field boolean by the time it gets here (resolveReveals having
+ * merged explicit toggles with campaign defaults). There's no role check
+ * left to consolidate; forcing this through resolveVisibility would just add
+ * an unused role parameter, not remove any duplicated logic.
  */
 export function redactEntityFields<T extends Record<string, unknown>>(row: T, revealState: Map<string, RevealState>): T {
   const result: Record<string, unknown> = { ...row };
@@ -159,6 +169,14 @@ export async function updateMonsterInstanceReveals(
            player_override = EXCLUDED.player_override,
            revealed_at = CASE WHEN EXCLUDED.revealed THEN now() ELSE entity_field_reveals.revealed_at END,
            revealed_by_user_id = EXCLUDED.revealed_by_user_id`,
+        [monsterInstanceId, field.fieldKey, field.revealed, field.playerOverride ?? null, actorId],
+      );
+      // Append-only history (Phase 1.2) — the upsert above overwrites
+      // revealed_at on every toggle, so this is the only place "was this
+      // hidden again after being revealed" can be answered from.
+      await client.query(
+        `INSERT INTO entity_field_reveal_events (monster_instance_id, field_key, revealed, player_override, actor_user_id)
+         VALUES ($1, $2, $3, $4, $5)`,
         [monsterInstanceId, field.fieldKey, field.revealed, field.playerOverride ?? null, actorId],
       );
     }

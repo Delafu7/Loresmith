@@ -53,6 +53,8 @@ export interface Campaign {
   // Automated Ability Score Rolls (Phase 3.8) — DM-togglable, whether a
   // player may re-roll their 4d6-drop-lowest set after seeing the results.
   allow_ability_reroll: boolean;
+  // Phase 4 "Bastion tracking" — DM opt-in (docs/rules/bastions.md §1).
+  bastions_enabled: boolean;
 }
 
 export interface CampaignMember {
@@ -141,6 +143,9 @@ export interface Character {
   // server strips it from any response served to a non-DM (redactGmNotes in
   // services/characters.ts), so a player's Character always has this null.
   gm_notes: string | null;
+  // Phase 3 "NPC 'what they want' field" — same DM-only redaction as
+  // gm_notes above (extended into the same redactGmNotes function).
+  npc_motivation: string | null;
   portrait_asset_id: string | null;
   created_at: string;
   updated_at: string;
@@ -178,6 +183,16 @@ export interface DamageTypeCatalog {
   index_key: string;
   name: string;
   description: string | null;
+}
+
+// Phase 2 "weapon mastery (2024)" — GET /catalog/weapon-mastery-properties.
+// A weapon's own mastery (if any) is items.properties.mastery, a plain
+// string matching one of these rows' index_key — see InventoryPanel.tsx.
+export interface WeaponMasteryPropertyCatalog {
+  id: string;
+  index_key: string;
+  name: string;
+  description: string;
 }
 
 export interface SkillCatalog {
@@ -247,6 +262,9 @@ export interface MonsterCatalogEntry {
   traits: unknown;
   actions: unknown;
   legendary_actions: unknown;
+  // Phase 2 "legendary actions per-round counters" — the budget per round;
+  // null for a creature with no legendary actions.
+  legendary_action_count: number | null;
   reactions: unknown;
   source: string | null;
   // Phase 3.2: homebrew bestiary entries (routes/monsters.ts's
@@ -287,6 +305,10 @@ export interface StatBlockEntry {
   damageType?: string;
   saveDc?: number;
   saveAbilityIndex?: string;
+  // Phase 2 "legendary actions per-round counters" — only meaningful on a
+  // legendaryActions entry; absent (not just falsy) defaults to 1 wherever
+  // this is read.
+  cost?: number;
 }
 
 // REFACTOR-PLAN.md §6 — a character's structured, selectable attack list
@@ -434,6 +456,14 @@ export interface Encounter {
    * cheap COUNT subquery added for MapSectionPage.tsx's focus-encounter
    * pick. Absent (undefined) from every other encounter-shaped response. */
   participant_count?: number;
+  // Phase 2 "lair actions (round-start trigger)" — DM-authored per-encounter,
+  // DM-only (redacted for a non-DM viewer; undefined, not null, for a player).
+  lair_actions: Array<{ name: string; description: string }> | null;
+  // Phase 3 "terrain/complications on encounters" — visible to every
+  // campaign member, unlike lair_actions above.
+  terrain_notes: string | null;
+  // Phase 3 "locations and factions".
+  location_id: string | null;
 }
 
 export interface CombatParticipant {
@@ -453,13 +483,23 @@ export interface EncounterWithParticipants extends Encounter {
   participants: CombatParticipant[];
 }
 
-// HP is always visible to every campaign member now (hide/reveal was
-// removed) — every participant carries the real numbers.
-export interface ParticipantHp {
-  hpCurrent: number;
-  hpMax: number;
-  hpTemp: number;
-}
+// Phase 2 "restore hp_visibility + banding" reversed the prior "HP always
+// visible" state — combat_participants.hp_visibility now decides what a
+// non-DM viewer's socket actually receives, computed server-side
+// (sockets/broadcast.ts's resolveHpForViewer). The first branch covers BOTH
+// "this is the DM's socket" (numbers always present, whatever the real
+// hpVisibility is) and "this is a player's socket and hpVisibility is
+// 'exact'" — a receiving component can't tell those two apart from the
+// payload alone and doesn't need to. `band`/nothing only ever arrive for a
+// player whose hpVisibility is 'banded'/'hidden'.
+// Deliberately the same vocabulary as HPBar.tsx's pre-existing status label
+// (Healthy/Injured/Bloodied/Critical/Down) — see domain/hpBanding.ts's
+// (server-side) comment for why.
+export type HpBand = 'healthy' | 'injured' | 'bloodied' | 'critical' | 'down';
+export type ParticipantHp =
+  | { hpVisibility: 'exact' | 'banded' | 'hidden'; hpCurrent: number; hpMax: number; hpTemp: number }
+  | { hpVisibility: 'banded'; band: HpBand }
+  | { hpVisibility: 'hidden' };
 
 // FULL_STATE_SYNC / snapshot participant row shape, enriched with name.
 export interface SnapshotParticipant {
@@ -511,6 +551,9 @@ export interface SnapshotParticipant {
   // own payload (a hidden row is omitted entirely, never sent redacted); only
   // meaningful to read for the DM view, to render the reveal/hide toggle.
   visibleToPlayers: boolean;
+  // Phase 2 "legendary actions per-round counters" — null for a
+  // non-legendary participant. Always visible (no redaction).
+  legendaryActionsRemaining: number | null;
 }
 
 // ---- Phase 2: spells/items/resources/effects (packages/server/src/routes/
@@ -632,6 +675,18 @@ export interface ResourcePool {
   current_value: number;
   max_value: number;
   recharge_on: RechargeOn;
+}
+
+// GET/PATCH /characters/:id/currency (Phase 1.5). No `id` — 1:1 with the
+// character, PK = character_id.
+export interface CharacterCurrency {
+  character_id: string;
+  cp: number;
+  sp: number;
+  ep: number;
+  gp: number;
+  pp: number;
+  updated_at: string;
 }
 
 export type EffectDurationType =
@@ -757,6 +812,9 @@ export interface Note {
   author_user_id: string;
   title: string;
   body: string;
+  // Phase 3 "rulings log" — a discriminator, not a second table (matches
+  // dice_rolls.roll_type/active_effects.source_type's precedent).
+  note_type: 'note' | 'ruling';
   created_at: string;
   updated_at: string;
 }
@@ -769,9 +827,147 @@ export interface SessionLog {
   session_number: number;
   title: string | null;
   played_at: string | null;
+  // DM-only; redacted (key omitted) for a non-DM viewer, same convention as
+  // Character.gm_notes above.
   recap: string | null;
+  player_recap: string | null;
+  // Phase 3 "locations and factions".
+  location_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Phase 3 "plot threads" — GET /campaigns/:id/plot-threads.
+// visibleToUserIds is DM-only bookkeeping (see services/plotThreads.ts's
+// listPlotThreads): present when the viewer is the DM, absent for a player
+// (who only ever receives threads they've already been granted).
+export interface PlotThread {
+  id: string;
+  campaign_id: string;
+  title: string;
+  description: string | null;
+  status: 'open' | 'resolved';
+  origin_session_id: string | null;
+  last_touched_at: string;
+  created_at: string;
+  visibleToUserIds?: string[];
+}
+
+// Phase 3 "locations and factions" — GET /campaigns/:id/locations and
+// /campaigns/:id/factions. All-member read, DM-only write (services/locations.ts,
+// services/factions.ts) — no redaction, so both shapes are identical and
+// carry no visibility bookkeeping like PlotThread's visibleToUserIds above.
+export interface Location {
+  id: string;
+  campaign_id: string;
+  name: string;
+  description: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Faction {
+  id: string;
+  campaign_id: string;
+  name: string;
+  description: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Phase 3 "campaign calendar" — GET /campaigns/:id/events. All-member read,
+// DM-only write. in_game_day is days since an arbitrary campaign epoch (day
+// 0 = "campaign start"), not a real-world date — see the migration comment
+// in services/campaignEvents.ts for why.
+export interface CampaignEvent {
+  id: string;
+  campaign_id: string;
+  in_game_day: number;
+  title: string;
+  description: string | null;
+  created_at: string;
+}
+
+// Phase 4 "Bastion tracking" — GET /catalog/bastion-facilities. Fixed
+// catalog, not homebrewable. See docs/rules/bastions.md.
+export interface BastionFacilityCatalogEntry {
+  id: string;
+  index_key: string;
+  name: string;
+  facility_type: 'basic' | 'special';
+  min_level: number | null;
+  prerequisite_text: string | null;
+  default_space: 'cramped' | 'roomy' | 'vast' | null;
+  hireling_count: number | null;
+  order_type: 'craft' | 'empower' | 'harvest' | 'recruit' | 'research' | 'trade' | null;
+  bp_die: string | null;
+  benefits: { summary: string } | null;
+  source_note: string;
+}
+
+export interface Bastion {
+  id: string;
+  campaign_id: string;
+  owner_character_id: string;
+  name: string | null;
+  combined_group_id: string | null;
+  bastion_points: number;
+  bastion_defenders: number;
+  status: 'active' | 'fallen' | 'abandoned';
+  turn_interval_days: number;
+  last_turn_in_game_day: number | null;
+  consecutive_turns_without_orders: number;
+  last_resurrection_character_level: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BastionFacility {
+  id: string;
+  bastion_id: string;
+  catalog_id: string;
+  space: 'cramped' | 'roomy' | 'vast';
+  status: 'operational' | 'shut_down';
+  config: Record<string, unknown> | null;
+  created_at: string;
+  catalog: BastionFacilityCatalogEntry;
+}
+
+export interface BastionWithFacilities extends Bastion {
+  facilities: BastionFacility[];
+}
+
+export type BastionOrderType = 'craft' | 'empower' | 'harvest' | 'recruit' | 'research' | 'trade';
+
+export interface BastionOrder {
+  id: string;
+  bastion_turn_id: string;
+  bastion_facility_id: string;
+  order_type: BastionOrderType;
+  paid_reroll_gp: number | null;
+  bp_die_roll: number;
+  bp_awarded: number;
+  result: { note?: string } | null;
+  created_at: string;
+}
+
+export type BastionEventKey =
+  | 'nothing' | 'attack' | 'lost_hirelings' | 'refugees' | 'friendly_visitors' | 'request_for_aid'
+  | 'honored_guest' | 'extraordinary_opportunity' | 'criminal_hireling' | 'magical_discovery';
+
+export interface BastionTurn {
+  id: string;
+  bastion_id: string;
+  turn_number: number;
+  in_game_day: number;
+  was_maintain: boolean;
+  event_roll: number | null;
+  event_key: BastionEventKey | null;
+  event_outcome: Record<string, unknown> | null;
+  created_at: string;
+  orders?: BastionOrder[]; // present only on the just-resolved response, not the list endpoint
 }
 
 // GET /me/dashboard (Phase 3.6) — the campaign_name join field only exists

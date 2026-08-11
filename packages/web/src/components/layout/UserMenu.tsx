@@ -75,6 +75,14 @@ export function UserMenu() {
           >
             {t('nav.myProfile')}
           </Link>
+          <Link
+            to="/about"
+            onClick={() => setOpen(false)}
+            role="menuitem"
+            className="block w-full rounded-md border border-stone-700 px-3 py-2 text-left text-stone-200 hover:bg-stone-800"
+          >
+            {t('nav.about')}
+          </Link>
           <button
             type="button"
             onClick={() => void logout()}

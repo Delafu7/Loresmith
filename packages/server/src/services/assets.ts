@@ -28,7 +28,11 @@ interface AssetRow {
 // visible_to_players (re-added by 1784269793666, a narrow exception to
 // 1784269769666's app-wide hide/reveal removal — see that migration's
 // header comment) is filtered here in SQL, never in JS, same discipline as
-// campaignBestiary.ts's listCampaignBestiary discovered-filter.
+// campaignBestiary.ts's listCampaignBestiary discovered-filter. Same rule as
+// services/visibility.ts's 'role_split' mode (Phase 1.1) — kept as a SQL
+// predicate rather than routed through that module, since list-endpoint
+// filtering belongs in the query (see diceRolls.ts's listDiceRolls for the
+// same reasoning), not a post-fetch JS filter.
 export async function listAssets(pool: Pool, campaignId: string, role: CampaignRole): Promise<AssetRow[]> {
   const values: unknown[] = [campaignId];
   let where = 'campaign_id = $1';

@@ -57,18 +57,37 @@ describe('session log CRUD (integration, live DB, throwaway fixtures)', () => {
     expect(created.session_number).toBe(1);
     expect(created.title).toBe('The Beginning');
 
-    const list = await listSessionLogs(pool, campaignId);
+    const list = await listSessionLogs(pool, campaignId, 'dm');
     expect(list).toHaveLength(1);
     expect(list[0]!.id).toBe(created.id);
 
-    const fetched = await getSessionLog(pool, campaignId, created.id);
+    const fetched = await getSessionLog(pool, campaignId, created.id, 'dm');
     expect(fetched.id).toBe(created.id);
 
     const updated = await updateSessionLog(pool, campaignId, created.id, { title: 'The Beginning (revised)' });
     expect(updated.title).toBe('The Beginning (revised)');
 
     await deleteSessionLog(pool, campaignId, created.id);
-    await expect(getSessionLog(pool, campaignId, created.id)).rejects.toThrow(AppError);
+    await expect(getSessionLog(pool, campaignId, created.id, 'dm')).rejects.toThrow(AppError);
+  });
+
+  it('redacts recap (but not player_recap) for a non-DM viewer (Phase 1.4)', async () => {
+    const created = await createSessionLog(pool, campaignId, {
+      sessionNumber: 20,
+      recap: 'Secret: the tavern keeper is a doppelganger.',
+      playerRecap: 'The party met in a tavern.',
+    });
+
+    const dmView = await getSessionLog(pool, campaignId, created.id, 'dm');
+    expect(dmView.recap).toBe('Secret: the tavern keeper is a doppelganger.');
+    expect(dmView.player_recap).toBe('The party met in a tavern.');
+
+    const playerView = await getSessionLog(pool, campaignId, created.id, 'player');
+    expect(playerView.recap).toBeUndefined();
+    expect(playerView.player_recap).toBe('The party met in a tavern.');
+
+    const playerList = await listSessionLogs(pool, campaignId, 'player');
+    expect(playerList.find((s) => s.id === created.id)?.recap).toBeUndefined();
   });
 
   it('rejects a duplicate session number with a clean AppError', async () => {

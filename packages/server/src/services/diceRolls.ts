@@ -9,6 +9,7 @@ import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireControllerOrDm, requireDm, requireNotSpectator, type CampaignRole } from './authz.js';
 import { fetchCharacterOrThrow } from './characters.js';
+import { resolveVisibilitySync } from './visibility.js';
 import type { CreateDiceRollInput, ListDiceRollsQuery } from '../schemas/diceRolls.js';
 
 export interface DiceRollRow {
@@ -48,11 +49,15 @@ export function isRollVisibleToViewer(
   viewerId: string,
   viewerRole: CampaignRole,
 ): boolean {
-  if (viewerRole === 'dm') return true;
-  if (roll.user_id === viewerId) return true;
-  if (roll.visibility === 'public') return true;
-  if (roll.visibility === 'private' && roll.visible_to_user_id === viewerId) return true;
-  return false;
+  return resolveVisibilitySync(
+    {
+      mode: roll.visibility === 'public' ? 'public' : roll.visibility === 'private' ? 'targeted_user' : 'gm_only',
+      ownerUserId: roll.user_id,
+      targetUserId: roll.visible_to_user_id,
+    },
+    viewerId,
+    viewerRole,
+  );
 }
 
 // Exported for services/characters.ts's/services/monsters.ts's applyDamage
