@@ -21,7 +21,21 @@
 import type { Pool } from 'pg';
 import { notFound } from '../middleware/errors.js';
 
-export const CAMPAIGN_EXPORT_FORMAT_VERSION = 1;
+// v2 (Phase 1.5): adds each character's currency row (character_currency).
+// v3 (Operational "campaign export completeness"): adds locations, factions,
+// plot_threads, and campaign_events — the four Phase 3 tables that existed
+// without an export/import path. Deliberately still excludes:
+//   - entity_visibility grants on plot_threads (Phase 1.3): those name
+//     specific user ids from the SOURCE campaign's membership, which mostly
+//     won't exist in an imported campaign's membership either — same reason
+//     a character's owner_user_id is dropped/nulled on import rather than
+//     carried across. The plot thread itself imports; who it's shared with
+//     doesn't.
+//   - encounters as reusable templates: the confirmed target shape (name +
+//     participant list + terrain/lair notes, no live combat_participants/
+//     active_effects state) needs its own encounter_templates table, which
+//     doesn't exist yet — that's a new feature, not an export-wiring gap.
+export const CAMPAIGN_EXPORT_FORMAT_VERSION = 3;
 
 type Row = Record<string, unknown>;
 
@@ -85,11 +99,20 @@ export async function exportCampaign(pool: Pool, campaignId: string) {
       ),
       skillProficiencies: await rows(pool, `SELECT * FROM character_skill_proficiencies WHERE character_id = $1`, [characterId]),
       resourcePools: await rows(pool, `SELECT * FROM character_resource_pools WHERE character_id = $1`, [characterId]),
+      currency: await rows(pool, `SELECT * FROM character_currency WHERE character_id = $1`, [characterId]),
     });
   }
 
   const sessionLog = await rows(pool, `SELECT * FROM sessions WHERE campaign_id = $1 ORDER BY session_number ASC`, [campaignId]);
   const notes = await rows(pool, `SELECT * FROM notes WHERE campaign_id = $1 ORDER BY created_at ASC`, [campaignId]);
+  const locations = await rows(pool, `SELECT * FROM locations WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
+  const factions = await rows(pool, `SELECT * FROM factions WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
+  const plotThreads = await rows(pool, `SELECT * FROM plot_threads WHERE campaign_id = $1 ORDER BY created_at ASC`, [campaignId]);
+  const campaignEvents = await rows(
+    pool,
+    `SELECT * FROM campaign_events WHERE campaign_id = $1 ORDER BY in_game_day ASC, created_at ASC`,
+    [campaignId],
+  );
 
   return {
     formatVersion: CAMPAIGN_EXPORT_FORMAT_VERSION,
@@ -101,5 +124,9 @@ export async function exportCampaign(pool: Pool, campaignId: string) {
     characters,
     sessionLog,
     notes,
+    locations,
+    factions,
+    plotThreads,
+    campaignEvents,
   };
 }

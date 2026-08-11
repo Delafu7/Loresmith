@@ -33,6 +33,11 @@ const characterRowSchema = z
     savingThrowProficiencies: z.array(compositeKeyRow).default([]),
     skillProficiencies: z.array(compositeKeyRow).default([]),
     resourcePools: z.array(genericRow).default([]),
+    // character_currency (Phase 1.5) — PK is character_id itself, no
+    // standalone `id` column, same shape as classes/proficiencies above.
+    // At most one row (1:1 with the character); older (v1) exports simply
+    // won't have this key, default([]) makes that a no-op import.
+    currency: z.array(compositeKeyRow).default([]),
   })
   .catchall(z.unknown());
 
@@ -64,5 +69,11 @@ export const campaignExportSchema = z.object({
   characters: z.array(characterRowSchema).default([]),
   sessionLog: z.array(genericRow).default([]),
   notes: z.array(genericRow).default([]),
+  // v3 (Operational "campaign export completeness") — default([]) makes
+  // these a no-op import for any pre-v3 export payload.
+  locations: z.array(genericRow).default([]),
+  factions: z.array(genericRow).default([]),
+  plotThreads: z.array(genericRow).default([]),
+  campaignEvents: z.array(genericRow).default([]),
 });
 export type CampaignExportData = z.infer<typeof campaignExportSchema>;

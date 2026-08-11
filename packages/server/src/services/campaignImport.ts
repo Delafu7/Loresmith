@@ -151,6 +151,23 @@ export async function importCampaign(pool: Pool, actorId: string, data: Campaign
       idMap.set(row.id as string, inserted.id as string);
     }
 
+    // ---- Locations & factions (no dependencies; inserted before session
+    // log/notes so their location_id fields below can remap instead of
+    // dropping the reference) ----
+    for (const row of data.locations) {
+      const inserted = await insertRow(client, 'locations', row, {
+        omit: new Set(['id', 'campaign_id', 'created_at', 'updated_at']),
+        overrides: { campaign_id: newCampaignId },
+      });
+      idMap.set(row.id as string, inserted.id as string);
+    }
+    for (const row of data.factions) {
+      await insertRow(client, 'factions', row, {
+        omit: new Set(['id', 'campaign_id', 'created_at', 'updated_at']),
+        overrides: { campaign_id: newCampaignId },
+      });
+    }
+
     // ---- Homebrew catalog: tables with no cross-homebrew FK first ----
     for (const row of data.homebrewCatalog.alignments) await insertHomebrewCatalogRow(client, 'alignments', row, newCampaignId, idMap);
     for (const row of data.homebrewCatalog.languages) await insertHomebrewCatalogRow(client, 'languages', row, newCampaignId, idMap);
@@ -187,7 +204,7 @@ export async function importCampaign(pool: Pool, actorId: string, data: Campaign
 
     // ---- Characters + every sub-resource table ----
     for (const character of data.characters) {
-      const { classes, items, attacks, spells, savingThrowProficiencies, skillProficiencies, resourcePools, ...characterRow } =
+      const { classes, items, attacks, spells, savingThrowProficiencies, skillProficiencies, resourcePools, currency, ...characterRow } =
         character;
 
       // Imported characters — PCs and NPCs alike — always land unassigned.
@@ -263,23 +280,67 @@ export async function importCampaign(pool: Pool, actorId: string, data: Campaign
           overrides: { character_id: newCharacterId },
         });
       }
+      // At most one row (1:1, PK = character_id) — absent on a v1 export
+      // (schemas/campaignExport.ts defaults it to []), nothing to insert.
+      for (const row of currency as Row[]) {
+        await insertRow(client, 'character_currency', row, {
+          omit: new Set(['character_id']),
+          overrides: { character_id: newCharacterId },
+        });
+      }
     }
 
     // ---- Session log ----
     for (const row of data.sessionLog) {
+      // location_id (Phase 3 "locations and factions") now remaps against
+      // the locations already inserted above (v3 export/import); a null
+      // value or a pre-v3 export (no locations section) passes through
+      // remapId unchanged, same as any other id not in the map.
       const inserted = await insertRow(client, 'sessions', row, {
         omit: new Set(['id', 'campaign_id', 'created_at', 'updated_at']),
         overrides: { campaign_id: newCampaignId },
+        remap: { location_id: (v) => remapId(idMap, v) },
       });
       idMap.set(row.id as string, inserted.id as string);
     }
 
-    // ---- Notes (may reference an imported character and/or session) ----
+    // ---- Notes (may reference an imported character, session, and/or location) ----
     for (const row of data.notes) {
+      // search_vector (Phase 3 "full-text search on notes") is a GENERATED
+      // ALWAYS column — Postgres rejects an explicit INSERT into it, same
+      // reason duplicateNote (services/notes.ts) omits it. The exported row
+      // carries it (a plain SELECT * at export time), so it must be dropped
+      // here rather than at export — the export payload is otherwise meant
+      // to be close-to-raw.
       await insertRow(client, 'notes', row, {
-        omit: new Set(['id', 'campaign_id', 'author_user_id', 'created_at', 'updated_at']),
+        omit: new Set(['id', 'campaign_id', 'author_user_id', 'created_at', 'updated_at', 'search_vector']),
         overrides: { campaign_id: newCampaignId, author_user_id: actorId },
-        remap: { character_id: (v) => remapId(idMap, v), session_id: (v) => remapId(idMap, v) },
+        remap: {
+          character_id: (v) => remapId(idMap, v),
+          session_id: (v) => remapId(idMap, v),
+          location_id: (v) => remapId(idMap, v),
+        },
+      });
+    }
+
+    // ---- Plot threads (may reference an imported session) ----
+    for (const row of data.plotThreads) {
+      // entity_visibility grants aren't exported/imported (see
+      // campaignExport.ts's format-version comment) — a thread lands DM-only
+      // until the new campaign's DM re-shares it, same as how an imported
+      // PC lands unassigned rather than auto-bound to a stale player.
+      await insertRow(client, 'plot_threads', row, {
+        omit: new Set(['id', 'campaign_id', 'created_at']),
+        overrides: { campaign_id: newCampaignId },
+        remap: { origin_session_id: (v) => remapId(idMap, v) },
+      });
+    }
+
+    // ---- Campaign calendar events (no dependencies) ----
+    for (const row of data.campaignEvents) {
+      await insertRow(client, 'campaign_events', row, {
+        omit: new Set(['id', 'campaign_id', 'created_at']),
+        overrides: { campaign_id: newCampaignId },
       });
     }
 

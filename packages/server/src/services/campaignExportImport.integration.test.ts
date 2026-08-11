@@ -37,6 +37,7 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
   let backgroundId: string;
   let characterId: string;
   let sessionId: string;
+  let locationId: string;
 
   const createdCampaignIds: string[] = [];
 
@@ -171,16 +172,36 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
       [characterId],
     );
 
-    const sessionRes = await pool.query<{ id: string }>(
-      `INSERT INTO sessions (campaign_id, session_number, title, recap) VALUES ($1,1,'Session One','It happened.') RETURNING id`,
+    const locationRes = await pool.query<{ id: string }>(
+      `INSERT INTO locations (campaign_id, name, description) VALUES ($1,'Export Test Location','A test place.') RETURNING id`,
       [campaignId],
+    );
+    locationId = locationRes.rows[0]!.id;
+
+    await pool.query(`INSERT INTO factions (campaign_id, name, description) VALUES ($1,'Export Test Faction','A test group.')`, [
+      campaignId,
+    ]);
+
+    const sessionRes = await pool.query<{ id: string }>(
+      `INSERT INTO sessions (campaign_id, session_number, title, recap, location_id) VALUES ($1,1,'Session One','It happened.',$2) RETURNING id`,
+      [campaignId, locationId],
     );
     sessionId = sessionRes.rows[0]!.id;
 
     await pool.query(
-      `INSERT INTO notes (campaign_id, author_user_id, title, body, character_id, session_id)
-       VALUES ($1,$2,'Export Test Note','Body text.',$3,$4)`,
-      [campaignId, dmUserId, characterId, sessionId],
+      `INSERT INTO notes (campaign_id, author_user_id, title, body, character_id, session_id, location_id)
+       VALUES ($1,$2,'Export Test Note','Body text.',$3,$4,$5)`,
+      [campaignId, dmUserId, characterId, sessionId, locationId],
+    );
+
+    await pool.query(
+      `INSERT INTO plot_threads (campaign_id, title, description, origin_session_id) VALUES ($1,'Export Test Thread','A hook.',$2)`,
+      [campaignId, sessionId],
+    );
+
+    await pool.query(
+      `INSERT INTO campaign_events (campaign_id, in_game_day, title, description) VALUES ($1,5,'Export Test Event','Something happened.')`,
+      [campaignId],
     );
   });
 
@@ -193,7 +214,7 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
 
   it('exports every section with cross-references pointing at rows within the export', async () => {
     const data = await exportCampaign(pool, campaignId);
-    expect(data.formatVersion).toBe(1);
+    expect(data.formatVersion).toBe(3);
     expect(data.campaign.name).toBe('Export Source Campaign');
     expect(data.homebrewCatalog.races).toHaveLength(1);
     expect(data.homebrewCatalog.subraces[0]!.race_id).toBe(raceId);
@@ -205,6 +226,16 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
     expect(data.characters[0]!.classes).toHaveLength(1);
     expect(data.notes[0]!.character_id).toBe(characterId);
     expect(data.notes[0]!.session_id).toBe(sessionId);
+    expect(data.notes[0]!.location_id).toBe(locationId);
+    expect(data.sessionLog[0]!.location_id).toBe(locationId);
+    expect(data.locations).toHaveLength(1);
+    expect(data.locations[0]!.name).toBe('Export Test Location');
+    expect(data.factions).toHaveLength(1);
+    expect(data.factions[0]!.name).toBe('Export Test Faction');
+    expect(data.plotThreads).toHaveLength(1);
+    expect(data.plotThreads[0]!.origin_session_id).toBe(sessionId);
+    expect(data.campaignEvents).toHaveLength(1);
+    expect(data.campaignEvents[0]!.in_game_day).toBe(5);
 
     // Round-trips through the same Zod schema importCampaign validates against.
     expect(() => campaignExportSchema.parse(data)).not.toThrow();
@@ -288,10 +319,28 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
     expect(newSession.id).not.toBe(sessionId);
     expect(newSession.recap).toBe('It happened.');
 
+    const newLocation = (await pool.query(`SELECT * FROM locations WHERE campaign_id = $1`, [newCampaignId])).rows[0];
+    expect(newLocation.id).not.toBe(locationId);
+    expect(newLocation.name).toBe('Export Test Location');
+
+    const newFaction = (await pool.query(`SELECT * FROM factions WHERE campaign_id = $1`, [newCampaignId])).rows[0];
+    expect(newFaction.name).toBe('Export Test Faction');
+
+    expect(newSession.location_id).toBe(newLocation.id); // remapped to the NEW location, not the old one
+
     const newNote = (await pool.query(`SELECT * FROM notes WHERE campaign_id = $1`, [newCampaignId])).rows[0];
     expect(newNote.character_id).toBe(newCharacter.id);
     expect(newNote.session_id).toBe(newSession.id);
+    expect(newNote.location_id).toBe(newLocation.id);
     expect(newNote.author_user_id).toBe(importerUserId);
+
+    const newPlotThread = (await pool.query(`SELECT * FROM plot_threads WHERE campaign_id = $1`, [newCampaignId])).rows[0];
+    expect(newPlotThread.title).toBe('Export Test Thread');
+    expect(newPlotThread.origin_session_id).toBe(newSession.id); // remapped to the NEW session
+
+    const newEvent = (await pool.query(`SELECT * FROM campaign_events WHERE campaign_id = $1`, [newCampaignId])).rows[0];
+    expect(newEvent.in_game_day).toBe(5);
+    expect(newEvent.title).toBe('Export Test Event');
 
     // Source campaign is completely untouched by the import.
     const sourceRace = (await pool.query(`SELECT * FROM races WHERE id = $1`, [raceId])).rows[0];
