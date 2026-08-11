@@ -128,10 +128,12 @@ export async function seedCatalog(client: Client): Promise<void> {
   await seedConditions(client);
   const { schoolMap, damageTypeMap } = await seedMagicSchoolsAndDamageTypes(client);
   await seedSpells(client, schoolMap, abilityMap, classMap);
+  await seedWeaponMasteryProperties(client);
   await seedItems(client, damageTypeMap);
   await seedClassMulticlassPrerequisites(client, abilityMap, classMap);
   await seedMulticlassSpellSlotTable(client);
   await seedEffectDefinitions(client);
+  await seedBastionFacilityCatalog(client);
 
   console.log('[catalog] Done.');
   void raceMap; // used by demo seed via re-query, kept for clarity of return chain
@@ -495,6 +497,29 @@ const DAMAGE_TYPES: Array<{ index: string; name: string; description: string }> 
   { index: 'thunder', name: 'Thunder', description: 'A concussive burst of sound, such as the effect of a thunderwave spell, deals thunder damage.' },
 ];
 
+// Phase 2 "weapon mastery (2024)" — unlike MAGIC_SCHOOLS/DAMAGE_TYPES just
+// below, this one DOES have real dnd5e-srd skill data backing it
+// (5e-SRD-Weapon-Mastery-Properties.json, 2024 only — the mechanic doesn't
+// exist in 2014), so it's read the same way races/feats/spells are rather
+// than hardcoded.
+interface WeaponMasteryPropertyJson {
+  index: string;
+  name: string;
+  description: string;
+}
+
+async function seedWeaponMasteryProperties(client: Client): Promise<void> {
+  const rows = loadJson<WeaponMasteryPropertyJson>('2024', '5e-SRD-Weapon-Mastery-Properties.json');
+  for (const r of rows) {
+    await client.query(
+      `INSERT INTO weapon_mastery_properties (index_key, name, description) VALUES ($1, $2, $3)
+       ON CONFLICT (index_key) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description`,
+      [r.index, r.name, r.description],
+    );
+  }
+  console.log(`  weapon mastery properties: ${rows.length}`);
+}
+
 async function seedMagicSchoolsAndDamageTypes(
   client: Client,
 ): Promise<{ schoolMap: Map<string, number>; damageTypeMap: Map<string, number> }> {
@@ -698,12 +723,21 @@ interface ItemSeed {
   description: string;
 }
 
+// Phase 2 "weapon mastery (2024)" — `properties.mastery` (a
+// weapon_mastery_properties.index_key) added to all 5 seeded weapons below.
+// UNLIKE every other field in this file, this mapping is NOT sourced from
+// the dnd5e-srd skill's JSON data (which has the 8 mastery properties
+// themselves but no per-weapon assignment table) — it's transcribed from
+// this assistant's training-data recollection of the 2024 PHB's weapon
+// table and has NOT been checked against the physical/PDF book. Verify
+// dagger/shortsword/longsword/mace/shortbow's mastery against the real
+// table before relying on it for anything more than "probably right."
 const ITEMS: ItemSeed[] = [
-  { slug: 'dagger', name: 'Dagger', itemType: 'weapon', rarity: 'mundane', weightLb: 1, costCp: 200, damageDice: '1d4', damageType: 'piercing', properties: { finesse: true, light: true, thrown: { normal: 20, long: 60 } }, description: 'A simple, easily concealed blade.' },
-  { slug: 'shortsword', name: 'Shortsword', itemType: 'weapon', rarity: 'mundane', weightLb: 2, costCp: 1000, damageDice: '1d6', damageType: 'piercing', properties: { finesse: true, light: true }, description: 'A light, quick martial melee weapon.' },
-  { slug: 'longsword', name: 'Longsword', itemType: 'weapon', rarity: 'mundane', weightLb: 3, costCp: 1500, damageDice: '1d8', damageType: 'slashing', properties: { versatile: '1d10' }, description: 'A versatile martial melee weapon; can be wielded with one or two hands.' },
-  { slug: 'mace', name: 'Mace', itemType: 'weapon', rarity: 'mundane', weightLb: 4, costCp: 500, damageDice: '1d6', damageType: 'bludgeoning', properties: {}, description: 'A simple bludgeoning weapon favored by clerics who forgo edged weapons.' },
-  { slug: 'shortbow', name: 'Shortbow', itemType: 'weapon', rarity: 'mundane', weightLb: 2, costCp: 2500, damageDice: '1d6', damageType: 'piercing', properties: { ammunition: { normal: 80, long: 320 }, two_handed: true }, description: 'A simple ranged weapon requiring arrows.' },
+  { slug: 'dagger', name: 'Dagger', itemType: 'weapon', rarity: 'mundane', weightLb: 1, costCp: 200, damageDice: '1d4', damageType: 'piercing', properties: { finesse: true, light: true, thrown: { normal: 20, long: 60 }, mastery: 'nick' }, description: 'A simple, easily concealed blade.' },
+  { slug: 'shortsword', name: 'Shortsword', itemType: 'weapon', rarity: 'mundane', weightLb: 2, costCp: 1000, damageDice: '1d6', damageType: 'piercing', properties: { finesse: true, light: true, mastery: 'vex' }, description: 'A light, quick martial melee weapon.' },
+  { slug: 'longsword', name: 'Longsword', itemType: 'weapon', rarity: 'mundane', weightLb: 3, costCp: 1500, damageDice: '1d8', damageType: 'slashing', properties: { versatile: '1d10', mastery: 'sap' }, description: 'A versatile martial melee weapon; can be wielded with one or two hands.' },
+  { slug: 'mace', name: 'Mace', itemType: 'weapon', rarity: 'mundane', weightLb: 4, costCp: 500, damageDice: '1d6', damageType: 'bludgeoning', properties: { mastery: 'sap' }, description: 'A simple bludgeoning weapon favored by clerics who forgo edged weapons.' },
+  { slug: 'shortbow', name: 'Shortbow', itemType: 'weapon', rarity: 'mundane', weightLb: 2, costCp: 2500, damageDice: '1d6', damageType: 'piercing', properties: { ammunition: { normal: 80, long: 320 }, two_handed: true, mastery: 'slow' }, description: 'A simple ranged weapon requiring arrows.' },
   // armorClassBase is set on ALL FIVE rows below (not just Shield) —
   // computeArmorClass (services/armorClass.ts) reads armor_class_base
   // unconditionally, so light/medium armor needs a real numeric base too,
@@ -958,4 +992,359 @@ async function seedEffectDefinitions(client: Client): Promise<void> {
   }
 
   console.log(`  effect_definitions: ${count}`);
+}
+
+// Phase 4 "Bastion tracking" sub-phase 1 (bastion_facility_catalog) --
+// hand-transcribed, same as MAGIC_SCHOOLS/DAMAGE_TYPES above, since Bastions
+// have no dnd5e-srd skill data backing them at all (paid 2024 DMG content,
+// no free SRD equivalent). Source: WotC's free "Unearthed Arcana 2023:
+// Bastions and Cantrips" playtest PDF, corroborated against the shipped
+// final book only where explicitly noted below -- see docs/rules/
+// bastions.md for the full sourcing writeup, per-row confidence caveats,
+// and the reasoning behind every schema/data choice made here. Every row
+// gets the UA-sourced disclaimer via the column default UNLESS overridden
+// (only Smithy's prerequisite is independently confirmed final).
+const DEFAULT_BASTION_SOURCE_NOTE =
+  'UA 2023 playtest text; not independently re-confirmed against final 2024 DMG numeric details -- see docs/rules/bastions.md';
+const SMITHY_SOURCE_NOTE =
+  'Prerequisite independently confirmed unchanged in the final 2024 DMG via D&D Beyond\'s Nov 2024 DMG preview post -- see docs/rules/bastions.md. Other fields (space/hirelings/BP die/benefits) remain UA-sourced only.';
+
+interface BastionFacilitySeed {
+  indexKey: string;
+  name: string;
+  facilityType: 'basic' | 'special';
+  minLevel: number | null;
+  prerequisiteText: string | null;
+  defaultSpace: 'cramped' | 'roomy' | 'vast' | null;
+  hirelingCount: number | null;
+  orderType: 'craft' | 'empower' | 'harvest' | 'recruit' | 'research' | 'trade' | null;
+  bpDie: string | null;
+  benefits: Record<string, unknown> | null;
+  sourceNote?: string;
+}
+
+const HOLY_FOCUS_PREREQ = 'Ability to use a Holy Symbol or Druidic Focus as a Spellcasting Focus';
+const ARCANE_FOCUS_PREREQ = 'Ability to use an Arcane Focus as a Spellcasting Focus';
+const FIGHTING_STYLE_OR_UNARMORED_PREREQ = 'Fighting Style feature or Unarmored Defense feature';
+const EXPERTISE_PREREQ = 'Expertise in a skill';
+
+const BASTION_BASIC_FACILITIES: BastionFacilitySeed[] = [
+  'Bedroom', 'Courtyard', 'Dining Room', 'Kitchen', 'Parlor', 'Storage', 'Washroom',
+].map((name) => ({
+  indexKey: `bastion_${name.toLowerCase().replace(/\s+/g, '_')}`,
+  name,
+  facilityType: 'basic',
+  minLevel: null,
+  prerequisiteText: null,
+  defaultSpace: null, // any size may be built/enlarged -- see the shared cost table in docs/rules/bastions.md §2
+  hirelingCount: null,
+  orderType: null,
+  bpDie: null,
+  benefits: {
+    summary:
+      'Flavor/roleplay only -- no orders, no Bastion Points. Any number allowed; built at any size (Cramped/Roomy/Vast) ' +
+      'and enlargeable later. GP cost and time to add/enlarge are the SAME shared table across every basic facility type ' +
+      '(not modeled per-row here since it does not vary by type) -- see docs/rules/bastions.md §2 for the table.',
+  },
+}));
+
+const BASTION_SPECIAL_FACILITIES: BastionFacilitySeed[] = [
+  {
+    indexKey: 'bastion_arcane_study', name: 'Arcane Study', facilityType: 'special', minLevel: 5,
+    prerequisiteText: ARCANE_FOCUS_PREREQ, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'craft', bpDie: '1d4',
+    benefits: { summary: 'Long-rest at the Bastion -> cast Identify for free, 1x/7 days. Craft: an Arcane Focus, or a blank spellbook.' },
+  },
+  {
+    indexKey: 'bastion_armory', name: 'Armory', facilityType: 'special', minLevel: 5,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'trade', bpDie: '1d4',
+    benefits: {
+      summary:
+        'Trade: stock the Armory (100 GP + 100 GP/defender, halved with a Smithy) -> while stocked, roll d8 instead of ' +
+        'd6 per die for defender losses in an Attack event; stock is consumed after any event.',
+    },
+  },
+  {
+    indexKey: 'bastion_barracks', name: 'Barracks', facilityType: 'special', minLevel: 5,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 0, orderType: 'recruit', bpDie: '1d4',
+    benefits: {
+      summary:
+        'Houses up to 12 Bastion Defenders. Recruit: +4 defenders at no GP cost (if not already full). Multiple Barracks allowed.',
+    },
+  },
+  {
+    indexKey: 'bastion_garden', name: 'Garden', facilityType: 'special', minLevel: 5,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'harvest', bpDie: '1d4',
+    benefits: {
+      summary:
+        'Choose a type at creation (Decorative/Food/Herb/Poison), re-typeable via a 21-day hireling task. Harvest yields: ' +
+        'Decorative -> 10 bouquets/perfume (5 GP ea.); Food -> 50 GP of produce; Herb -> a Potion of Healing; Poison -> ' +
+        '2 vials Antitoxin or 1 vial Basic Poison. Enlarge to Vast (2,000 GP) = 2 gardens\' worth of yield + 1 more hireling.',
+    },
+  },
+  {
+    indexKey: 'bastion_library', name: 'Library', facilityType: 'special', minLevel: 5,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'research', bpDie: '1d4',
+    benefits: { summary: 'Research: pick any topic, 7 days -> learn 3 accurate facts (DM-determined).' },
+  },
+  {
+    indexKey: 'bastion_sanctuary', name: 'Sanctuary', facilityType: 'special', minLevel: 5,
+    prerequisiteText: HOLY_FOCUS_PREREQ, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'craft', bpDie: '1d4',
+    benefits: {
+      summary:
+        'Long-rest at the Bastion -> cast Healing Word for free, 1x/7 days, at spell level = half character level ' +
+        '(rounded down). Craft: a Sacred Focus (Druidic wooden staff or Holy Symbol).',
+    },
+  },
+  {
+    indexKey: 'bastion_smithy', name: 'Smithy', facilityType: 'special', minLevel: 5,
+    prerequisiteText: FIGHTING_STYLE_OR_UNARMORED_PREREQ, defaultSpace: 'roomy', hirelingCount: 2, orderType: 'craft', bpDie: '1d4',
+    benefits: {
+      summary:
+        'Craft: ammo/Simple weapons at half price, armor/adventuring gear at half price, or Martial weapons at half ' +
+        'price -- plus masterwork versions (become permanent +1 items once Magic Weapon is cast on them and ends).',
+    },
+    sourceNote: SMITHY_SOURCE_NOTE,
+  },
+  {
+    indexKey: 'bastion_storehouse', name: 'Storehouse', facilityType: 'special', minLevel: 5,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'trade', bpDie: '1d4',
+    benefits: {
+      summary:
+        'Trade: procure up to 500 GP of goods (up to 2,000 GP at level 9, up to 5,000 GP at level 13), or sell stored ' +
+        'goods for +10% over standard price (+20% at level 9, +50% at level 13, +100% at level 17).',
+    },
+  },
+  {
+    indexKey: 'bastion_workshop', name: 'Workshop', facilityType: 'special', minLevel: 5,
+    prerequisiteText: EXPERTISE_PREREQ, defaultSpace: 'roomy', hirelingCount: 2, orderType: 'craft', bpDie: '1d4',
+    benefits: {
+      summary:
+        'Short rest at the Bastion -> Heroic Advantage, 1x/long rest. Craft: a Tiny nonmagical object using one of 8 ' +
+        'named tool proficiencies, free unless worth 10 GP or more (then half price).',
+    },
+  },
+  {
+    indexKey: 'bastion_gaming_hall', name: 'Gaming Hall', facilityType: 'special', minLevel: 9,
+    prerequisiteText: null, defaultSpace: 'vast', hirelingCount: 4, orderType: 'trade', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Trade -> gambling den for 7 days, then roll d100 on a Gambling Den Winnings table (payouts scale from 3d6 GP ' +
+        'up to 10d6x10 GP).',
+    },
+  },
+  {
+    indexKey: 'bastion_greenhouse', name: 'Greenhouse', facilityType: 'special', minLevel: 9,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'harvest', bpDie: '1d6',
+    benefits: {
+      summary:
+        'One plant grows 3 magical fruits/day; eating one grants a Lesser Restoration effect; unpicked fruit loses its ' +
+        'magic after 24 hours.',
+    },
+  },
+  {
+    indexKey: 'bastion_laboratory', name: 'Laboratory', facilityType: 'special', minLevel: 9,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'craft', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Craft options: a Liquid Concoction (Acid/Alchemist\'s Fire/Ink, half price), a rare Poison, or a magic Potion ' +
+        '(cost/min-level scales by rarity; a hireling\'s effective crafting level is half the OWNING CHARACTER\'S level ' +
+        'rounded up, but the rarity\'s min-level gate is checked against the owning character\'s own level, not the ' +
+        'halved hireling stand-in -- easy to implement backwards, see docs/rules/bastions.md §2 Edge cases).',
+    },
+  },
+  {
+    indexKey: 'bastion_sacristy', name: 'Sacristy', facilityType: 'special', minLevel: 9,
+    prerequisiteText: HOLY_FOCUS_PREREQ, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'craft', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Short rest at the Bastion -> regain one expended spell slot of 5th level or lower, 1x/long rest. Craft: Holy ' +
+        'Water (scalable damage by extra GP spent, up to +5d6) or a temporary Sacred Item (7-day duration, from a fixed ' +
+        'list: Pearl of Power, Periapt of Wound Closure, Ring of Water Walking, Sending Stones, Staff of the Adder, ' +
+        'Staff of the Python, Wand of Magic Detection).',
+    },
+  },
+  {
+    indexKey: 'bastion_scriptorium', name: 'Scriptorium', facilityType: 'special', minLevel: 9,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'craft', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Craft: a Book Replica, up to 50 copies of paperwork (1 GP/copy, distributable within 10 miles), or a magic ' +
+        'Scroll (cost/min-level scales by rarity; same hireling-level-vs-owner-level gating caveat as Laboratory above).',
+    },
+  },
+  {
+    indexKey: 'bastion_stable', name: 'Stable', facilityType: 'special', minLevel: 9,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'trade', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Comes with 1 Riding Horse/Camel + 2 Ponies/Mules; houses 3 Large-equivalent animals (enlargeable to 6 as Vast, ' +
+        '2,000 GP). Trade: buy/sell mounts; sale profit +20% over standard (+50% at level 13, +100% at level 17).',
+    },
+  },
+  {
+    indexKey: 'bastion_teleportation_circle', name: 'Teleportation Circle', facilityType: 'special', minLevel: 9,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 0, orderType: 'recruit', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Permanent teleportation circle. Recruit -> invite a friendly Mage (or Archmage at owner level 17+); 50% chance ' +
+        'they accept and stay 7 days, can be asked to cast one spell (Wizard spell of 4th level or lower for a Mage, ' +
+        '8th or lower for an Archmage; Material costs paid by the owner). Guest does not defend and leaves if the ' +
+        'Bastion is attacked.',
+    },
+  },
+  {
+    indexKey: 'bastion_theater', name: 'Theater', facilityType: 'special', minLevel: 9,
+    prerequisiteText: null, defaultSpace: 'vast', hirelingCount: 4, orderType: 'empower', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Empower -> 14-day rehearsal + an indefinite 7-plus-day performance run. PCs can serve as Composer/Writer, ' +
+        'Conductor/Director, or Performer. DC 15 CHA (Performance) check per contributor at rehearsal end; majority ' +
+        'success -> each contributor gains a Theater die (d6, upgrading to d8 at level 13, d10 at level 17) usable ' +
+        'once to boost a check/attack/save.',
+    },
+  },
+  {
+    indexKey: 'bastion_training_area', name: 'Training Area', facilityType: 'special', minLevel: 9,
+    prerequisiteText: `${EXPERTISE_PREREQ}, ${FIGHTING_STYLE_OR_UNARMORED_PREREQ}`,
+    defaultSpace: 'vast', hirelingCount: 4, orderType: 'empower', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Choose 1 Expert Trainer (Battle/Skills/Tools/Unarmed Combat Expert) from a table; swappable each turn. ' +
+        'Empower -> 7 days of training (8h/day) grants the trainer\'s benefit for 7 days to any character who trained ' +
+        'the whole time.',
+    },
+  },
+  {
+    indexKey: 'bastion_trophy_room', name: 'Trophy Room', facilityType: 'special', minLevel: 9,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'research', bpDie: '1d6',
+    benefits: {
+      summary:
+        'Research: Lore (any topic, 3 accurate facts) or a Trinket Trophy (50% chance of a single-use trinket that ' +
+        'casts one spell from a fixed list -- Clairvoyance, Death Ward, Find Traps, Locate Creature, Magic Weapon, ' +
+        'Remove Curse, Speak with Dead -- with no components required).',
+    },
+  },
+  {
+    indexKey: 'bastion_archive', name: 'Archive', facilityType: 'special', minLevel: 13,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'research', bpDie: '1d8',
+    benefits: {
+      summary:
+        'Holds 1 reference book (advantage on a specific Intelligence skill, per book). Research -> a Legend Lore-' +
+        'equivalent info-gathering result in 7 days.',
+    },
+  },
+  {
+    indexKey: 'bastion_meditation_chamber', name: 'Meditation Chamber', facilityType: 'special', minLevel: 13,
+    prerequisiteText: null, defaultSpace: 'cramped', hirelingCount: 0, orderType: 'empower', bpDie: '1d8',
+    benefits: {
+      summary:
+        'Empower -> can issue one EXTRA order to a different special facility this turn, even one already ordered -- ' +
+        'the one documented exception to "one order per facility per turn." Fortify Self: 7 continuous days meditating ' +
+        '(cannot leave) -> advantage on 2 random saving throws (Fortified Saves d6 table) for the next 7 days.',
+    },
+  },
+  {
+    indexKey: 'bastion_menagerie', name: 'Menagerie', facilityType: 'special', minLevel: 13,
+    prerequisiteText: null, defaultSpace: 'vast', hirelingCount: 2, orderType: 'recruit', bpDie: '1d8',
+    benefits: {
+      summary:
+        'Houses 4 Large creatures (or Medium/Small equivalents). Recruit -> add a creature from a Menagerie Creatures ' +
+        'table (named beasts with GP costs) or by CR (0=50 GP, 1/4=250, 1/2=500, up to at least CR 3=3,500 GP -- table ' +
+        'may extend further; not fully captured in this transcription, do not extrapolate beyond CR 3). Housed ' +
+        'creatures count as Bastion Defenders unless the player opts them out.',
+    },
+  },
+  {
+    indexKey: 'bastion_observatory', name: 'Observatory', facilityType: 'special', minLevel: 13,
+    prerequisiteText: 'Ability to use a Spellcasting Focus', defaultSpace: 'roomy', hirelingCount: 1, orderType: 'empower', bpDie: '1d8',
+    benefits: {
+      summary:
+        'Long rest at the Bastion -> cast Contact Other Plane for free, 1x/7 days. Empower -> 7 nights of stargazing, ' +
+        'then roll a die: even = nothing, odd = grants a random supernatural Charm (Darkvision/Heroism/Vitality) to ' +
+        'self or an ally on the same plane.',
+    },
+  },
+  {
+    indexKey: 'bastion_pub', name: 'Pub', facilityType: 'special', minLevel: 13,
+    prerequisiteText: null, defaultSpace: 'roomy', hirelingCount: 1, orderType: 'research', bpDie: '1d8',
+    benefits: {
+      summary:
+        'Research -> Information Gathering: spy-network reports on events within 10 miles, plus the location/movement ' +
+        'of any familiar creature within 50 miles, over 7 days. Pub Special: 1 magical beverage on tap (a Pub Special ' +
+        'table -- e.g. an Enlarge effect, Spider Climb, extended Darkvision, Necrotic resistance, Frightened immunity ' +
+        '-- 24h duration, swappable between turns). Enlarge to Vast (2,000 GP) -> 2 beverages on tap + 3 more ' +
+        'hirelings (4 total).',
+    },
+  },
+  {
+    indexKey: 'bastion_reliquary', name: 'Reliquary', facilityType: 'special', minLevel: 13,
+    prerequisiteText: HOLY_FOCUS_PREREQ, defaultSpace: 'cramped', hirelingCount: 1, orderType: 'harvest', bpDie: '1d8',
+    benefits: {
+      summary:
+        'Long rest at the Bastion -> cast Greater Restoration for free, 1x/7 days. Harvest -> craft a single-use Tiny ' +
+        'talisman usable once as a Spellcasting Focus that ignores Material components (even costly ones up to 1,000 GP).',
+    },
+  },
+  {
+    indexKey: 'bastion_demiplane', name: 'Demiplane', facilityType: 'special', minLevel: 17,
+    prerequisiteText: ARCANE_FOCUS_PREREQ, defaultSpace: 'vast', hirelingCount: 0, orderType: 'empower', bpDie: '1d10',
+    benefits: {
+      summary:
+        'Extradimensional room, scry-proof. Empower (7 days) -> temp HP = 5x level after a long rest there. ' +
+        'Fabrication: Magic action, 1x/long rest, create a nonmagical object of 5-ft cube or smaller from mundane materials.',
+    },
+  },
+  {
+    indexKey: 'bastion_guildhall', name: 'Guildhall', facilityType: 'special', minLevel: 17,
+    prerequisiteText: EXPERTISE_PREREQ, defaultSpace: 'vast', hirelingCount: 0, orderType: 'recruit', bpDie: '1d10',
+    benefits: {
+      summary:
+        'Comes with a roughly 50-member guild of a chosen type (Sample Guilds table: Adventurers\', Bakers\', ' +
+        'Brewers\', Cartographers\', Entertainers\', Jewelers\', Masons\', Shipbuilders\', Thieves\'). Recruit -> ' +
+        'assign the guild a themed task (guild-specific).',
+    },
+  },
+  {
+    indexKey: 'bastion_sanctum', name: 'Sanctum', facilityType: 'special', minLevel: 17,
+    prerequisiteText: HOLY_FOCUS_PREREQ, defaultSpace: 'roomy', hirelingCount: 4, orderType: 'empower', bpDie: '1d10',
+    benefits: {
+      summary:
+        'Long rest at the Bastion -> cast Heal for free, 1x/7 days. Empower -> daily rites grant temp HP = character ' +
+        'level to self or a chosen ally after each long rest, for 7 days. Sanctum Recall: Word of Recall can target ' +
+        'the Sanctum even overriding a previously chosen destination; the arriving creature also gets a Heal effect.',
+    },
+  },
+  {
+    indexKey: 'bastion_war_room', name: 'War Room', facilityType: 'special', minLevel: 17,
+    prerequisiteText: FIGHTING_STYLE_OR_UNARMORED_PREREQ, defaultSpace: 'vast', hirelingCount: null, orderType: 'recruit', bpDie: '1d10',
+    benefits: {
+      summary:
+        'Hireling count varies: comes with 2 Lieutenants (Veteran stat block, owner\'s alignment), growing to a max of ' +
+        '10 via Recruit. Lieutenants do not count as Bastion Defenders, but each housed Lieutenant reduces attack-' +
+        'event defender-loss dice by 1. Recruit: gain a Lieutenant (max 10), or muster Soldiers (each Lieutenant ' +
+        'recruits 100 Guards, or 20 mounted, fed at 1 GP/day/unit, disbands if unfed or unled).',
+    },
+  },
+];
+
+const BASTION_FACILITY_CATALOG_SEED: BastionFacilitySeed[] = [...BASTION_BASIC_FACILITIES, ...BASTION_SPECIAL_FACILITIES];
+
+async function seedBastionFacilityCatalog(client: Client): Promise<void> {
+  for (const f of BASTION_FACILITY_CATALOG_SEED) {
+    await client.query(
+      `INSERT INTO bastion_facility_catalog
+         (index_key, name, facility_type, min_level, prerequisite_text, default_space, hireling_count, order_type, bp_die, benefits, source_note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (index_key) DO UPDATE SET
+         name = EXCLUDED.name, facility_type = EXCLUDED.facility_type, min_level = EXCLUDED.min_level,
+         prerequisite_text = EXCLUDED.prerequisite_text, default_space = EXCLUDED.default_space,
+         hireling_count = EXCLUDED.hireling_count, order_type = EXCLUDED.order_type, bp_die = EXCLUDED.bp_die,
+         benefits = EXCLUDED.benefits, source_note = EXCLUDED.source_note`,
+      [
+        f.indexKey, f.name, f.facilityType, f.minLevel, f.prerequisiteText, f.defaultSpace, f.hirelingCount,
+        f.orderType, f.bpDie, f.benefits ? JSON.stringify(f.benefits) : null, f.sourceNote ?? DEFAULT_BASTION_SOURCE_NOTE,
+      ],
+    );
+  }
+  console.log(`  bastion_facility_catalog: ${BASTION_FACILITY_CATALOG_SEED.length}`);
 }

@@ -60,6 +60,16 @@ catalogRouter.get('/damage-types', async (req, res) => {
   res.json({ damageTypes: await catalogService.listDamageTypes(pool, query) });
 });
 
+catalogRouter.get('/weapon-mastery-properties', async (_req, res) => {
+  res.json({ weaponMasteryProperties: await catalogService.listWeaponMasteryProperties(pool) });
+});
+
+// Phase 4 "Bastion tracking" sub-phase 1 — see services/catalog.ts's
+// listBastionFacilityCatalog and docs/rules/bastions.md.
+catalogRouter.get('/bastion-facilities', async (_req, res) => {
+  res.json({ bastionFacilities: await catalogService.listBastionFacilityCatalog(pool) });
+});
+
 catalogRouter.get('/races', async (req, res) => {
   const query = editionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
