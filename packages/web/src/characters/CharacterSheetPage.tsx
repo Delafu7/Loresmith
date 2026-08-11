@@ -34,6 +34,7 @@ import { SpellcastingPanel } from './SpellcastingPanel';
 import { InventoryPanel } from './InventoryPanel';
 import { CharacterAttacksPanel } from './CharacterAttacksPanel';
 import { ResourcePoolPanel } from './ResourcePoolPanel';
+import { CurrencyPanel } from './CurrencyPanel';
 import { CharacterEffectsPanel } from './CharacterEffectsPanel';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { proficiencyBonusForLevel } from '../lib/dnd-math';
@@ -162,6 +163,22 @@ export function CharacterSheetPage() {
   }, [character?.gm_notes, editingGmNotes]);
   const gmNotesMutation = useMutation({
     mutationFn: (gmNotes: string) => api.patch<{ character: Character }>(`/characters/${characterId}`, { gmNotes }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['character', characterId], data);
+    },
+  });
+
+  // Phase 3 "NPC 'what they want' field" — same isolated-mutation/edit-guard
+  // shape as gmNotes above, and the same reason: must not get silently
+  // clobbered by an unrelated sibling mutation refreshing the character cache
+  // mid-edit.
+  const [npcMotivationDraft, setNpcMotivationDraft] = useState('');
+  const [editingNpcMotivation, setEditingNpcMotivation] = useState(false);
+  useEffect(() => {
+    if (!editingNpcMotivation) setNpcMotivationDraft(character?.npc_motivation ?? '');
+  }, [character?.npc_motivation, editingNpcMotivation]);
+  const npcMotivationMutation = useMutation({
+    mutationFn: (npcMotivation: string) => api.patch<{ character: Character }>(`/characters/${characterId}`, { npcMotivation }),
     onSuccess: (data) => {
       queryClient.setQueryData(['character', characterId], data);
     },
@@ -514,6 +531,8 @@ export function CharacterSheetPage() {
         armorClassMode={character.armor_class_mode}
       />
 
+      <CurrencyPanel characterId={characterId} editable={editable} />
+
       <ResourcePoolPanel characterId={characterId} campaignId={campaignId} editable={canAct} isDm={role === 'dm'} />
 
       <CharacterEffectsPanel characterId={characterId} campaignId={campaignId} isDm={role === 'dm'} />
@@ -548,6 +567,25 @@ export function CharacterSheetPage() {
             className="w-full rounded-md bg-stone-800 border border-violet-900/60 px-3 py-2 text-stone-100 text-sm"
           />
           {gmNotesMutation.isError && <ErrorBanner message={errorMessage(gmNotesMutation.error)} />}
+        </section>
+      )}
+
+      {role === 'dm' && !character.is_pc && (
+        <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 border border-violet-900/40">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-violet-400 mb-2">{t('characters.sheet.npcMotivationTitle')}</h3>
+          <p className="text-xs text-stone-500 mb-2">{t('characters.sheet.npcMotivationHint')}</p>
+          <textarea
+            rows={2}
+            value={npcMotivationDraft}
+            onFocus={() => setEditingNpcMotivation(true)}
+            onChange={(e) => setNpcMotivationDraft(e.target.value)}
+            onBlur={() => {
+              setEditingNpcMotivation(false);
+              if (npcMotivationDraft !== (character.npc_motivation ?? '')) npcMotivationMutation.mutate(npcMotivationDraft);
+            }}
+            className="w-full rounded-md bg-stone-800 border border-violet-900/60 px-3 py-2 text-stone-100 text-sm"
+          />
+          {npcMotivationMutation.isError && <ErrorBanner message={errorMessage(npcMotivationMutation.error)} />}
         </section>
       )}
     </div>

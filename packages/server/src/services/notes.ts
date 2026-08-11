@@ -29,6 +29,23 @@ export async function getNote(pool: Pool, campaignId: string, noteId: string, _r
   return fetchNoteScoped(pool, campaignId, noteId);
 }
 
+// Phase 3 "full-text search on notes" — plainto_tsquery (not to_tsquery)
+// since this takes raw user input, never a caller-constructed tsquery
+// expression; ts_rank orders best-match-first rather than the plain
+// created_at-DESC every other notes list uses. Same "no role-based
+// redaction" note as listNotes above — notes.visible_to_players no longer
+// exists, every campaign member sees every note.
+export async function searchNotes(pool: Pool, campaignId: string, query: string) {
+  const result = await pool.query(
+    `SELECT *, ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank
+     FROM notes
+     WHERE campaign_id = $1 AND search_vector @@ plainto_tsquery('english', $2)
+     ORDER BY rank DESC, created_at DESC`,
+    [campaignId, query],
+  );
+  return result.rows;
+}
+
 export async function createNote(
   pool: Pool,
   campaignId: string,
@@ -37,10 +54,13 @@ export async function createNote(
   input: CreateNoteInput,
 ) {
   const result = await pool.query(
-    `INSERT INTO notes (campaign_id, session_id, character_id, author_user_id, title, body)
-     VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO notes (campaign_id, session_id, character_id, author_user_id, title, body, note_type, location_id)
+     VALUES ($1,$2,$3,$4,$5,$6, COALESCE($7, 'note'), $8)
      RETURNING *`,
-    [campaignId, input.sessionId ?? null, input.characterId ?? null, actorId, input.title, input.body],
+    [
+      campaignId, input.sessionId ?? null, input.characterId ?? null, actorId, input.title, input.body,
+      input.noteType ?? null, input.locationId ?? null,
+    ],
   );
   return result.rows[0];
 }
@@ -62,7 +82,8 @@ export async function updateNote(
   const values: unknown[] = [];
   let i = 1;
   const columnByKey: Record<string, string> = {
-    title: 'title', body: 'body', sessionId: 'session_id', characterId: 'character_id',
+    title: 'title', body: 'body', sessionId: 'session_id', characterId: 'character_id', noteType: 'note_type',
+    locationId: 'location_id',
   };
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined) continue;
@@ -104,7 +125,11 @@ export async function duplicateNote(
     throw new AppError('FORBIDDEN_NOT_OWNER', 'You can only duplicate notes you authored');
   }
 
-  const omit = new Set(['id', 'created_at', 'updated_at']);
+  // search_vector (Phase 3 "full-text search on notes") is a GENERATED
+  // ALWAYS column — Postgres rejects an explicit INSERT into it, so it must
+  // be omitted here the same way id/timestamps are, not copied like every
+  // other column.
+  const omit = new Set(['id', 'created_at', 'updated_at', 'search_vector']);
   const columns: string[] = [];
   const values: unknown[] = [];
   for (const [col, val] of Object.entries(source)) {

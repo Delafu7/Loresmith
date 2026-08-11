@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Note } from '../lib/types';
+import type { Character, Location, Note } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
@@ -16,10 +16,19 @@ import { useLocale } from '../i18n/LocaleContext';
 interface NoteFormValues {
   title: string;
   body: string;
+  // Phase 3 "note-character linking UI" — empty string means unlinked
+  // (notes.character_id NULL), same "empty = unset" convention as every
+  // other optional select in this app.
+  characterId: string;
+  // Phase 3 "locations and factions" — same "empty = unset" convention as
+  // characterId above.
+  locationId: string;
+  // Phase 3 "rulings log".
+  noteType: 'note' | 'ruling';
 }
 
 function emptyNoteForm(): NoteFormValues {
-  return { title: '', body: '' };
+  return { title: '', body: '', characterId: '', locationId: '', noteType: 'note' };
 }
 
 export function NotesPage() {
@@ -35,12 +44,50 @@ export function NotesPage() {
     queryFn: () => api.get<{ notes: Note[] }>(`/campaigns/${campaignId}/notes`),
   });
 
+  // Phase 3 "full-text search on notes" — a separate query rather than a
+  // client-side filter of notesQuery's page, so search actually reaches
+  // notes.search_vector server-side (title+body full-text, stemmed) instead
+  // of a substring match over whatever page happened to already be loaded.
+  const [searchTerm, setSearchTerm] = useState('');
+  const trimmedSearchTerm = searchTerm.trim();
+  const searchQuery = useQuery({
+    queryKey: ['notes', campaignId, 'search', trimmedSearchTerm],
+    queryFn: () => api.get<{ notes: Note[] }>(`/campaigns/${campaignId}/notes/search?q=${encodeURIComponent(trimmedSearchTerm)}`),
+    enabled: trimmedSearchTerm.length > 0,
+  });
+  const isSearching = trimmedSearchTerm.length > 0;
+  const [rulingsOnly, setRulingsOnly] = useState(false);
+  const displayedNotes = (isSearching ? (searchQuery.data?.notes ?? []) : (notesQuery.data?.notes ?? [])).filter(
+    (n) => !rulingsOnly || n.note_type === 'ruling',
+  );
+
+  const charactersQuery = useQuery({
+    queryKey: ['characters', campaignId],
+    queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${campaignId}/characters`),
+  });
+  const characters = charactersQuery.data?.characters ?? [];
+  const characterName = (characterId: string | null) => characters.find((c) => c.id === characterId)?.name;
+
+  const locationsQuery = useQuery({
+    queryKey: ['locations', campaignId],
+    queryFn: () => api.get<{ locations: Location[] }>(`/campaigns/${campaignId}/locations`),
+  });
+  const locations = locationsQuery.data?.locations ?? [];
+  const locationName = (locationId: string | null) => locations.find((l) => l.id === locationId)?.name;
+
   // Draft-persisted create form (see lib/useFormDraft.ts) so a half-written
   // note survives an accidental navigation away.
   const [form, setForm, clearDraft] = useFormDraft(`draft:note:new:${campaignId}`, emptyNoteForm);
 
   const createMutation = useMutation({
-    mutationFn: () => api.post<{ note: Note }>(`/campaigns/${campaignId}/notes`, { title: form.title, body: form.body }),
+    mutationFn: () =>
+      api.post<{ note: Note }>(`/campaigns/${campaignId}/notes`, {
+        title: form.title,
+        body: form.body,
+        characterId: form.characterId || undefined,
+        locationId: form.locationId || undefined,
+        noteType: form.noteType,
+      }),
     onSuccess: () => {
       setForm(emptyNoteForm());
       clearDraft();
@@ -82,6 +129,47 @@ export function NotesPage() {
           <Field label={t('notes.bodyLabel')} htmlFor="noteBody">
             <Textarea id="noteBody" required rows={5} value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} />
           </Field>
+          <Field label={t('notes.linkedCharacterLabel')} htmlFor="noteCharacter">
+            <select
+              id="noteCharacter"
+              value={form.characterId}
+              onChange={(e) => setForm((f) => ({ ...f, characterId: e.target.value }))}
+              className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+            >
+              <option value="">{t('notes.linkedCharacterNone')}</option>
+              {characters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t('notes.linkedLocationLabel')} htmlFor="noteLocation">
+            <select
+              id="noteLocation"
+              value={form.locationId}
+              onChange={(e) => setForm((f) => ({ ...f, locationId: e.target.value }))}
+              className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+            >
+              <option value="">{t('notes.linkedLocationNone')}</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t('notes.noteTypeLabel')} htmlFor="noteType">
+            <select
+              id="noteType"
+              value={form.noteType}
+              onChange={(e) => setForm((f) => ({ ...f, noteType: e.target.value as 'note' | 'ruling' }))}
+              className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+            >
+              <option value="note">{t('notes.noteTypeNote')}</option>
+              <option value="ruling">{t('notes.noteTypeRuling')}</option>
+            </select>
+          </Field>
           {createMutation.isError && <ErrorBanner message={errorMessage(createMutation.error)} />}
           <Button type="submit" variant="primary" disabled={createMutation.isPending}>
             {createMutation.isPending ? t('notes.saving') : t('notes.saveNote')}
@@ -89,22 +177,55 @@ export function NotesPage() {
         </Card>
       )}
 
-      {notesQuery.isLoading && <Loading />}
-      {notesQuery.isError && <ErrorBanner message={errorMessage(notesQuery.error)} />}
-      {notesQuery.data && notesQuery.data.notes.length === 0 && <EmptyState message={t('notes.noNotes')} />}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-[12rem]">
+          <Input
+            type="search"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={t('notes.searchPlaceholder')}
+            aria-label={t('notes.searchPlaceholder')}
+          />
+        </div>
+        <label className="flex items-center gap-1.5 text-xs text-stone-400">
+          <input type="checkbox" checked={rulingsOnly} onChange={(e) => setRulingsOnly(e.target.checked)} />
+          {t('notes.rulingsOnlyFilter')}
+        </label>
+      </div>
+
+      {isSearching ? (
+        <>
+          {searchQuery.isLoading && <Loading />}
+          {searchQuery.isError && <ErrorBanner message={errorMessage(searchQuery.error)} />}
+          {searchQuery.data && searchQuery.data.notes.length === 0 && <EmptyState message={t('notes.searchNoResults')} />}
+        </>
+      ) : (
+        <>
+          {notesQuery.isLoading && <Loading />}
+          {notesQuery.isError && <ErrorBanner message={errorMessage(notesQuery.error)} />}
+          {notesQuery.data && notesQuery.data.notes.length === 0 && <EmptyState message={t('notes.noNotes')} />}
+        </>
+      )}
 
       {(deleteMutation.isError || duplicateMutation.isError) && (
         <ErrorBanner message={errorMessage((deleteMutation.error ?? duplicateMutation.error) as unknown)} />
       )}
 
       <ul className="space-y-3">
-        {notesQuery.data?.notes.map((note) => {
+        {displayedNotes.map((note) => {
           const canModify = role === 'dm' || note.author_user_id === user?.id;
           return (
             <li key={note.id}>
               <Card>
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-medium text-stone-100">{note.title}</h3>
+                  <h3 className="font-medium text-stone-100 flex items-center gap-2">
+                    {note.title}
+                    {note.note_type === 'ruling' && (
+                      <span className="rounded-full border border-amber-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+                        {t('notes.noteTypeRuling')}
+                      </span>
+                    )}
+                  </h3>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {canModify && (
                       <button
@@ -137,6 +258,12 @@ export function NotesPage() {
                   </div>
                 </div>
                 <p className="text-sm text-stone-300 whitespace-pre-wrap">{note.body}</p>
+                {note.character_id && characterName(note.character_id) && (
+                  <p className="text-xs text-amber-400">{t('notes.linkedCharacterTag', { name: characterName(note.character_id)! })}</p>
+                )}
+                {note.location_id && locationName(note.location_id) && (
+                  <p className="text-xs text-amber-400">{t('notes.linkedLocationTag', { name: locationName(note.location_id)! })}</p>
+                )}
                 <p className="text-xs text-stone-500">
                   {t('notes.createdUpdated', { created: formatTimestamp(note.created_at), updated: formatTimestamp(note.updated_at) })}
                 </p>
@@ -146,7 +273,13 @@ export function NotesPage() {
         })}
       </ul>
 
-      <NoteEditModal campaignId={campaignId} note={editingNote} onClose={() => setEditingNote(null)} />
+      <NoteEditModal
+        campaignId={campaignId}
+        note={editingNote}
+        characters={characters}
+        locations={locations}
+        onClose={() => setEditingNote(null)}
+      />
     </div>
   );
 }
@@ -154,17 +287,41 @@ export function NotesPage() {
 // Note-only edit modal (Modal + PATCH-on-submit, mirroring
 // CatalogEditorPage.tsx's CatalogEntryModal convention) — kept as a small
 // inline sub-component rather than a generic abstraction, since Notes only
-// ever edits two fields. Split into a hook-free wrapper + the actual form
-// (same shape as CatalogEntryModal/CatalogEntryForm) so the form only ever
-// MOUNTS once a real note is being edited — otherwise a single long-lived
-// component instance would keep whatever draft key/values it first mounted
-// with even after `note` changes underneath it.
-function NoteEditModal({ campaignId, note, onClose }: { campaignId: string; note: Note | null; onClose: () => void }) {
+// ever edits a handful of fields. Split into a hook-free wrapper + the
+// actual form (same shape as CatalogEntryModal/CatalogEntryForm) so the
+// form only ever MOUNTS once a real note is being edited — otherwise a
+// single long-lived component instance would keep whatever draft key/values
+// it first mounted with even after `note` changes underneath it.
+function NoteEditModal({
+  campaignId,
+  note,
+  characters,
+  locations,
+  onClose,
+}: {
+  campaignId: string;
+  note: Note | null;
+  characters: Character[];
+  locations: Location[];
+  onClose: () => void;
+}) {
   if (note === null) return null;
-  return <NoteEditForm campaignId={campaignId} note={note} onClose={onClose} />;
+  return <NoteEditForm campaignId={campaignId} note={note} characters={characters} locations={locations} onClose={onClose} />;
 }
 
-function NoteEditForm({ campaignId, note, onClose }: { campaignId: string; note: Note; onClose: () => void }) {
+function NoteEditForm({
+  campaignId,
+  note,
+  characters,
+  locations,
+  onClose,
+}: {
+  campaignId: string;
+  note: Note;
+  characters: Character[];
+  locations: Location[];
+  onClose: () => void;
+}) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
 
@@ -177,10 +334,23 @@ function NoteEditForm({ campaignId, note, onClose }: { campaignId: string; note:
   // already gives the same "resumed draft wins, otherwise hydrate from the
   // note" behavior with no extra hydrate-effect needed.
   const draftKey = `draft:note:edit:${note.id}`;
-  const [form, setForm, clearDraft] = useFormDraft<NoteFormValues>(draftKey, () => ({ title: note.title, body: note.body }));
+  const [form, setForm, clearDraft] = useFormDraft<NoteFormValues>(draftKey, () => ({
+    title: note.title,
+    body: note.body,
+    characterId: note.character_id ?? '',
+    locationId: note.location_id ?? '',
+    noteType: note.note_type,
+  }));
 
   const updateMutation = useMutation({
-    mutationFn: () => api.patch<{ note: Note }>(`/campaigns/${campaignId}/notes/${note.id}`, { title: form.title, body: form.body }),
+    mutationFn: () =>
+      api.patch<{ note: Note }>(`/campaigns/${campaignId}/notes/${note.id}`, {
+        title: form.title,
+        body: form.body,
+        characterId: form.characterId || null,
+        locationId: form.locationId || null,
+        noteType: form.noteType,
+      }),
     onSuccess: () => {
       clearDraft();
       void queryClient.invalidateQueries({ queryKey: ['notes', campaignId] });
@@ -208,6 +378,47 @@ function NoteEditForm({ campaignId, note, onClose }: { campaignId: string; note:
             value={form.body}
             onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
           />
+        </Field>
+        <Field label={t('notes.linkedCharacterLabel')} htmlFor="noteEditCharacter">
+          <select
+            id="noteEditCharacter"
+            value={form.characterId}
+            onChange={(e) => setForm((f) => ({ ...f, characterId: e.target.value }))}
+            className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+          >
+            <option value="">{t('notes.linkedCharacterNone')}</option>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label={t('notes.linkedLocationLabel')} htmlFor="noteEditLocation">
+          <select
+            id="noteEditLocation"
+            value={form.locationId}
+            onChange={(e) => setForm((f) => ({ ...f, locationId: e.target.value }))}
+            className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+          >
+            <option value="">{t('notes.linkedLocationNone')}</option>
+            {locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label={t('notes.noteTypeLabel')} htmlFor="noteEditType">
+          <select
+            id="noteEditType"
+            value={form.noteType}
+            onChange={(e) => setForm((f) => ({ ...f, noteType: e.target.value as 'note' | 'ruling' }))}
+            className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+          >
+            <option value="note">{t('notes.noteTypeNote')}</option>
+            <option value="ruling">{t('notes.noteTypeRuling')}</option>
+          </select>
         </Field>
         {updateMutation.isError && <ErrorBanner message={errorMessage(updateMutation.error)} />}
         <div className="flex gap-2">

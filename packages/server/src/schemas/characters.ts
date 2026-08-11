@@ -47,6 +47,9 @@ const sharedCharacterShape = {
   // insertCharacterRow's INSERT column list, so it can't be set at create
   // time by anyone — only via a later PATCH).
   gmNotes: z.string().max(20000).optional().nullable(),
+  // Phase 3 "NPC 'what they want' field" — DM-only, same drop-from-non-DM-
+  // patch/never-in-create-INSERT treatment as gmNotes above.
+  npcMotivation: z.string().max(2000).optional().nullable(),
 };
 
 export const createCharacterSchema = z.object(sharedCharacterShape).extend({

@@ -208,9 +208,12 @@ export async function getSessionLog(pool: Pool, campaignId: string, sessionId: s
 export async function createSessionLog(pool: Pool, campaignId: string, input: CreateSessionLogInput) {
   try {
     const result = await pool.query(
-      `INSERT INTO sessions (campaign_id, session_number, title, played_at, recap, player_recap)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [campaignId, input.sessionNumber, input.title ?? null, input.playedAt ?? null, input.recap ?? null, input.playerRecap ?? null],
+      `INSERT INTO sessions (campaign_id, session_number, title, played_at, recap, player_recap, location_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        campaignId, input.sessionNumber, input.title ?? null, input.playedAt ?? null, input.recap ?? null,
+        input.playerRecap ?? null, input.locationId ?? null,
+      ],
     );
     // DM-only response (route requires role 'dm' to create) — no redaction needed.
     return result.rows[0];
@@ -232,6 +235,7 @@ export async function updateSessionLog(pool: Pool, campaignId: string, sessionId
   if (input.playedAt !== undefined) { sets.push(`played_at = $${i++}`); values.push(input.playedAt); }
   if (input.recap !== undefined) { sets.push(`recap = $${i++}`); values.push(input.recap); }
   if (input.playerRecap !== undefined) { sets.push(`player_recap = $${i++}`); values.push(input.playerRecap); }
+  if (input.locationId !== undefined) { sets.push(`location_id = $${i++}`); values.push(input.locationId); }
 
   if (sets.length === 0) return getSessionLog(pool, campaignId, sessionId, 'dm');
 

@@ -44,6 +44,8 @@ export const createSessionLogSchema = z.object({
   // Player-facing version of recap — DM-only recap is redacted for
   // non-DM viewers (services/campaigns.ts's redactSessionRecap).
   playerRecap: z.string().max(20000).optional().nullable(),
+  // Phase 3 "locations and factions".
+  locationId: z.string().uuid().optional().nullable(),
 });
 export type CreateSessionLogInput = z.infer<typeof createSessionLogSchema>;
 

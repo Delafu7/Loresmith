@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
-import { createNoteSchema, updateNoteSchema } from '../schemas/notes.js';
+import { createNoteSchema, searchNotesQuerySchema, updateNoteSchema } from '../schemas/notes.js';
 import * as notesService from '../services/notes.js';
 
 // Mounted at /campaigns/:id/notes
@@ -11,6 +11,17 @@ notesRouter.use(requireAuth, requireCampaignMember());
 
 notesRouter.get('/', async (req, res) => {
   const notes = await notesService.listNotes(pool, req.campaignId!, req.campaignRole!);
+  res.json({ notes });
+});
+
+// Phase 3 "full-text search on notes" — registered before GET /:noteId so
+// Express matches this literal path first (same "register the literal
+// route before the :param one" discipline as GET /my-live in
+// routes/encounters.ts — otherwise /:noteId would swallow "search" as a
+// note id and hit a Postgres uuid-cast error instead of a clean route match).
+notesRouter.get('/search', async (req, res) => {
+  const query = searchNotesQuerySchema.parse(req.query);
+  const notes = await notesService.searchNotes(pool, req.campaignId!, query.q);
   res.json({ notes });
 });
 

@@ -22,6 +22,9 @@ import { ItemRepositoryPage } from './items/ItemRepositoryPage';
 import { LiveMapPage } from './encounters/LiveMapPage';
 import { EncountersPage } from './encounters/EncountersPage';
 import { NotesPage } from './notes/NotesPage';
+import { PlotThreadsPage } from './notes/PlotThreadsPage';
+import { LocationsFactionsPage } from './notes/LocationsFactionsPage';
+import { CampaignCalendarPage } from './notes/CampaignCalendarPage';
 import { SessionLogPage } from './sessions/SessionLogPage';
 import { DiceRollHistoryPage } from './dice/DiceRollHistoryPage';
 import { BestiaryLayout } from './bestiary/BestiaryLayout';
@@ -117,6 +120,9 @@ function App() {
                       combat view); see CampaignShell.tsx's nav item comment. */}
                   <Route path="session-log" element={<SessionLogPage />} />
                   <Route path="notes" element={<NotesPage />} />
+                  <Route path="plot-threads" element={<PlotThreadsPage />} />
+                  <Route path="locations" element={<LocationsFactionsPage />} />
+                  <Route path="calendar" element={<CampaignCalendarPage />} />
                   <Route path="dice-rolls" element={<DiceRollHistoryPage />} />
                   <Route path="assets" element={<AssetsPage />} />
                   <Route path="reference" element={<CampaignReferencePage />} />

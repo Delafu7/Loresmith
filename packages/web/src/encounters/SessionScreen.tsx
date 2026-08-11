@@ -24,6 +24,7 @@ import { InitiativeStrip } from './InitiativeStrip';
 import { CombatLogPanel } from './CombatLogPanel';
 import { ConcentrationCheckPrompt } from './ConcentrationCheckPrompt';
 import { LairActionBanner, LairActionsEditor, TerrainNotesPanel } from './LairActions';
+import { XpBudgetPanel } from './XpBudgetPanel';
 import { DispositionBadge, DispositionHistoryPanel } from './DispositionPanel';
 import { ParticipantSheetPanel } from './ParticipantSheetPanel';
 import { SessionOverlayPanel } from './SessionOverlayPanel';
@@ -179,6 +180,7 @@ export function SessionScreen({
   const managePanel = isDm ? (
     <>
       <TerrainNotesPanel campaignId={campaignId} encounter={encounter} isDm />
+      <XpBudgetPanel campaignId={campaignId} encounterId={encounter.id} />
       <LairActionsEditor campaignId={campaignId} encounter={encounter} />
       <BattleModeDmPanel
         encounterId={encounter.id}

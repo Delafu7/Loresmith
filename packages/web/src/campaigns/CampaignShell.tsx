@@ -29,6 +29,9 @@ const SECTION_LABEL_KEYS: Record<string, TranslationKey> = {
   session: 'nav.session',
   'session-log': 'nav.sessionLog',
   notes: 'nav.notes',
+  'plot-threads': 'nav.plotThreads',
+  locations: 'nav.locationsFactions',
+  calendar: 'nav.campaignCalendar',
   'dice-rolls': 'nav.diceRolls',
   assets: 'nav.assets',
   reference: 'nav.reference',
@@ -195,6 +198,20 @@ export function CampaignShell() {
               recap log; only the write actions inside the page are DM-only. */}
           <NavItem to="session-log" onClick={onNavigate}>{t('nav.sessionLog')}</NavItem>
           <NavItem to="notes" onClick={onNavigate}>{t('nav.notes')}</NavItem>
+          {/* Phase 3 "plot threads" — visible to every member (a player only
+              ever sees threads the DM has explicitly shared with them via
+              entity_visibility; the page itself hides the sharing controls
+              for a non-DM viewer, same "page hides its own DM section"
+              pattern as reference above). */}
+          <NavItem to="plot-threads" onClick={onNavigate}>{t('nav.plotThreads')}</NavItem>
+          {/* Phase 3 "locations and factions" — DM-authored world reference
+              data, visible to every member; write controls are hidden for a
+              non-DM viewer inside the page itself (same pattern as above). */}
+          <NavItem to="locations" onClick={onNavigate}>{t('nav.locationsFactions')}</NavItem>
+          {/* Phase 3 "campaign calendar" — a DM-entered timeline of in-world
+              events, visible to every member; write controls are hidden for
+              a non-DM viewer inside the page itself (same pattern as above). */}
+          <NavItem to="calendar" onClick={onNavigate}>{t('nav.campaignCalendar')}</NavItem>
           <NavItem to="dice-rolls" onClick={onNavigate}>{t('nav.diceRolls')}</NavItem>
           <NavItem to="assets" onClick={onNavigate}>{t('nav.assets')}</NavItem>
           {/* Iteration 4 — DM-only crucial-info notes + a coin-value table

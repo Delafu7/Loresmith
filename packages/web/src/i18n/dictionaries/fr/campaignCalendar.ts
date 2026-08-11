@@ -1,0 +1,17 @@
+export const campaignCalendar = {
+  title: 'Calendrier de campagne',
+  newEvent: '+ Nouvel événement',
+  cancel: 'Annuler',
+  dayLabel: 'Jour en jeu',
+  titleLabel: 'Titre',
+  descriptionLabel: 'Description',
+  saving: 'Enregistrement…',
+  saveEvent: "Enregistrer l'événement",
+  saveChanges: 'Enregistrer les modifications',
+  noEvents: 'Aucun événement enregistré pour le moment.',
+  dayTag: 'Jour {day}',
+  edit: 'Modifier',
+  delete: 'Supprimer',
+  deleteConfirm: 'Supprimer « {title} » ? Cette action est irréversible.',
+  editModalTitle: "Modifier l'événement",
+};
