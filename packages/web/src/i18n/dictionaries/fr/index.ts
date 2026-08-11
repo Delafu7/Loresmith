@@ -16,6 +16,7 @@ import { plotThreads } from './plotThreads.js';
 import { locationsFactions } from './locationsFactions.js';
 import { campaignCalendar } from './campaignCalendar.js';
 import { bastions } from './bastions.js';
+import { pwa } from './pwa.js';
 import { sessionLog } from './sessionLog.js';
 import { assets } from './assets.js';
 import { dice } from './dice.js';
@@ -37,7 +38,7 @@ import { about } from './about.js';
 
 export const fr = {
   common, login, register, dashboard, campaignDashboard, nav, hp, proficiency, effects, hpAdjust, upload,
-  campaigns, notes, plotThreads, locationsFactions, campaignCalendar, bastions, sessionLog, assets, dice, landing, characters,
+  campaigns, notes, plotThreads, locationsFactions, campaignCalendar, bastions, pwa, sessionLog, assets, dice, landing, characters,
   monsters, bestiary, campaignBestiary, statBlock, catalog, encounters, members, profile, items, mapSection, settings,
   reference, about,
 } satisfies typeof en;

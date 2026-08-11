@@ -1,12 +1,51 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import type { CampaignRole, Locale, Membership, TextSize, UiTheme, UnitSystem, User } from '../lib/types';
 import { getSocket } from '../lib/socket';
 
 export interface MeResponse {
   user: User;
   memberships: Membership[];
+}
+
+// Operational backlog item "Offline rules/stat-block lookup" — without
+// this, the offline-cached rules catalog (vite.config.ts's PWA plugin) was
+// unreachable in the one scenario it exists for: a returning user opens (or
+// reloads) the app while offline. React Query's in-memory cache doesn't
+// survive a reload, so `/auth/me` gets a genuine network failure on that
+// first fetch, and the app treated that identically to "not logged in" —
+// bouncing straight to the login screen before the cached catalog data ever
+// got a chance to render. Persisting the last confirmed session lets a
+// network FAILURE (offline) fall back to it, while a real 401 (session
+// actually expired/revoked) still logs the user out for real — see the
+// `ApiError` check in `meQuery.queryFn` below.
+const LAST_KNOWN_ME_KEY = 'loresmith:lastKnownMe';
+
+function readLastKnownMe(): MeResponse | null {
+  try {
+    const raw = localStorage.getItem(LAST_KNOWN_ME_KEY);
+    return raw ? (JSON.parse(raw) as MeResponse) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastKnownMe(data: MeResponse): void {
+  try {
+    localStorage.setItem(LAST_KNOWN_ME_KEY, JSON.stringify(data));
+  } catch {
+    // Storage unavailable (private browsing, quota) -- the offline fallback
+    // simply won't have anything to restore; not worth failing the app over.
+  }
+}
+
+function clearLastKnownMe(): void {
+  try {
+    localStorage.removeItem(LAST_KNOWN_ME_KEY);
+  } catch {
+    // Nothing to clean up if storage was never writable in the first place.
+  }
 }
 
 interface AuthContextValue {
@@ -37,7 +76,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const meQuery = useQuery({
     queryKey: ['me'],
-    queryFn: () => api.get<MeResponse>('/auth/me'),
+    queryFn: async () => {
+      try {
+        const data = await api.get<MeResponse>('/auth/me');
+        writeLastKnownMe(data);
+        return data;
+      } catch (err) {
+        // A real 401 (ApiError -- the server actually responded, and said
+        // "not authenticated") means genuinely logged out; don't paper over
+        // it with a stale snapshot. Anything else (fetch() rejecting before
+        // any response exists -- offline, DNS failure, connection refused)
+        // means we simply couldn't ask right now, so fall back to the last
+        // confirmed session instead of bouncing to the login screen.
+        if (err instanceof ApiError) {
+          clearLastKnownMe();
+          throw err;
+        }
+        const cached = readLastKnownMe();
+        if (cached) return cached;
+        throw err;
+      }
+    },
     retry: false,
   });
 
@@ -65,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const socket = getSocket();
       socket.disconnect();
       queryClient.clear();
+      clearLastKnownMe();
       void queryClient.invalidateQueries({ queryKey: ['me'] });
     },
   });

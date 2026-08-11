@@ -5,6 +5,8 @@ import { AuthProvider } from './auth/AuthContext';
 import { LocaleProvider } from './i18n/LocaleContext';
 import { SocketProvider } from './lib/SocketContext';
 import { ToastProvider } from './components/ui/Toast';
+import { PwaUpdateNotifier } from './lib/PwaUpdateNotifier';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage } from './auth/LoginPage';
 import { RegisterPage } from './auth/RegisterPage';
@@ -47,10 +49,12 @@ import { ProfilePage } from './profile/ProfilePage';
 
 function App() {
   return (
+    <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <LocaleProvider>
         <ToastProvider>
+        <PwaUpdateNotifier />
         <SocketProvider>
           <BrowserRouter>
             <Routes>
@@ -144,6 +148,7 @@ function App() {
         </LocaleProvider>
       </AuthProvider>
     </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
