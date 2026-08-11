@@ -40,10 +40,11 @@ import { items } from './items.js';
 import { mapSection } from './mapSection.js';
 import { settings } from './settings.js';
 import { reference } from './reference.js';
+import { about } from './about.js';
 
 export const en = {
   common, login, register, dashboard, campaignDashboard, nav, hp, proficiency, effects, hpAdjust, upload,
   campaigns, notes, sessionLog, assets, dice, landing, characters,
   monsters, bestiary, campaignBestiary, statBlock, catalog, encounters, members, profile, items, mapSection, settings,
-  reference,
+  reference, about,
 };

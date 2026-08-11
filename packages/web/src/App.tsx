@@ -32,6 +32,7 @@ import { CampaignBestiaryPage } from './bestiary/CampaignBestiaryPage';
 import { AddToBestiaryPage } from './bestiary/AddToBestiaryPage';
 import { NotesIndexPage } from './notes/NotesIndexPage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
+import { AboutPage } from './about/AboutPage';
 import { CatalogEditorPage } from './catalog/CatalogEditorPage';
 import { CampaignMembersPage } from './campaigns/CampaignMembersPage';
 import { CampaignSettingsPage } from './campaigns/CampaignSettingsPage';
@@ -55,6 +56,7 @@ function App() {
               {/* Design-system reference (not app data) — deliberately not behind
                   RequireAuth. */}
               <Route path="/styleguide" element={<StyleguidePage />} />
+              <Route path="/about" element={<AboutPage />} />
 
               {/* Map-first encounter system: the fullscreen live map. Deliberately
                   OUTSIDE AppLayout (same "skip the persistent header" pattern as

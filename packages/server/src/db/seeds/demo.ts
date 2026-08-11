@@ -205,7 +205,7 @@ export async function seedDemo(client: Client): Promise<void> {
         m.saving_throws ? JSON.stringify(m.saving_throws) : null, m.skills ? JSON.stringify(m.skills) : null,
         m.damage_vulnerabilities, m.damage_resistances, m.damage_immunities, m.senses, m.languages,
         m.challenge_rating, m.xp_value, m.traits ? JSON.stringify(m.traits) : null, JSON.stringify(m.actions),
-        'SRD 5.1 (2014 rules), Monster Manual',
+        'SRD 5.1 (2014 rules)',
       ],
     );
     monsterIds.set(m.slug, res.rows[0].id);

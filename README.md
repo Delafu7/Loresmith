@@ -102,6 +102,25 @@ Note: Postgres/Redis are mapped to host ports **5433**/**6380** (not the standar
 
 Uploaded files (character portraits, battle-map backgrounds) are written to `packages/server/uploads/campaigns/<campaignId>/<uuid>.<ext>` on local disk and are **gitignored** — nothing under `uploads/` is committed, and the directory is created on demand (the seed script and the upload route both `mkdir -p` it as needed). This matches the project's no-cloud-dependency posture (Postgres/Redis are both local containers already); if this ever needs a multi-instance/horizontal deployment, `uploads/` would need to move to shared/networked storage (e.g. a mounted volume or object storage) rather than a single instance's local disk — noted here as a known limitation, not solved by this phase.
 
+## Backups
+
+`docker-compose.yml`'s named volume (`postgres_data`) protects against container
+removal but not against a bad migration, an accidental delete, or wanting to roll
+back to a known-good state. Two scripts wrap `pg_dump`/`pg_restore` against the
+`postgres` service directly (no local `psql`/`pg_dump` install needed — everything
+runs inside the container via `docker compose exec`):
+
+```bash
+scripts/backup.sh                        # writes backups/<timestamp>.sql (gitignored)
+scripts/restore.sh backups/20260101-120000.sql   # DESTRUCTIVE: drops + recreates the DB first
+```
+
+Both read `POSTGRES_USER`/`POSTGRES_DB` from `.env` if present, otherwise fall back
+to `docker-compose.yml`'s defaults (`dnd`/`dnd_campaign_manager`). Run `scripts/backup.sh`
+before any migration you're not fully sure about — `npm run migrate:down` handles
+undoing a single migration cleanly, but a full dump is the only way back if a
+migration itself corrupted data rather than just the schema.
+
 ## Tests
 
 ```bash
@@ -135,3 +154,11 @@ PLAN.md     # Full technical design: data model, REST API, real-time sync, front
 CLAUDE.md   # Repo guidance/context notes
 .opencode/  # D&D 5e SRD reference data + agent-persona configs used during planning/build
 ```
+
+## Content attribution
+
+The rules catalog (races, classes, backgrounds, feats, conditions, weapon mastery,
+starter bestiary) is seeded from the official D&D System Reference Documents (SRD 5.1
+under OGL 1.0a for 2014-edition content, SRD 5.2 under CC-BY-4.0 for 2024-edition
+content) — see [`ATTRIBUTION.md`](./ATTRIBUTION.md) for the full license text and the
+required CC-BY attribution statement, which is also surfaced in-app at `/about`.
