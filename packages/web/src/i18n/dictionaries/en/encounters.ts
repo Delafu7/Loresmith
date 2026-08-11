@@ -4,6 +4,44 @@
 // live under `battleMap` since BattleMap.tsx is also reused standalone by
 // maps/FullscreenMapPage.tsx.
 export const encounters = {
+  terrainNotes: {
+    title: 'Terrain & complications',
+    placeholder: 'e.g. Difficult terrain, low visibility, a collapsing floor…',
+  },
+  lairActions: {
+    editButton: 'Lair actions ({count} configured)',
+    title: 'Lair actions',
+    nameLabel: 'Name',
+    descriptionLabel: 'Description',
+    removeEntry: 'Remove',
+    addEntry: '+ Add lair action',
+    save: 'Save',
+    saving: 'Saving…',
+    bannerTitle: 'The lair acts! (round {round})',
+  },
+  xpBudget: {
+    title: 'XP Budget',
+    tier: {
+      trivial: 'Trivial',
+      easy: 'Easy',
+      medium: 'Medium',
+      hard: 'Hard',
+      deadly: 'Deadly',
+      low: 'Low',
+      moderate: 'Moderate',
+      high: 'High',
+    },
+    monsterXp2014: 'Monster XP: {raw} raw × {multiplier} multiplier = {adjusted} adjusted',
+    thresholds2014: 'Party thresholds — Easy {easy} · Medium {medium} · Hard {hard} · Deadly {deadly}',
+    monsterXp2024: 'Monster XP total: {total}',
+    thresholds2024: 'Party budgets — Low {low} · Moderate {moderate} · High {high}',
+  },
+  concentration: {
+    title: 'Concentration check!',
+    body: '{effect} — took {damage} damage, DC {dc} Constitution save.',
+    failed: 'Save failed — remove effect',
+    dismiss: 'Dismiss',
+  },
   status: {
     active: 'Active',
     paused: 'Paused',
@@ -195,6 +233,17 @@ export const encounters = {
     takeActionTitle: '{actor} → {target}',
     actingAsLabel: 'Acting as',
     factionLabel: 'Faction',
+    initiativeLabel: 'Initiative',
+    hpVisibilityLabel: 'HP shown to players',
+    hpVisibility: {
+      exact: 'Exact numbers',
+      banded: 'Status band only',
+      hidden: 'Hidden',
+    },
+    undoDamage: 'Undo last HP change',
+    undoDamageTitle: "Restores this participant's HP to before the last damage/heal was applied",
+    legendaryActionsLabel: 'Legendary actions: {remaining} remaining this round',
+    spendLegendaryAction: 'Spend 1',
     manageButton: 'Manage',
     logButton: 'Log',
     chatButton: 'Chat',
@@ -222,6 +271,7 @@ export const encounters = {
     resultSaveSuccess: 'save success',
     resultSaveFail: 'save fail',
     resultEffect: 'effect',
+    effectExpired: '{effect} wore off {target}',
   },
   battleMap: {
     zoomOut: 'Zoom out',

@@ -73,6 +73,7 @@ export function SkillsPanel({
                   modifier={mod}
                   characterId={characterId}
                   triggerLabel="⚄"
+                  allowHiddenRoll
                 />
               )}
             </li>

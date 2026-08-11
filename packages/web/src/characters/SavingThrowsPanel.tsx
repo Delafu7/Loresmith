@@ -78,6 +78,7 @@ export function SavingThrowsPanel({
                   modifier={mod}
                   characterId={characterId}
                   triggerLabel="⚄"
+                  allowHiddenRoll
                 />
               )}
             </li>
