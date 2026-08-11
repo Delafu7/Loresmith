@@ -32,6 +32,7 @@ const SECTION_LABEL_KEYS: Record<string, TranslationKey> = {
   'plot-threads': 'nav.plotThreads',
   locations: 'nav.locationsFactions',
   calendar: 'nav.campaignCalendar',
+  bastions: 'nav.bastions',
   'dice-rolls': 'nav.diceRolls',
   assets: 'nav.assets',
   reference: 'nav.reference',
@@ -212,6 +213,12 @@ export function CampaignShell() {
               events, visible to every member; write controls are hidden for
               a non-DM viewer inside the page itself (same pattern as above). */}
           <NavItem to="calendar" onClick={onNavigate}>{t('nav.campaignCalendar')}</NavItem>
+          {/* Phase 4 "Bastion tracking" — DM opt-in (campaigns.bastions_enabled,
+              CampaignSettingsPage); the page itself shows an explanatory empty
+              state when the DM hasn't turned it on yet, rather than hiding the
+              nav item entirely (a player should be able to discover the
+              feature exists). */}
+          <NavItem to="bastions" onClick={onNavigate}>{t('nav.bastions')}</NavItem>
           <NavItem to="dice-rolls" onClick={onNavigate}>{t('nav.diceRolls')}</NavItem>
           <NavItem to="assets" onClick={onNavigate}>{t('nav.assets')}</NavItem>
           {/* Iteration 4 — DM-only crucial-info notes + a coin-value table

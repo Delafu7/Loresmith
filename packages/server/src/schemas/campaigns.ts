@@ -15,6 +15,9 @@ export const updateCampaignSchema = createCampaignSchema.partial().extend({
   // re-roll their 4d6-drop-lowest set after seeing the results. See
   // routes/campaigns.ts's /roll-ability-scores for the roll itself.
   allowAbilityReroll: z.boolean().optional(),
+  // Phase 4 "Bastion tracking" — DM opt-in per docs/rules/bastions.md ("it's
+  // up to the DM to decide whether Bastions are available in a campaign").
+  bastionsEnabled: z.boolean().optional(),
 });
 export type UpdateCampaignInput = z.infer<typeof updateCampaignSchema>;
 

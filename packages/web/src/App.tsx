@@ -25,6 +25,8 @@ import { NotesPage } from './notes/NotesPage';
 import { PlotThreadsPage } from './notes/PlotThreadsPage';
 import { LocationsFactionsPage } from './notes/LocationsFactionsPage';
 import { CampaignCalendarPage } from './notes/CampaignCalendarPage';
+import { BastionsPage } from './bastions/BastionsPage';
+import { BastionDetailPage } from './bastions/BastionDetailPage';
 import { SessionLogPage } from './sessions/SessionLogPage';
 import { DiceRollHistoryPage } from './dice/DiceRollHistoryPage';
 import { BestiaryLayout } from './bestiary/BestiaryLayout';
@@ -123,6 +125,8 @@ function App() {
                   <Route path="plot-threads" element={<PlotThreadsPage />} />
                   <Route path="locations" element={<LocationsFactionsPage />} />
                   <Route path="calendar" element={<CampaignCalendarPage />} />
+                  <Route path="bastions" element={<BastionsPage />} />
+                  <Route path="bastions/:bastionId" element={<BastionDetailPage />} />
                   <Route path="dice-rolls" element={<DiceRollHistoryPage />} />
                   <Route path="assets" element={<AssetsPage />} />
                   <Route path="reference" element={<CampaignReferencePage />} />

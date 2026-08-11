@@ -32,6 +32,7 @@ export function CampaignSettingsPage() {
     <div className="px-4 sm:px-6 py-6 max-w-2xl mx-auto space-y-6">
       <h2 className="font-display text-lg font-medium">{t('settings.title')}</h2>
       <DetailsForm campaignId={campaignId} campaign={campaign} />
+      <BastionsToggleSection campaignId={campaignId} campaign={campaign} />
       <ArchiveSection campaignId={campaignId} campaign={campaign} />
       <DangerZone campaignId={campaignId} campaignName={campaign.name} />
     </div>
@@ -100,6 +101,36 @@ function DetailsForm({ campaignId, campaign }: { campaignId: string; campaign: C
           )}
         </div>
       </form>
+    </Card>
+  );
+}
+
+// Phase 4 "Bastion tracking" — DM opt-in (docs/rules/bastions.md §1: "it's
+// up to the DM to decide whether Bastions are available in a campaign"),
+// same simple-boolean-toggle pattern as allow_ability_reroll.
+function BastionsToggleSection({ campaignId, campaign }: { campaignId: string; campaign: Campaign }) {
+  const { t } = useLocale();
+  const queryClient = useQueryClient();
+
+  const toggleMutation = useMutation({
+    mutationFn: (bastionsEnabled: boolean) => api.patch<{ campaign: Campaign }>(`/campaigns/${campaignId}`, { bastionsEnabled }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] }),
+  });
+
+  return (
+    <Card className="gap-3">
+      <CardKicker>{t('settings.bastionsTitle')}</CardKicker>
+      <p className="text-sm text-stone-400">{t('settings.bastionsHint')}</p>
+      {toggleMutation.isError && <ErrorBanner message={errorMessage(toggleMutation.error)} />}
+      <label className="flex items-center gap-2 text-sm text-stone-300">
+        <input
+          type="checkbox"
+          checked={campaign.bastions_enabled}
+          disabled={toggleMutation.isPending}
+          onChange={(e) => toggleMutation.mutate(e.target.checked)}
+        />
+        {t('settings.bastionsEnabledLabel')}
+      </label>
     </Card>
   );
 }

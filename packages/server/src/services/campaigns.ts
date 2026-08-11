@@ -71,6 +71,10 @@ export async function updateCampaign(pool: Pool, campaignId: string, input: Upda
     sets.push(`allow_ability_reroll = $${i++}`);
     values.push(input.allowAbilityReroll);
   }
+  if (input.bastionsEnabled !== undefined) {
+    sets.push(`bastions_enabled = $${i++}`);
+    values.push(input.bastionsEnabled);
+  }
 
   if (sets.length === 0) {
     return getCampaign(pool, campaignId);

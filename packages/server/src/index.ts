@@ -35,6 +35,7 @@ import { notesRouter } from './routes/notes.js';
 import { plotThreadsRouter } from './routes/plotThreads.js';
 import { locationsRouter } from './routes/locations.js';
 import { campaignEventsRouter } from './routes/campaignEvents.js';
+import { bastionsRouter } from './routes/bastions.js';
 import { factionsRouter } from './routes/factions.js';
 import { diceRollsRouter } from './routes/diceRolls.js';
 import { diceRollRequestsRouter } from './routes/diceRollRequests.js';
@@ -119,6 +120,7 @@ async function main(): Promise<void> {
   app.use('/campaigns/:id/plot-threads', plotThreadsRouter);
   app.use('/campaigns/:id/locations', locationsRouter);
   app.use('/campaigns/:id/events', campaignEventsRouter);
+  app.use('/campaigns/:id/bastions', bastionsRouter);
   app.use('/campaigns/:id/factions', factionsRouter);
   app.use('/campaigns/:id/dice-rolls', diceRollsRouter);
   app.use('/campaigns/:id/dice-roll-requests', diceRollRequestsRouter);
