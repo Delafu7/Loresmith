@@ -9,7 +9,9 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';
-import { applyDamage } from './characters.js';
+import { applyDamage, undoLastDamage } from './characters.js';
+import { applyCharacterEffect } from './effects.js';
+import { AppError } from '../middleware/errors.js';
 
 describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
   let dmUserId: string;
@@ -239,5 +241,116 @@ describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
       isCritical: false,
     });
     expect(result.appliedDamage).toBe(result.rawTotal);
+  });
+
+  describe('concentration-broken save prompt (Phase 2)', () => {
+    it('reports a concentration check when the target is concentrating and takes damage, DC = max(10, floor(damage/2))', async () => {
+      const defRes = await pool.query<{ id: string }>(
+        `INSERT INTO effect_definitions
+           (name, default_duration_type, default_duration_value, concentration, is_homebrew, owning_campaign_id)
+         VALUES ('Hold Person', 'minutes', 10, true, true, $1)
+         RETURNING id`,
+        [campaignId],
+      );
+      const effectDefinitionId = defRes.rows[0]!.id;
+      const { effect } = await applyCharacterEffect(pool, dmUserId, plainCharacterId, { effectDefinitionId, sourceType: 'manual' });
+
+      const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 20, // guarantees appliedDamage > 0 regardless of the 1d4 roll
+        damageType: null,
+        isCritical: false,
+      });
+
+      expect(result.concentrationCheck).not.toBeNull();
+      expect(result.concentrationCheck).toMatchObject({
+        effectId: (effect as { id: string }).id,
+        effectName: 'Hold Person',
+        dc: Math.max(10, Math.floor(result.appliedDamage / 2)),
+      });
+    });
+
+    it('is null when the target is not concentrating on anything', async () => {
+      const result = await applyDamage(pool, dmUserId, resistantCharacterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 5,
+        damageType: null,
+        isCritical: false,
+      });
+      expect(result.concentrationCheck).toBeNull();
+    });
+  });
+
+  describe('undoLastDamage (Phase 2)', () => {
+    // A fresh, undamaged character per describe block — plainCharacterId has
+    // already absorbed a lot of damage from the tests above (possibly down
+    // to 0 hp, where further "damage" wouldn't visibly change hp_current at
+    // all), which would make the undo assertions below flaky/meaningless.
+    async function makeFreshCharacter(name: string): Promise<string> {
+      const res = await pool.query<{ id: string }>(
+        `INSERT INTO characters
+           (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha, armor_class, speed, hp_max, hp_current)
+         VALUES ($1, true, $2, $2, $3, 10, 10, 10, 10, 10, 10, 12, 30, 50, 50)
+         RETURNING id`,
+        [campaignId, dmUserId, name],
+      );
+      return res.rows[0]!.id;
+    }
+
+    it('restores exactly the pre-damage hp_current/hp_temp', async () => {
+      const characterId = await makeFreshCharacter('Undo Test PC 1');
+      const damaged = await applyDamage(pool, dmUserId, characterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 7,
+        damageType: null,
+        isCritical: false,
+      });
+      expect(damaged.character.hp_current).toBeLessThan(50);
+
+      const undone = await undoLastDamage(pool, dmUserId, characterId);
+      expect(undone.character.hp_current).toBe(50);
+      expect(undone.character.hp_temp).toBe(0);
+    });
+
+    it('a second undo call with nothing left to undo throws CONFLICT', async () => {
+      const characterId = await makeFreshCharacter('Undo Test PC 2');
+      await applyDamage(pool, dmUserId, characterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 3,
+        damageType: null,
+        isCritical: false,
+      });
+      await undoLastDamage(pool, dmUserId, characterId);
+      await expect(undoLastDamage(pool, dmUserId, characterId)).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+
+    it('rejects a non-DM caller even if they control the character', async () => {
+      const playerRes = await pool.query<{ id: string }>(
+        `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Undo Test Player', 'x') RETURNING id`,
+        [`undo-test-player-${Date.now()}@example.test`],
+      );
+      const playerUserId = playerRes.rows[0]!.id;
+      try {
+        await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player')`, [campaignId, playerUserId]);
+        const characterId = await makeFreshCharacter('Undo Test PC 3');
+        await pool.query(`UPDATE characters SET owner_user_id = $1 WHERE id = $2`, [playerUserId, characterId]);
+        await applyDamage(pool, dmUserId, characterId, {
+          diceSides: 4,
+          diceCount: 1,
+          modifier: 3,
+          damageType: null,
+          isCritical: false,
+        });
+        await expect(undoLastDamage(pool, playerUserId, characterId)).rejects.toBeInstanceOf(AppError);
+        await pool.query(`UPDATE characters SET owner_user_id = $1 WHERE id = $2`, [dmUserId, characterId]);
+      } finally {
+        await pool.query(`DELETE FROM campaign_members WHERE campaign_id = $1 AND user_id = $2`, [campaignId, playerUserId]);
+        await pool.query(`DELETE FROM users WHERE id = $1`, [playerUserId]);
+      }
+    });
   });
 });

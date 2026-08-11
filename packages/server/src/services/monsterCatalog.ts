@@ -120,12 +120,12 @@ export async function createHomebrewMonster(
        slug, name, edition_scope, size, creature_type, alignment, armor_class, armor_class_notes,
        hit_point_average, hit_dice, speed, str, dex, con, int, wis, cha,
        saving_throws, skills, damage_vulnerabilities, damage_resistances, damage_immunities,
-       senses, languages, challenge_rating, xp_value, traits, actions, legendary_actions, reactions,
+       senses, languages, challenge_rating, xp_value, traits, actions, legendary_actions, legendary_action_count, reactions,
        source, is_homebrew, owning_campaign_id, owning_user_id, art_asset_id, is_unique, image_url
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-       $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
-       $31, true, $32, $33, $34, $35, $36
+       $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,
+       $32, true, $33, $34, $35, $36, $37
      )
      RETURNING *`,
     [
@@ -141,6 +141,7 @@ export async function createHomebrewMonster(
       input.traits ? JSON.stringify(input.traits) : null,
       JSON.stringify(input.actions),
       input.legendaryActions ? JSON.stringify(input.legendaryActions) : null,
+      input.legendaryActionCount ?? null,
       input.reactions ? JSON.stringify(input.reactions) : null,
       input.source ?? null,
       owningCampaignId, owningUserId, input.artAssetId ?? null, input.isUnique ?? false, input.imageUrl ?? null,
@@ -181,6 +182,7 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
   traits: 'traits',
   actions: 'actions',
   legendaryActions: 'legendary_actions',
+  legendaryActionCount: 'legendary_action_count',
   reactions: 'reactions',
   source: 'source',
   artAssetId: 'art_asset_id',

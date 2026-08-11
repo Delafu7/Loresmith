@@ -13,9 +13,12 @@ import { pool } from '../db/pool.js';
 import { AppError } from '../middleware/errors.js';
 import {
   getEncounter,
+  getEncounterCombatSnapshot,
   getEncounterFlat,
   listEncounters,
+  setParticipantHpVisibility,
   setParticipantVisibility,
+  updateEncounter,
 } from './encounters.js';
 
 describe('encounter visibility by state (integration, live DB, throwaway fixtures)', () => {
@@ -184,6 +187,58 @@ describe('encounter visibility by state (integration, live DB, throwaway fixture
       await expect(
         setParticipantVisibility(pool, preparingEncounterId, hiddenParticipantId, { visible: true }),
       ).rejects.toBeInstanceOf(AppError);
+    });
+  });
+
+  describe('setParticipantHpVisibility (Phase 2)', () => {
+    it('defaults to banded, and flips to whatever is set, reflected in the combat snapshot', async () => {
+      const before = await getEncounterCombatSnapshot(pool, activeEncounterId);
+      expect(before.participants.find((p) => p.participant_id === visibleParticipantId)?.hp_visibility).toBe('banded');
+
+      const { participant } = await setParticipantHpVisibility(pool, activeEncounterId, visibleParticipantId, {
+        hpVisibility: 'exact',
+      });
+      expect(participant.hp_visibility).toBe('exact');
+
+      const after = await getEncounterCombatSnapshot(pool, activeEncounterId);
+      expect(after.participants.find((p) => p.participant_id === visibleParticipantId)?.hp_visibility).toBe('exact');
+
+      // Restore, so this test is order-independent of the describe blocks above.
+      await setParticipantHpVisibility(pool, activeEncounterId, visibleParticipantId, { hpVisibility: 'banded' });
+    });
+
+    it('throws NOT_FOUND for a participant id that does not belong to the encounter', async () => {
+      await expect(
+        setParticipantHpVisibility(pool, preparingEncounterId, visibleParticipantId, { hpVisibility: 'exact' }),
+      ).rejects.toBeInstanceOf(AppError);
+    });
+  });
+
+  // Phase 3 "terrain/complications" fix-while-touching regression: Phase 2's
+  // lair_actions column was added to the encounter row but never actually
+  // redacted from a non-DM's read — only the round-start broadcast was
+  // gated. terrain_notes, added alongside it, is deliberately NOT redacted
+  // (visible to every campaign member by design).
+  describe('lair_actions redaction / terrain_notes visibility (Phase 2 fix + Phase 3)', () => {
+    it('a non-DM never receives lair_actions via getEncounter or listEncounters, but the DM does; terrain_notes reaches both', async () => {
+      await updateEncounter(pool, campaignId, activeEncounterId, {
+        lairActions: [{ name: 'Tremor', description: 'The cavern shakes.' }],
+        terrainNotes: 'Difficult terrain: rubble covers the eastern half of the room.',
+      });
+
+      const dmView = await getEncounter(pool, campaignId, activeEncounterId, 'dm');
+      expect(dmView.lair_actions).toEqual([{ name: 'Tremor', description: 'The cavern shakes.' }]);
+      expect(dmView.terrain_notes).toBe('Difficult terrain: rubble covers the eastern half of the room.');
+
+      const playerView = await getEncounter(pool, campaignId, activeEncounterId, 'player');
+      expect(playerView.lair_actions).toBeUndefined();
+      expect(playerView.terrain_notes).toBe('Difficult terrain: rubble covers the eastern half of the room.');
+
+      const dmList = await listEncounters(pool, campaignId, 'dm');
+      expect(dmList.find((e) => e.id === activeEncounterId)?.lair_actions).toEqual([{ name: 'Tremor', description: 'The cavern shakes.' }]);
+
+      const playerList = await listEncounters(pool, campaignId, 'player');
+      expect(playerList.find((e) => e.id === activeEncounterId)?.lair_actions).toBeUndefined();
     });
   });
 });

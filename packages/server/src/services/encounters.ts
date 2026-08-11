@@ -8,6 +8,8 @@ import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
 import { requireMembership, requireControllerOrDm, type CampaignRole } from './authz.js';
+import { resolveVisibilitySync } from './visibility.js';
+import { assessEncounterXp, type MonsterXpInput, type XpBudgetResult } from '../domain/xpBudget.js';
 import {
   computePathCost,
   computeReachableSet,
@@ -28,8 +30,10 @@ import type {
   SetEncounterModeInput,
   SetInitiativeInput,
   SetParticipantFactionInput,
+  SetParticipantHpVisibilityInput,
   SetParticipantPositionInput,
   SetParticipantVisibilityInput,
+  SpendLegendaryActionInput,
   TransitionDispositionInput,
   UpdateEncounterInput,
   UpsertEncounterMapInput,
@@ -60,6 +64,12 @@ interface EncounterRow {
   active_map_id: string | null;
   sync_seq: number;
   disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown';
+  // Phase 2 "lair actions (round-start trigger)" — DM-authored per-encounter,
+  // not derived from any monster's own catalog row.
+  lair_actions: Array<{ name: string; description: string }> | null;
+  // Phase 3 "terrain/complications on encounters" — visible to every
+  // campaign member, unlike lair_actions above.
+  terrain_notes: string | null;
   [key: string]: unknown;
 }
 
@@ -154,6 +164,18 @@ async function fetchParticipants(client: Pool | PoolClient, encounterId: string)
 // encounter actually has anything on its map" without an N-request detail
 // fetch per encounter; a plain COUNT subquery, not a join, so an encounter
 // with zero participants still returns exactly one row.
+// Phase 3 "terrain/complications" fix-while-touching: lair_actions (Phase 2)
+// was never actually redacted from a non-DM's GET response — only the
+// round-start LAIR_ACTION_AVAILABLE broadcast was gated, so a player could
+// already read the DM's lair-action secrets straight off GET /encounters/:id
+// ahead of time. terrain_notes is deliberately NOT redacted here — that
+// field is meant to be visible to every campaign member (see its own schema
+// comment), only lair_actions is DM-only.
+function redactLairActions<T extends { lair_actions?: unknown }>(encounter: T, role: CampaignRole): T {
+  if (role === 'dm') return encounter;
+  return { ...encounter, lair_actions: undefined };
+}
+
 export async function listEncounters(pool: Pool, campaignId: string, viewerRole: CampaignRole) {
   const result = await pool.query(
     viewerRole === 'dm'
@@ -163,7 +185,7 @@ export async function listEncounters(pool: Pool, campaignId: string, viewerRole:
          FROM encounters e WHERE e.campaign_id = $1 AND e.status != 'preparing' ORDER BY e.created_at DESC`,
     [campaignId],
   );
-  return result.rows;
+  return result.rows.map((row) => redactLairActions(row, viewerRole));
 }
 
 // Map-first encounter system: "on reload/reconnect, land directly in the
@@ -203,9 +225,9 @@ export async function getMyLiveEncounter(
 
 // Drops participant rows a non-DM viewer shouldn't see at all (visible_to_players
 // = false — e.g. an ambush the DM hasn't revealed yet). DM always gets every row.
+// 'role_split' mode (services/visibility.ts, Phase 1.1).
 function filterParticipantsForViewer(participants: ParticipantRow[], viewerRole: CampaignRole): ParticipantRow[] {
-  if (viewerRole === 'dm') return participants;
-  return participants.filter((p) => p.visible_to_players !== false);
+  return participants.filter((p) => resolveVisibilitySync({ mode: 'role_split', visibleToPlayers: p.visible_to_players }, null, viewerRole));
 }
 
 export async function getEncounter(pool: Pool, campaignId: string, encounterId: string, viewerRole: CampaignRole) {
@@ -216,7 +238,52 @@ export async function getEncounter(pool: Pool, campaignId: string, encounterId: 
   if (viewerRole !== 'dm' && encounter.status === 'preparing') throw notFound('Encounter');
   const participants = filterParticipantsForViewer(await fetchParticipants(pool, encounterId), viewerRole);
   const map = await getEncounterMap(pool, encounterId);
-  return { ...encounter, participants, map: formatMapForWire(map) };
+  return { ...redactLairActions(encounter, viewerRole), participants, map: formatMapForWire(map) };
+}
+
+// Phase 3 "encounter XP budgeting" — DM-only planning tool (see routes/
+// encounters.ts's requireRole('dm') gate on this route; difficulty is
+// meta-game information the DM may not want players to see ahead of a
+// fight, and only the DM picks/adjusts monsters anyway). Pulls the two
+// inputs domain/xpBudget.ts needs straight from the DB: each seated
+// character's total level (SUM across character_classes, since a character
+// has no single `level` column — see 1784269738666_create-character-classes-
+// and-proficiencies.ts) and each seated monster instance's catalog xp_value.
+// Everything else is the pure function in domain/xpBudget.ts; see
+// docs/rules/encounter-xp-budget.md for the sourcing and rules this encodes.
+export async function getEncounterXpBudget(pool: Pool, campaignId: string, encounterId: string): Promise<XpBudgetResult> {
+  await fetchEncounterScoped(pool, campaignId, encounterId);
+  const campaignRes = await pool.query<{ srd_edition: '2014' | '2024' }>(`SELECT srd_edition FROM campaigns WHERE id = $1`, [campaignId]);
+  const srdEdition = campaignRes.rows[0]?.srd_edition;
+  if (!srdEdition) throw notFound('Campaign');
+  const participants = await fetchParticipants(pool, encounterId);
+
+  const characterIds = [...new Set(participants.map((p) => p.character_id).filter((id): id is string => id != null))];
+  const monsterInstanceIds = [...new Set(participants.map((p) => p.monster_instance_id).filter((id): id is string => id != null))];
+
+  const levels: number[] = [];
+  if (characterIds.length > 0) {
+    const levelRes = await pool.query<{ character_id: string; total_level: number }>(
+      `SELECT character_id, SUM(level)::int AS total_level FROM character_classes WHERE character_id = ANY($1) GROUP BY character_id`,
+      [characterIds],
+    );
+    for (const row of levelRes.rows) levels.push(row.total_level);
+  }
+
+  const monsters: MonsterXpInput[] = [];
+  if (monsterInstanceIds.length > 0) {
+    const xpRes = await pool.query<{ xp_value: number }>(
+      `SELECT m.xp_value FROM monster_instances mi JOIN monsters m ON m.id = mi.monster_id WHERE mi.id = ANY($1)`,
+      [monsterInstanceIds],
+    );
+    for (const row of xpRes.rows) monsters.push({ xpValue: row.xp_value, quantity: 1 });
+  }
+
+  if (levels.length === 0) {
+    throw new AppError('VALIDATION_ERROR', 'Add at least one player character to this encounter before checking its XP budget');
+  }
+
+  return assessEncounterXp(srdEdition, levels, monsters);
 }
 
 // Flat lookup by encounter id alone (REFACTOR-PLAN.md §1: /maps/:mapId — a
@@ -812,6 +879,92 @@ export async function setParticipantVisibility(
   }
 }
 
+// Phase 2 "restore hp_visibility + banding" — same shape as
+// setParticipantVisibility just above (and same reason the route broadcasts
+// via broadcastFullStateResync rather than a dedicated event: this changes
+// what a player's HP display shows, not just a board-readability detail).
+export async function setParticipantHpVisibility(
+  pool: Pool,
+  encounterId: string,
+  participantId: string,
+  input: SetParticipantHpVisibilityInput,
+): Promise<ParticipantMutationResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET hp_visibility = $1 WHERE id = $2 AND encounter_id = $3 RETURNING *`,
+      [input.hpVisibility, participantId, encounterId],
+    );
+    const participant = updated.rows[0];
+    if (!participant) throw notFound('Participant');
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participant };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Phase 2 "legendary actions per-round counters" — DM-only (monsters have
+// no player controller to defer to, unlike action economy below). Spends
+// against the live legendary_actions_remaining counter advanceTurn resets
+// every round; rejects a spend past 0 or against a participant with no
+// legendary actions at all (legendary_actions_remaining IS NULL) rather
+// than silently going negative.
+export async function spendLegendaryAction(
+  pool: Pool,
+  encounterId: string,
+  participantId: string,
+  input: SpendLegendaryActionInput,
+): Promise<ParticipantMutationResult> {
+  const cost = input.cost ?? 1;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<ParticipantRow>(
+      `SELECT * FROM combat_participants WHERE id = $1 AND encounter_id = $2 FOR UPDATE`,
+      [participantId, encounterId],
+    );
+    const current = locked.rows[0];
+    if (!current) throw notFound('Participant');
+    const remaining = current.legendary_actions_remaining as number | null;
+    if (remaining == null) throw new AppError('CONFLICT', 'That participant has no legendary actions to spend');
+    if (remaining < cost) {
+      throw new AppError('CONFLICT', `Not enough legendary actions remaining (has ${remaining}, needs ${cost})`);
+    }
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET legendary_actions_remaining = legendary_actions_remaining - $1 WHERE id = $2 AND encounter_id = $3 RETURNING *`,
+      [cost, participantId, encounterId],
+    );
+    const participant = updated.rows[0]!;
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participant };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Authorization for PATCH /encounters/:id/participants/:pid/action-economy
 // (battle mode, REVISION-PLAN.md §10.2): unlike every other combat_participants
 // mutation in this app (DM-only via requireEncounterDm in routes/encounters.ts),
@@ -1001,9 +1154,13 @@ export async function undoActionEconomy(
 // ---- Combat snapshot for the sockets layer (FULL_STATE_SYNC) ----
 //
 // Enriches the bare combat_participants rows with the display name and
-// current HP figures — HP/AC/effects are all always-visible now (hide/
-// reveal was removed), so this stays a plain read used identically by every
-// caller.
+// current HP figures — AC/effects are always-visible (hide/reveal was
+// removed for them), but HP is NOT anymore: 1784269801666_restore-hp-
+// visibility.ts reintroduced combat_participants.hp_visibility (Phase 2),
+// reversing that removal specifically for HP. This function itself stays a
+// plain, unredacted read either way — see this interface's hp_visibility
+// field doc and buildFullStateSyncPayload (sockets/broadcast.ts) for where
+// the actual redaction happens.
 
 export interface CombatSnapshotParticipant {
   participant_id: string;
@@ -1064,6 +1221,17 @@ export interface CombatSnapshotParticipant {
   // the full/authoritative internal read (turn order, movement validation,
   // and action-economy logic all need every participant, hidden or not).
   visible_to_players: boolean;
+  // Phase 2 "restore hp_visibility + banding" — per-participant, not
+  // per-creature: the SAME goblin could show exact HP in one encounter and
+  // banded in the next, since it's how much the DM has chosen to reveal
+  // about THIS specific seating, not a property of the creature. Redaction
+  // (per this value) happens one layer up in buildFullStateSyncPayload, same
+  // as visible_to_players above — this snapshot stays the full internal read.
+  hp_visibility: 'exact' | 'banded' | 'hidden';
+  // Phase 2 "legendary actions per-round counters" — null for a
+  // non-legendary participant. Always visible to every role (same as AC/
+  // effects — no redaction mechanism for this).
+  legendary_actions_remaining: number | null;
 }
 
 export interface CombatSnapshot {
@@ -1090,7 +1258,7 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             cp.faction,
             COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft,
             COALESCE(ca_char.file_url, ca_monster.file_url, m.image_url) AS image_url,
-            cp.visible_to_players
+            cp.visible_to_players, cp.hp_visibility, cp.legendary_actions_remaining
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id
      LEFT JOIN campaign_assets ca_char ON ca_char.id = c.portrait_asset_id
@@ -1119,10 +1287,19 @@ export async function updateEncounter(
   input: UpdateEncounterInput,
 ) {
   await fetchEncounterScoped(pool, campaignId, encounterId);
-  if (input.name === undefined) {
-    return fetchEncounterScoped(pool, campaignId, encounterId);
-  }
-  const result = await pool.query(`UPDATE encounters SET name = $1 WHERE id = $2 RETURNING *`, [input.name, encounterId]);
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  let i = 1;
+  if (input.name !== undefined) { sets.push(`name = $${i++}`); values.push(input.name); }
+  if (input.lairActions !== undefined) { sets.push(`lair_actions = $${i++}::jsonb`); values.push(input.lairActions ? JSON.stringify(input.lairActions) : null); }
+  if (input.terrainNotes !== undefined) { sets.push(`terrain_notes = $${i++}`); values.push(input.terrainNotes); }
+  if (input.locationId !== undefined) { sets.push(`location_id = $${i++}`); values.push(input.locationId); }
+
+  if (sets.length === 0) return fetchEncounterScoped(pool, campaignId, encounterId);
+
+  values.push(encounterId);
+  const result = await pool.query(`UPDATE encounters SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`, values);
   return result.rows[0];
 }
 
@@ -1295,10 +1472,16 @@ export async function addParticipant(
 
     let participant: ParticipantRow;
     try {
+      // Phase 2 "legendary actions per-round counters" — a scalar subquery
+      // rather than a second round-trip: NULL for a character participant
+      // (monster_instance_id is NULL, so the join predicate never matches)
+      // and for a monster instance whose own legendary_action_count is NULL,
+      // matching spawnParticipants' identical initialization.
       const result = await client.query<ParticipantRow>(
         `INSERT INTO combat_participants
-           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, faction)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           (encounter_id, character_id, monster_instance_id, initiative_roll, initiative_tiebreak, turn_order, joined_round, faction, legendary_actions_remaining)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+           (SELECT m.legendary_action_count FROM monster_instances mi JOIN monsters m ON m.id = mi.monster_id WHERE mi.id = $3))
          RETURNING *`,
         [
           encounterId,
@@ -1427,22 +1610,50 @@ export async function removeParticipant(
   }
 }
 
+// Setting one participant's initiative changes its rank relative to
+// everyone else, so this must re-sequence turn_order for the whole
+// encounter the same way rollInitiative does — a bare column UPDATE here
+// used to leave turn_order stale (the manual reorder was a dead end: the
+// number changed but nobody's turn actually moved). Mirrors rollInitiative's
+// transaction shape exactly (reorder -> re-sync the active pointer -> bump
+// sync_seq) so callers can broadcast via the same broadcastInitiativeRolled
+// helper.
 export async function setParticipantInitiative(
   pool: Pool,
   encounterId: string,
   participantId: string,
   input: SetInitiativeInput,
 ) {
-  const result = await pool.query(
-    `UPDATE combat_participants
-     SET initiative_roll = $1, initiative_tiebreak = $2
-     WHERE id = $3 AND encounter_id = $4
-     RETURNING *`,
-    [input.initiativeRoll, input.initiativeTiebreak ?? null, participantId, encounterId],
-  );
-  const row = result.rows[0];
-  if (!row) throw notFound('Participant');
-  return row;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const result = await client.query<ParticipantRow>(
+      `UPDATE combat_participants
+       SET initiative_roll = $1, initiative_tiebreak = $2
+       WHERE id = $3 AND encounter_id = $4
+       RETURNING *`,
+      [input.initiativeRoll, input.initiativeTiebreak ?? null, participantId, encounterId],
+    );
+    if (!result.rows[0]) throw notFound('Participant');
+
+    await reorderTurnOrderByInitiative(client, encounterId);
+    await syncActiveParticipantTurnIndex(client, encounterId);
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    const participants = await fetchParticipants(pool, encounterId);
+    return { encounter: encounterRes.rows[0]!, participants };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export function dexModifier(dexScore: number): number {
@@ -1670,6 +1881,13 @@ export interface AdvanceTurnResult {
   encounter: EncounterRow;
   participants: ParticipantRow[];
   expiredEffects: ExpiredEffectRow[];
+  // Phase 2 "legendary actions per-round counters" + "lair actions
+  // (round-start trigger)" — both key off this same "did the round number
+  // just change" boolean rather than each deriving it separately (the
+  // plan's own guidance: compute once, share). Legendary resets happen
+  // inside this same transaction either way; the route uses this to decide
+  // whether to also broadcast LAIR_ACTION_AVAILABLE.
+  roundAdvanced: boolean;
 }
 
 export async function advanceTurn(pool: Pool, encounterId: string): Promise<AdvanceTurnResult> {
@@ -1700,6 +1918,25 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
       encounter.current_turn_index,
       encounter.current_round,
     );
+    const roundAdvanced = nextRound !== encounter.current_round;
+
+    // Phase 2 "legendary actions per-round counters" — reset EVERY legendary
+    // participant's budget once per round, not on their own turn starting
+    // (that's what the block below this one does, for action economy) —
+    // a legendary action is spent on OTHER creatures' turns, so resetting it
+    // when this participant's own turn starts would be too late for most of
+    // the round. NULL legendary_actions_remaining (no legendary_action_count
+    // on the underlying monster) is left alone — COALESCE-free by construction,
+    // since the SET only runs at all when roundAdvanced.
+    if (roundAdvanced) {
+      await client.query(
+        `UPDATE combat_participants cp
+         SET legendary_actions_remaining = m.legendary_action_count
+         FROM monster_instances mi JOIN monsters m ON m.id = mi.monster_id
+         WHERE cp.encounter_id = $1 AND cp.monster_instance_id = mi.id AND m.legendary_action_count IS NOT NULL`,
+        [encounterId],
+      );
+    }
 
     // Fresh action economy for whoever's turn is starting. turn_order need
     // not be dense anymore (see computeNextTurn's header comment), so
@@ -1777,7 +2014,7 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
 
     await client.query('COMMIT');
     const participants = await fetchParticipants(pool, encounterId);
-    return { encounter: updatedRes.rows[0]!, participants, expiredEffects };
+    return { encounter: updatedRes.rows[0]!, participants, expiredEffects, roundAdvanced };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
