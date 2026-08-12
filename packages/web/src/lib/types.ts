@@ -55,6 +55,11 @@ export interface Campaign {
   allow_ability_reroll: boolean;
   // Phase 4 "Bastion tracking" — DM opt-in (docs/rules/bastions.md §1).
   bastions_enabled: boolean;
+  // REFACTOR-PLAN.md §4 (1784269766666_add-movement-cost-schema.ts) — already
+  // consumed server-side by services/movement.ts's MovementGrid; exposed here
+  // too so the client's drag-time distance preview (encounters/dragPreview.ts)
+  // can mirror the same rule instead of assuming 'flat'.
+  diagonal_movement_rule: 'flat' | 'alternating_5_10_5';
 }
 
 export interface CampaignMember {
@@ -554,6 +559,12 @@ export interface SnapshotParticipant {
   // Phase 2 "legendary actions per-round counters" — null for a
   // non-legendary participant. Always visible (no redaction).
   legendaryActionsRemaining: number | null;
+  // DM battle-map vision feature — encounter-scoped, DM-tunable per fight
+  // (see server's 1784269817666_add-participant-vision.ts). No redaction,
+  // same as faction/speed above.
+  visionEnabled: boolean;
+  visionRadiusFt: number;
+  darkvisionRadiusFt: number;
 }
 
 // ---- Phase 2: spells/items/resources/effects (packages/server/src/routes/

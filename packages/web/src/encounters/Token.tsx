@@ -17,6 +17,8 @@ import { footprintCellsFor } from './creatureSize';
 import { CONTROL_BADGE_DOT_COLOR, controlBadgeLabel, type ControlBadgeKind } from './controlBadge';
 import { useLocale } from '../i18n/LocaleContext';
 import { HP_BAND_COLOR, bandFor } from '../components/HPBar';
+import { snapToCell } from './geometry';
+import { estimateDragDistanceFt, type DiagonalRule } from './dragPreview';
 
 function portraitSizeFor(spanPx: number): PortraitSize {
   if (spanPx <= 36) return 'sm';
@@ -111,18 +113,32 @@ export interface TokenProps {
   /** REFACTOR-PLAN.md §3: two-way sync with the side roster — highlighted
    * when the corresponding roster row is hovered/selected, and vice versa. */
   isSelected?: boolean;
+  /** Phase 2 multi-select (shift-click) — a distinct outline from isSelected
+   * so "the one token whose reachable-cells are shown" and "every token that
+   * will move together" read as different states at a glance. */
+  isMultiSelected?: boolean;
   /** Iteration 2 "Character ownership vs. control" — a small corner dot
    * (controlBadge.ts), not a token recolor, distinguishing "mine,"
    * "temporarily mine," "another player's," and "GM-run." Null/undefined
    * (monster instances, DM-run NPCs) renders no dot at all. */
   controlBadge?: ControlBadgeKind | null;
+  /** Movement-math ratio (MapConfig.feetPerCell) + the campaign's diagonal
+   * rule — both needed purely to compute the live drag-distance label below,
+   * never to gate the drag itself (see dragPreview.ts's header comment). */
+  feetPerCell: number;
+  diagonalRule: DiagonalRule;
+  /** Phase 2 grid-snap toggle — scopes to drag-PREVIEW smoothness only; the
+   * final dropped cell (onMove below) is always whole-cell regardless. */
+  snapToGrid: boolean;
   /** Called once, on drop, with the final snapped cell indices. */
   onMove: (x: number, y: number) => void;
   /** Single click/tap — selects the token for movement only (drag targeting,
-   * reachable-cell highlighting). Deliberately does NOT open the stats sheet
-   * — a DM repositioning several tokens in a row would otherwise get a stats
-   * panel popping open on every single click. See onOpenSheet below. */
-  onSelect?: () => void;
+   * reachable-cell highlighting), or (shift-held) toggles multi-select
+   * membership for group-move — see BattleMap.tsx's selectParticipant.
+   * Deliberately does NOT open the stats sheet — a DM repositioning several
+   * tokens in a row would otherwise get a stats panel popping open on every
+   * single click. See onOpenSheet below. */
+  onSelect?: (e: React.MouseEvent) => void;
   /** Double click/tap — opens the participant's full stats sheet. Kept
    * separate from onSelect (both fire on a real double-click; harmless,
    * since re-selecting an already-selected token is a no-op toggle). */
@@ -152,7 +168,11 @@ function tokenPropsAreEqual(prev: TokenProps, next: TokenProps): boolean {
     prev.isActive === next.isActive &&
     prev.isDraggable === next.isDraggable &&
     prev.isSelected === next.isSelected &&
-    prev.controlBadge === next.controlBadge
+    prev.isMultiSelected === next.isMultiSelected &&
+    prev.controlBadge === next.controlBadge &&
+    prev.feetPerCell === next.feetPerCell &&
+    prev.diagonalRule === next.diagonalRule &&
+    prev.snapToGrid === next.snapToGrid
   );
 }
 
@@ -165,7 +185,11 @@ function TokenComponent({
   isActive,
   isDraggable,
   isSelected,
+  isMultiSelected,
   controlBadge = null,
+  feetPerCell,
+  diagonalRule,
+  snapToGrid,
   onMove,
   onSelect,
   onOpenSheet,
@@ -193,6 +217,16 @@ function TokenComponent({
     setDragOffset({ dx: e.clientX - dragStart.current.pointerX, dy: e.clientY - dragStart.current.pointerY });
   }
 
+  // Snap a raw pixel delta to the nearest cell, clamped so a footprint > 1
+  // cell never hangs off the configured grid bounds — shared by the drop
+  // handler (always snapped) and the live preview (only when snapToGrid).
+  function snappedTargetCell(dx: number, dy: number): { x: number; y: number } {
+    return {
+      x: Math.min(Math.max(Math.round(posX + dx / cellSizePx), 0), Math.max(0, gridColumns - footprint)),
+      y: Math.min(Math.max(Math.round(posY + dy / cellSizePx), 0), Math.max(0, gridRows - footprint)),
+    };
+  }
+
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
     if (!dragStart.current) return;
     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -200,17 +234,42 @@ function TokenComponent({
     dragStart.current = null;
     setDragOffset(null);
 
-    // Snap to nearest cell, clamped so a footprint > 1 cell never hangs off
-    // the configured grid bounds.
-    const snappedX = Math.min(Math.max(Math.round(posX + dx / cellSizePx), 0), Math.max(0, gridColumns - footprint));
-    const snappedY = Math.min(Math.max(Math.round(posY + dy / cellSizePx), 0), Math.max(0, gridRows - footprint));
+    const { x: snappedX, y: snappedY } = snappedTargetCell(dx, dy);
     if (snappedX !== posX || snappedY !== posY) onMove(snappedX, snappedY);
   }
 
-  const left = posX * cellSizePx + (dragOffset?.dx ?? 0);
-  const top = posY * cellSizePx + (dragOffset?.dy ?? 0);
   const size = portraitSizeFor(spanPx);
   const portraitPx = PORTRAIT_SIZE_PX[size];
+
+  // Live drag-preview: snapToGrid quantizes the VISUAL position to whole
+  // cells while dragging (dragPreview.ts's caller-facing contract — the
+  // final drop below is always whole-cell regardless of this toggle); off,
+  // the token continues to follow the pointer continuously as before. Also
+  // drives the live distance label — preview-only, never a legality check
+  // (see dragPreview.ts's header comment; the server PATCH re-validates
+  // everything on drop).
+  let left = posX * cellSizePx;
+  let top = posY * cellSizePx;
+  let dragPreview: { distanceFt: number; remainingFt: number } | null = null;
+  if (dragOffset) {
+    if (snapToGrid) {
+      const target = snappedTargetCell(dragOffset.dx, dragOffset.dy);
+      left = target.x * cellSizePx;
+      top = target.y * cellSizePx;
+      dragPreview = {
+        distanceFt: estimateDragDistanceFt({ x: posX, y: posY }, target, feetPerCell, diagonalRule),
+        remainingFt: Math.max(0, (participant.speedFt ?? 0) * (participant.dashUsed ? 2 : 1) - participant.movementUsedFt),
+      };
+    } else {
+      left += dragOffset.dx;
+      top += dragOffset.dy;
+      const target = { x: snapToCell(posX * cellSizePx + dragOffset.dx, cellSizePx), y: snapToCell(posY * cellSizePx + dragOffset.dy, cellSizePx) };
+      dragPreview = {
+        distanceFt: estimateDragDistanceFt({ x: posX, y: posY }, target, feetPerCell, diagonalRule),
+        remainingFt: Math.max(0, (participant.speedFt ?? 0) * (participant.dashUsed ? 2 : 1) - participant.movementUsedFt),
+      };
+    }
+  }
 
   return (
     <div
@@ -223,6 +282,15 @@ function TokenComponent({
       onDoubleClick={onOpenSheet}
       title={`${participant.name} (${String.fromCharCode(65 + posX)}${posY + 1})`}
     >
+      {dragPreview && (
+        <div
+          className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
+            dragPreview.distanceFt > dragPreview.remainingFt ? 'bg-red-950/90 text-red-300' : 'bg-stone-950/90 text-stone-200'
+          }`}
+        >
+          {Math.round(dragPreview.distanceFt)} ft
+        </div>
+      )}
       {simplified ? (
         // Below SIMPLIFIED_BELOW_PX on screen, a full portrait + HP bar +
         // condition dots is illegible noise, not detail — a flat faction-
@@ -231,7 +299,9 @@ function TokenComponent({
         <div
           className={`relative flex items-center justify-center rounded-full text-white font-semibold ${FACTION_DOT[participant.faction]} ${
             isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
-          } ${isSelected ? 'outline outline-2 outline-offset-1 outline-amber-300' : ''}`}
+          } ${isSelected ? 'outline outline-2 outline-offset-1 outline-amber-300' : ''} ${
+            isMultiSelected ? 'outline outline-2 outline-offset-1 outline-sky-400' : ''
+          }`}
           style={{ width: spanPx, height: spanPx, fontSize: Math.max(8, spanPx * 0.4) }}
         >
           {initials(participant.name)}
@@ -263,7 +333,9 @@ function TokenComponent({
           <div
             className={`relative rounded-full border-2 ${FACTION_BORDER[participant.faction]} ${
               isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
-            } ${isSelected ? 'outline outline-2 outline-offset-2 outline-amber-300' : ''}`}
+            } ${isSelected ? 'outline outline-2 outline-offset-2 outline-amber-300' : ''} ${
+              isMultiSelected ? 'outline outline-2 outline-offset-2 outline-sky-400' : ''
+            }`}
             style={{ width: portraitPx, height: portraitPx }}
           >
             <Portrait fileUrl={participant.imageUrl} alt={participant.name} shape="circle" size={size} placeholderLabel={participant.name} />

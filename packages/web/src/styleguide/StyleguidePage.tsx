@@ -97,7 +97,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     size: 'Medium',
     faction: 'player',
     imageUrl: null,
-    visibleToPlayers: true, legendaryActionsRemaining: null,
+    visibleToPlayers: true, legendaryActionsRemaining: null, visionEnabled: true, visionRadiusFt: 30, darkvisionRadiusFt: 0,
   },
   {
     participantId: '2',
@@ -123,7 +123,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     size: 'Large',
     faction: 'enemy',
     imageUrl: null,
-    visibleToPlayers: true, legendaryActionsRemaining: null,
+    visibleToPlayers: true, legendaryActionsRemaining: null, visionEnabled: true, visionRadiusFt: 30, darkvisionRadiusFt: 0,
   },
   {
     participantId: '3',
@@ -149,7 +149,7 @@ const SAMPLE_PARTICIPANTS: SnapshotParticipant[] = [
     size: 'Small',
     faction: 'enemy',
     imageUrl: null,
-    visibleToPlayers: true, legendaryActionsRemaining: null,
+    visibleToPlayers: true, legendaryActionsRemaining: null, visionEnabled: true, visionRadiusFt: 30, darkvisionRadiusFt: 0,
   },
 ];
 
@@ -377,6 +377,9 @@ export function StyleguidePage() {
                   zoom={1}
                   isActive
                   isDraggable={false}
+                  feetPerCell={5}
+                  diagonalRule="flat"
+                  snapToGrid
                   onMove={() => {}}
                 />
               </div>
@@ -398,6 +401,9 @@ export function StyleguidePage() {
                   zoom={1}
                   isActive={false}
                   isDraggable={false}
+                  feetPerCell={5}
+                  diagonalRule="flat"
+                  snapToGrid
                   onMove={() => {}}
                 />
               </div>

@@ -26,6 +26,7 @@ import type {
   ParticipantFactionChangedEvent,
   ParticipantJoinedEvent,
   ParticipantLeftEvent,
+  ParticipantVisionChangedEvent,
   TokenMovedEvent,
   TurnAdvancedEvent,
 } from '../lib/socketTypes';
@@ -380,6 +381,21 @@ export function useEncounterLive(encounterId: string | undefined) {
       });
     }
 
+    function onParticipantVisionChanged(payload: ParticipantVisionChangedEvent) {
+      if (payload.encounterId !== encounterId) return;
+      withSeqCheck(payload.seq, () => {
+        patch((prev) => ({
+          ...prev,
+          seq: payload.seq,
+          participants: prev.participants.map((p) =>
+            p.participantId === payload.participantId
+              ? { ...p, visionEnabled: payload.visionEnabled, visionRadiusFt: payload.visionRadiusFt, darkvisionRadiusFt: payload.darkvisionRadiusFt }
+              : p,
+          ),
+        }));
+      });
+    }
+
     function onParticipantAcChanged(payload: ParticipantAcChangedEvent) {
       if (payload.encounterId !== encounterId) return;
       withSeqCheck(payload.seq, () => {
@@ -411,6 +427,7 @@ export function useEncounterLive(encounterId: string | undefined) {
     socket.on('DISPOSITION_CHANGED', onDispositionChanged);
     socket.on('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
     socket.on('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
+    socket.on('PARTICIPANT_VISION_CHANGED', onParticipantVisionChanged);
     socket.on('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);
 
     joinAndSync();
@@ -434,6 +451,7 @@ export function useEncounterLive(encounterId: string | undefined) {
       socket.off('DISPOSITION_CHANGED', onDispositionChanged);
       socket.off('PARTICIPANT_AC_CHANGED', onParticipantAcChanged);
       socket.off('PARTICIPANT_FACTION_CHANGED', onParticipantFactionChanged);
+      socket.off('PARTICIPANT_VISION_CHANGED', onParticipantVisionChanged);
       socket.off('ACTION_ECONOMY_CHANGED', onActionEconomyChanged);
     };
   }, [encounterId, connected, socket, queryClient]);

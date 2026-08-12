@@ -40,6 +40,8 @@ import { ElementPalette } from './elements/ElementPalette';
 import { MapCanvasElements } from './elements/MapCanvasElements';
 import { ElementPropertyPanel } from './elements/ElementPropertyPanel';
 import { useCreateMapElement } from './elements/useMapElements';
+import { VisionOverlay } from './vision/VisionOverlay';
+import { useCampaignShell } from '../campaigns/CampaignShell';
 
 const GRID_MIN = 5;
 const GRID_MAX = 50;
@@ -136,8 +138,20 @@ export function BattleMap({
 }) {
   const { t } = useLocale();
   const { user } = useAuth();
+  const { campaign } = useCampaignShell();
   const [showSetup, setShowSetup] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Phase 2 multi-select (shift-click) — separate from selectedId (which
+  // still drives reachable-cell highlighting/the sheet-opening selection);
+  // this only tracks "which tokens move together on the next drag."
+  const [multiSelectedIds, setMultiSelectedIds] = useState<Set<string>>(new Set());
+  // Phase 2 grid-snap toggle — drag-preview smoothness only (Token.tsx); the
+  // dropped cell is always whole-cell regardless of this setting.
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  // Phase 2 fog-of-war — the DM's own view never shows fog; this toggles a
+  // preview of exactly what a player would see (union of player-faction
+  // token vision). Real (non-DM) viewers always see it, unconditionally.
+  const [previewPlayerView, setPreviewPlayerView] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [paintMode, setPaintMode] = useState(false);
   // Generic map elements (walls/doors/lights/areas/notes/images) — mirrors
@@ -352,6 +366,48 @@ export function BattleMap({
     setPendingMove(null);
   }
 
+  // Shift-click toggles multi-select membership without disturbing the
+  // primary selection (reachable-cell highlighting stays keyed on selectedId
+  // alone). A plain click clears any multi-selection — dragging a token
+  // that ISN'T part of a multi-select group should never accidentally drag
+  // stale group members from a previous selection.
+  function handleTokenClick(participantId: string, e: React.MouseEvent) {
+    if (e.shiftKey) {
+      setMultiSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(participantId)) next.delete(participantId);
+        else next.add(participantId);
+        return next;
+      });
+      return;
+    }
+    setMultiSelectedIds(new Set());
+    selectParticipant(selectedId === participantId ? null : participantId);
+  }
+
+  // Group-move (Phase 2): if the dragged token is part of a multi-select
+  // group of 2+, every other member moves by the same cell delta, clamped
+  // to the grid bounds. One sequential PATCH per participant — not atomic
+  // server-side, an accepted v1 risk (see the approved plan's cross-cutting
+  // decisions) rather than a new batch-move endpoint.
+  function handleTokenMove(participant: SnapshotParticipant, x: number, y: number) {
+    if (!map) return;
+    const group = multiSelectedIds.has(participant.participantId) && multiSelectedIds.size > 1 ? multiSelectedIds : null;
+    if (!group) {
+      positionMutation.mutate({ participantId: participant.participantId, x, y });
+      return;
+    }
+    const dx = x - (participant.posX ?? x);
+    const dy = y - (participant.posY ?? y);
+    for (const id of group) {
+      const member = placed.find((p) => p.participantId === id);
+      if (!member || member.posX == null || member.posY == null) continue;
+      const nx = Math.min(Math.max(member.posX + dx, 0), map.gridColumns - 1);
+      const ny = Math.min(Math.max(member.posY + dy, 0), map.gridRows - 1);
+      positionMutation.mutate({ participantId: id, x: nx, y: ny });
+    }
+  }
+
   function centerOnActive() {
     const container = scrollRef.current;
     if (!container || !map || activeParticipantId == null) return;
@@ -486,6 +542,33 @@ export function BattleMap({
           >
             {t('encounters.battleMap.centerOnActive')}
           </button>
+          <button
+            type="button"
+            onClick={() => setSnapToGrid((s) => !s)}
+            aria-pressed={snapToGrid}
+            title={t('encounters.battleMap.snapToGridTitle')}
+            className={`min-h-11 rounded-md px-3 text-xs ${
+              snapToGrid ? 'bg-amber-950/30 text-amber-400 outline outline-1 outline-amber-600' : 'bg-stone-900 shadow-sm text-stone-400 hover:bg-stone-800'
+            }`}
+          >
+            {t('encounters.battleMap.snapToGrid')}
+          </button>
+          {!isDm && (
+            <span className="text-xs text-stone-500 ml-1">{t('encounters.battleMap.fogActiveHint')}</span>
+          )}
+          {isDm && (
+            <button
+              type="button"
+              onClick={() => setPreviewPlayerView((s) => !s)}
+              aria-pressed={previewPlayerView}
+              title={t('encounters.battleMap.previewPlayerViewTitle')}
+              className={`min-h-11 rounded-md px-3 text-xs ${
+                previewPlayerView ? 'bg-sky-950/30 text-sky-400 outline outline-1 outline-sky-600' : 'bg-stone-900 shadow-sm text-stone-400 hover:bg-stone-800'
+              }`}
+            >
+              {previewPlayerView ? t('encounters.battleMap.previewingPlayerView') : t('encounters.battleMap.previewPlayerView')}
+            </button>
+          )}
           {canControlSelected && reachableQuery.data && (
             <span className="text-xs text-stone-400 ml-2">
               {t('encounters.battleMap.remainingMovementLabel')}{' '}
@@ -706,9 +789,13 @@ export function BattleMap({
                       isActive={p.participantId === activeParticipantId}
                       isDraggable={canControl(p)}
                       isSelected={p.participantId === selectedId}
+                      isMultiSelected={multiSelectedIds.has(p.participantId)}
                       controlBadge={controlBadgeFor(p.characterId, characters, user?.id)}
-                      onMove={(x, y) => positionMutation.mutate({ participantId: p.participantId, x, y })}
-                      onSelect={() => selectParticipant(selectedId === p.participantId ? null : p.participantId)}
+                      feetPerCell={map.feetPerCell}
+                      diagonalRule={campaign.diagonal_movement_rule}
+                      snapToGrid={snapToGrid}
+                      onMove={(x, y) => handleTokenMove(p, x, y)}
+                      onSelect={(e) => handleTokenClick(p.participantId, e)}
                       // Single click only selects (for move-targeting) —
                       // opening the stats sheet on every click made
                       // repositioning several tokens in a row annoying
@@ -716,6 +803,16 @@ export function BattleMap({
                       onOpenSheet={() => onOpenSheet?.(p.participantId)}
                     />
                   ))}
+
+                  <VisionOverlay
+                    participants={participants}
+                    mapElements={mapElements}
+                    cellSizePx={map.cellSizePx}
+                    feetPerCell={map.feetPerCell}
+                    mapWidthPx={mapWidthPx}
+                    mapHeightPx={mapHeightPx}
+                    active={!isDm || previewPlayerView}
+                  />
                 </div>
               </div>
             </div>

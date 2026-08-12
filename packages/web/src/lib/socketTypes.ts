@@ -133,6 +133,9 @@ export interface FullStateSyncEvent extends Envelope {
     imageUrl: string | null;
     visibleToPlayers: boolean;
     legendaryActionsRemaining: number | null;
+    visionEnabled: boolean;
+    visionRadiusFt: number;
+    darkvisionRadiusFt: number;
   }>;
   map: MapConfig | null;
   mapElements: MapElement[];
@@ -151,6 +154,15 @@ export interface LairActionAvailableEvent extends Envelope {
 export interface ParticipantFactionChangedEvent extends Envelope {
   participantId: string;
   faction: 'player' | 'ally' | 'enemy' | 'neutral';
+}
+
+// DM battle-map vision feature — same "no visibility split" reasoning as
+// PARTICIPANT_FACTION_CHANGED.
+export interface ParticipantVisionChangedEvent extends Envelope {
+  participantId: string;
+  visionEnabled: boolean;
+  visionRadiusFt: number;
+  darkvisionRadiusFt: number;
 }
 
 // No DM/player visibility split on either event (see sockets/broadcast.ts) —
@@ -458,6 +470,7 @@ export interface ServerToClientEvents {
   DISPOSITION_CHANGED: (payload: DispositionChangedEvent) => void;
   PARTICIPANT_AC_CHANGED: (payload: ParticipantAcChangedEvent) => void;
   PARTICIPANT_FACTION_CHANGED: (payload: ParticipantFactionChangedEvent) => void;
+  PARTICIPANT_VISION_CHANGED: (payload: ParticipantVisionChangedEvent) => void;
   ACTION_ECONOMY_CHANGED: (payload: ActionEconomyChangedEvent) => void;
   DICE_ROLLED: (payload: DiceRolledEvent | DiceRollMaskedEvent) => void;
   DICE_ROLL_VOIDED: (payload: DiceRollVoidedEvent) => void;
