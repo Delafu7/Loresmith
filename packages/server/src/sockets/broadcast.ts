@@ -22,6 +22,7 @@ import { campaignRoom, encounterRoom } from './roomNames.js';
 import type { SocketData } from './types.js';
 import { getEncounterCombatSnapshot, getEncounterMap, formatMapForWire } from '../services/encounters.js';
 import type { EncounterMapRow } from '../services/encounters.js';
+import { listMapElements, formatMapElementForWire } from '../services/mapElements.js';
 import type { CampaignRole } from '../services/authz.js';
 import { isActionVisibleToPlayers, type CombatActionView } from '../services/combatActions.js';
 import { isRollVisibleToViewer } from '../services/diceRolls.js';
@@ -347,6 +348,33 @@ export async function broadcastTokenMoved(
     { ...envelope(encounter), participantId: participant.id, x: participant.pos_x, y: participant.pos_y },
     visible,
   );
+}
+
+// ---- MAP_ELEMENTS_CHANGED (DM battle-map vision/elements feature) ----
+//
+// Elements are scoped to maps.id, not a single encounter (see
+// services/mapElements.ts's header comment) — every encounter currently
+// linked to the affected map gets its own broadcast, each carrying that
+// encounter's own freshly-bumped sync_seq (same "envelope reflects real
+// per-encounter state" discipline as every other event here). No DM/player
+// split, same reasoning as MAP_UPDATED/TOKEN_MOVED (not HP-sensitive info) —
+// the one exception is 'note' elements, which the CLIENT never renders to a
+// non-DM viewer regardless of visibleToPlayers (see the web registry's note
+// entry); that's a display-layer rule, not a wire-payload redaction.
+export function broadcastMapElementsChanged(
+  io: Server,
+  affectedEncounters: { id: string; campaign_id: string; sync_seq: number }[],
+  changeType: 'created' | 'updated' | 'deleted',
+  // 'deleted' has no row left to format — callers pass just the id in that case.
+  element: ReturnType<typeof formatMapElementForWire> | { id: string },
+): void {
+  for (const encounter of affectedEncounters) {
+    io.to(encounterRoom(encounter.id)).emit('MAP_ELEMENTS_CHANGED', {
+      ...envelope(encounter),
+      changeType,
+      element,
+    });
+  }
 }
 
 // Exploration/combat mode toggle — the one genuinely new realtime event this
@@ -907,6 +935,11 @@ export async function buildFullStateSyncPayload(
   // broadcasts, this isn't sensitive info.
   const map = await getEncounterMap(poolOrClient, encounterId);
 
+  // Same no-split rule as `map` above — including for 'note' elements; the
+  // client is what hides notes from non-DM viewers (see
+  // broadcastMapElementsChanged's header comment).
+  const mapElements = (await listMapElements(poolOrClient, encounterId)).map(formatMapElementForWire);
+
   return {
     encounterId: encounter.id,
     campaignId: encounter.campaign_id,
@@ -922,6 +955,7 @@ export async function buildFullStateSyncPayload(
     activeParticipantId: active?.participant_id ?? null,
     participants: visibleParticipantsOut,
     map: formatMapForWire(map),
+    mapElements,
   };
 }
 

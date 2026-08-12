@@ -35,6 +35,9 @@ import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import * as combatActionsService from '../services/combatActions.js';
 import * as mapsService from '../services/maps.js';
 import { setActiveMapSchema } from '../schemas/maps.js';
+import * as mapElementsService from '../services/mapElements.js';
+import { formatMapElementForWire } from '../services/mapElements.js';
+import { createMapElementSchema, updateMapElementSchema } from '../schemas/mapElements.js';
 import {
   getIo,
   broadcastCombatStarted,
@@ -46,6 +49,7 @@ import {
   broadcastEffectApplied,
   broadcastEffectExpired,
   broadcastMapUpdated,
+  broadcastMapElementsChanged,
   broadcastTokenMoved,
   broadcastModeChanged,
   broadcastDispositionChanged,
@@ -126,6 +130,24 @@ async function requireEncounterDm(req: Request, _res: Response, next: NextFuncti
 
   const role = await requireMembership(pool, row.campaign_id, req.user!.id);
   requireDm(role);
+  next();
+}
+
+// Membership-only sibling of requireEncounterDm above, for routes players
+// must be able to read too (map elements: walls/doors/lights/areas/images
+// need to render on a player's screen — only cell-overrides is DM-only-read,
+// because terrain feedback reaches players via move-rejection, not direct
+// rendering; see BattleMap.tsx's cell-overrides query, which is gated
+// `enabled: isDm` client-side and never called by a player at all).
+async function requireEncounterMember(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const encounterId = (req.params.id as string);
+  if (!isUuid(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
+
+  const result = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM encounters WHERE id = $1`, [encounterId]);
+  const row = result.rows[0];
+  if (!row) throw notFound('Encounter');
+
+  await requireMembership(pool, row.campaign_id, req.user!.id);
   next();
 }
 
@@ -443,6 +465,51 @@ encountersRouter.delete('/:id/map/cell-overrides/:x/:y', requireEncounterDm, asy
     pool, (req.params.id as string), Number(req.params.x), Number(req.params.y),
   );
   if (result) broadcastMapUpdated(getIo(req.app), result.encounter, result.map);
+  res.status(204).send();
+});
+
+// Generic map elements (walls/doors/lights/areas/notes/images — see
+// services/mapElements.ts). Deliberately membership-gated for the read, NOT
+// requireEncounterDm like cell-overrides just above: a player needs to see
+// walls/doors/lights/areas/images rendered on their own screen. 'note'
+// elements ARE included in this response for everyone — the DM-only
+// restriction on notes is enforced by the CLIENT never rendering them to a
+// non-DM viewer (see the web registry), matching this app's existing "no
+// wire-level DM/player split for non-HP-sensitive data" precedent
+// (MAP_UPDATED/TOKEN_MOVED). Writes stay requireEncounterDm-gated same as
+// the rest of the map-configuration surface.
+encountersRouter.get('/:id/map/elements', requireEncounterMember, async (req, res) => {
+  const elements = await mapElementsService.listMapElements(pool, (req.params.id as string));
+  res.json({ elements: elements.map(formatMapElementForWire) });
+});
+
+encountersRouter.post('/:id/map/elements', requireEncounterDm, async (req, res) => {
+  const input = createMapElementSchema.parse(req.body);
+  const { element, affectedEncounters } = await mapElementsService.createMapElement(
+    pool, (req.params.id as string), input,
+  );
+  const wire = formatMapElementForWire(element);
+  broadcastMapElementsChanged(getIo(req.app), affectedEncounters, 'created', wire);
+  res.status(201).json({ element: wire });
+});
+
+encountersRouter.patch('/:id/map/elements/:elementId', requireEncounterDm, async (req, res) => {
+  const input = updateMapElementSchema.parse(req.body);
+  const { element, affectedEncounters } = await mapElementsService.updateMapElement(
+    pool, (req.params.id as string), (req.params.elementId as string), input,
+  );
+  const wire = formatMapElementForWire(element);
+  broadcastMapElementsChanged(getIo(req.app), affectedEncounters, 'updated', wire);
+  res.json({ element: wire });
+});
+
+encountersRouter.delete('/:id/map/elements/:elementId', requireEncounterDm, async (req, res) => {
+  const result = await mapElementsService.deleteMapElement(
+    pool, (req.params.id as string), (req.params.elementId as string),
+  );
+  if (result) {
+    broadcastMapElementsChanged(getIo(req.app), result.affectedEncounters, 'deleted', { id: result.elementId });
+  }
   res.status(204).send();
 });
 
