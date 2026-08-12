@@ -104,6 +104,18 @@ export const setParticipantHpVisibilitySchema = z.object({
 });
 export type SetParticipantHpVisibilityInput = z.infer<typeof setParticipantHpVisibilitySchema>;
 
+// DM battle-map vision feature — see 1784269817666_add-participant-vision.ts.
+// Encounter-scoped (not a character/monster-instance property), DM-tunable
+// per fight, mirroring setParticipantFactionSchema's "one small DM knob"
+// shape. All three fields optional so the DM can patch just one at a time
+// (e.g. flip visionEnabled without resending the radii).
+export const setParticipantVisionSchema = z.object({
+  visionEnabled: z.boolean().optional(),
+  visionRadiusFt: z.number().int().min(0).max(1000).optional(),
+  darkvisionRadiusFt: z.number().int().min(0).max(1000).optional(),
+});
+export type SetParticipantVisionInput = z.infer<typeof setParticipantVisionSchema>;
+
 // Phase 2 "legendary actions per-round counters" — cost defaults to 1
 // (the SRD default) when omitted, matching StatBlockEntry.cost's own default.
 export const spendLegendaryActionSchema = z.object({

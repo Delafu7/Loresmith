@@ -33,6 +33,7 @@ import type {
   SetParticipantHpVisibilityInput,
   SetParticipantPositionInput,
   SetParticipantVisibilityInput,
+  SetParticipantVisionInput,
   SpendLegendaryActionInput,
   TransitionDispositionInput,
   UpdateEncounterInput,
@@ -102,6 +103,9 @@ interface ParticipantRow {
   object_interaction_used: boolean;
   last_action_economy_snapshot: ActionEconomySnapshot | null;
   visible_to_players: boolean;
+  vision_enabled: boolean;
+  vision_radius_ft: number;
+  darkvision_radius_ft: number;
   [key: string]: unknown;
 }
 
@@ -841,6 +845,47 @@ export async function setParticipantFaction(
   }
 }
 
+// DM battle-map vision feature — same shape as setParticipantFaction just
+// above (COALESCE so any subset of the three fields can be patched at once,
+// bump sync_seq in the same transaction, no visibility split since vision
+// config isn't HP-sensitive).
+export async function setParticipantVision(
+  pool: Pool,
+  encounterId: string,
+  participantId: string,
+  input: SetParticipantVisionInput,
+): Promise<ParticipantMutationResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET
+         vision_enabled = COALESCE($1, vision_enabled),
+         vision_radius_ft = COALESCE($2, vision_radius_ft),
+         darkvision_radius_ft = COALESCE($3, darkvision_radius_ft)
+       WHERE id = $4 AND encounter_id = $5
+       RETURNING *`,
+      [input.visionEnabled ?? null, input.visionRadiusFt ?? null, input.darkvisionRadiusFt ?? null, participantId, encounterId],
+    );
+    const participant = updated.rows[0];
+    if (!participant) throw notFound('Participant');
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participant };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Encounter visibility by state (nav point 1) — DM-only toggle for an
 // individual participant (e.g. revealing an ambush mid-fight). Same
 // bump-sync_seq-and-broadcast-a-resync shape as setParticipantFaction, except
@@ -1232,6 +1277,14 @@ export interface CombatSnapshotParticipant {
   // non-legendary participant. Always visible to every role (same as AC/
   // effects — no redaction mechanism for this).
   legendary_actions_remaining: number | null;
+  // DM battle-map vision feature (1784269817666_add-participant-vision.ts) —
+  // encounter-scoped, DM-tunable per fight (see that migration's header
+  // comment for why this isn't a character/monster-instance column). No
+  // redaction — every viewer gets every participant's vision config, same
+  // "not HP-sensitive" reasoning as faction/speed above.
+  vision_enabled: boolean;
+  vision_radius_ft: number;
+  darkvision_radius_ft: number;
 }
 
 export interface CombatSnapshot {
@@ -1258,7 +1311,8 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             cp.faction,
             COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft,
             COALESCE(ca_char.file_url, ca_monster.file_url, m.image_url) AS image_url,
-            cp.visible_to_players, cp.hp_visibility, cp.legendary_actions_remaining
+            cp.visible_to_players, cp.hp_visibility, cp.legendary_actions_remaining,
+            cp.vision_enabled, cp.vision_radius_ft, cp.darkvision_radius_ft
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id
      LEFT JOIN campaign_assets ca_char ON ca_char.id = c.portrait_asset_id

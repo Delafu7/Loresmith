@@ -17,6 +17,7 @@ import {
   setParticipantHpVisibilitySchema,
   setParticipantPositionSchema,
   setParticipantVisibilitySchema,
+  setParticipantVisionSchema,
   spendLegendaryActionSchema,
   spawnParticipantsSchema,
   transitionDispositionSchema,
@@ -54,6 +55,7 @@ import {
   broadcastModeChanged,
   broadcastDispositionChanged,
   broadcastParticipantFactionChanged,
+  broadcastParticipantVisionChanged,
   broadcastActionEconomyChanged,
   broadcastDiceRolled,
   broadcastFullStateResync,
@@ -524,6 +526,17 @@ encountersRouter.patch('/:id/participants/:pid/faction', requireEncounterDm, asy
     pool, (req.params.id as string), (req.params.pid as string), input,
   );
   await broadcastParticipantFactionChanged(getIo(req.app), encounter, participant);
+  res.json({ participant });
+});
+
+// DM battle-map vision feature — same DM-only, room-wide-broadcast shape as
+// /faction just above.
+encountersRouter.patch('/:id/participants/:pid/vision', requireEncounterDm, async (req, res) => {
+  const input = setParticipantVisionSchema.parse(req.body);
+  const { encounter, participant } = await encountersService.setParticipantVision(
+    pool, (req.params.id as string), (req.params.pid as string), input,
+  );
+  await broadcastParticipantVisionChanged(getIo(req.app), encounter, participant);
   res.json({ participant });
 });
 

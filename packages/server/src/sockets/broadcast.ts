@@ -427,6 +427,30 @@ export async function broadcastParticipantFactionChanged(
   );
 }
 
+// DM battle-map vision feature — same shape as PARTICIPANT_FACTION_CHANGED
+// just above (no visibility split, vision config isn't HP-sensitive).
+export async function broadcastParticipantVisionChanged(
+  io: Server,
+  encounter: EncounterLike,
+  participant: { id: string; vision_enabled: boolean; vision_radius_ft: number; darkvision_radius_ft: number },
+): Promise<void> {
+  const visible = await isParticipantIdVisibleToPlayers(pool, participant.id);
+  await emitToEncounterRespectingVisibility(
+    io,
+    encounter.campaign_id,
+    encounter.id,
+    'PARTICIPANT_VISION_CHANGED',
+    {
+      ...envelope(encounter),
+      participantId: participant.id,
+      visionEnabled: participant.vision_enabled,
+      visionRadiusFt: participant.vision_radius_ft,
+      darkvisionRadiusFt: participant.darkvision_radius_ft,
+    },
+    visible,
+  );
+}
+
 // ---- ACTION_ECONOMY_CHANGED (Phase 3.6) ----
 //
 // Same "no DM/player visibility split" reasoning as MAP_UPDATED/TOKEN_MOVED
@@ -921,6 +945,9 @@ export async function buildFullStateSyncPayload(
     effects: (effectsByTarget.get(effectTargetKey(p.character_id, p.monster_instance_id)) ?? []).map(formatEffectForWire),
     visibleToPlayers: p.visible_to_players,
     legendaryActionsRemaining: p.legendary_actions_remaining,
+    visionEnabled: p.vision_enabled,
+    visionRadiusFt: p.vision_radius_ft,
+    darkvisionRadiusFt: p.darkvision_radius_ft,
   }));
 
   // DM always gets every row; a non-DM viewer never receives one with
