@@ -22,7 +22,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Character, EncounterMode, EncounterStatus, CampaignAsset, SnapshotParticipant } from '../lib/types';
+import type { Character, EncounterMode, EncounterStatus, CampaignAsset, MapElement, MapElementType, SnapshotParticipant } from '../lib/types';
 import type { MapConfig } from '../lib/socketTypes';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
@@ -30,11 +30,16 @@ import { ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Field, Input } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../auth/AuthContext';
-import { useLocale } from '../i18n/LocaleContext';
+import { useLocale, type TranslationKey } from '../i18n/LocaleContext';
 import { formatDistance } from '../lib/units';
 import { canMoveToken } from './canMoveToken';
 import { Token } from './Token';
 import { controlBadgeFor } from './controlBadge';
+import { ELEMENT_REGISTRY } from './elements/registry';
+import { ElementPalette } from './elements/ElementPalette';
+import { MapCanvasElements } from './elements/MapCanvasElements';
+import { ElementPropertyPanel } from './elements/ElementPropertyPanel';
+import { useCreateMapElement } from './elements/useMapElements';
 
 const GRID_MIN = 5;
 const GRID_MAX = 50;
@@ -90,6 +95,7 @@ export function BattleMap({
   campaignId,
   map,
   participants,
+  mapElements,
   activeParticipantId,
   encounter,
   isDm,
@@ -101,6 +107,8 @@ export function BattleMap({
   campaignId: string;
   map: MapConfig | null;
   participants: SnapshotParticipant[];
+  /** Generic DM map elements (walls/doors/lights/areas/notes/images) — see encounters/elements/registry.tsx. */
+  mapElements: MapElement[];
   activeParticipantId: string | null;
   /** mode/status/currentTurnIndex — enough for canMoveToken.ts's client-side
    * enable/disable mirror of the server's move-validation decision. */
@@ -132,6 +140,15 @@ export function BattleMap({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [paintMode, setPaintMode] = useState(false);
+  // Generic map elements (walls/doors/lights/areas/notes/images) — mirrors
+  // paintMode's own shape. `elementEditMode` shows the palette + lets
+  // existing elements be clicked to open their property panel;
+  // `placingType`/`placingPoints` track an in-progress placement (segment
+  // types need two clicks, polygon types need >=3 before "Finish").
+  const [elementEditMode, setElementEditMode] = useState(false);
+  const [placingType, setPlacingType] = useState<MapElementType | null>(null);
+  const [placingPoints, setPlacingPoints] = useState<{ x: number; y: number }[]>([]);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   // Tap-to-move (docs/design-tokens.md mobile pass): "dragging is unreliable
   // with a finger covering the target — tap to select, then tap-destination,
   // then an explicit confirm control ... with an obvious cancel." Additive,
@@ -218,6 +235,82 @@ export function BattleMap({
     const current = overridesByCell.get(`${x},${y}`)?.cost_type ?? null;
     const next = PAINT_CYCLE[(PAINT_CYCLE.indexOf(current) + 1) % PAINT_CYCLE.length]!;
     paintMutation.mutate({ x, y, costType: next });
+  }
+
+  // Same query key as MapSetupPanel's assets fetch below — TanStack Query
+  // dedups/shares the cache entry, so this doesn't add a second network
+  // request whenever that panel happens to also be open. Membership-gated
+  // server-side (not DM-only): image elements need to render for players too.
+  const assetsQuery = useQuery({
+    queryKey: ['campaign', campaignId, 'assets'],
+    queryFn: () => api.get<{ assets: CampaignAsset[] }>(`/campaigns/${campaignId}/assets`),
+  });
+  const assetUrlById = new Map((assetsQuery.data?.assets ?? []).map((a) => [a.id, a.file_url]));
+  function resolveAssetUrl(assetId: string): string | undefined {
+    return assetUrlById.get(assetId);
+  }
+
+  const createElementMutation = useCreateMapElement(encounterId);
+  const selectedElement = mapElements.find((el) => el.id === selectedElementId) ?? null;
+
+  function cancelPlacement() {
+    setPlacingType(null);
+    setPlacingPoints([]);
+  }
+
+  // Generic over ELEMENT_REGISTRY's `placement` field — a 'point' type
+  // creates on the first click, a 'segment' type needs two clicks (start,
+  // end), a 'polygon' type accumulates clicks until finishPolygonPlacement
+  // is called. No type-specific branch: every type funnels through
+  // entry.defaults() for its props/label/visibleToPlayers.
+  function handleElementPlacementClick(x: number, y: number) {
+    if (!placingType) return;
+    const entry = ELEMENT_REGISTRY[placingType];
+    if (entry.placement === 'point') {
+      const d = entry.defaults();
+      createElementMutation.mutate({ type: placingType, x1: x, y1: y, props: d.props, label: d.label, visibleToPlayers: d.visibleToPlayers });
+      cancelPlacement();
+      return;
+    }
+    if (entry.placement === 'segment') {
+      if (placingPoints.length === 0) {
+        setPlacingPoints([{ x, y }]);
+        return;
+      }
+      const start = placingPoints[0]!;
+      const d = entry.defaults();
+      createElementMutation.mutate({
+        type: placingType,
+        x1: start.x,
+        y1: start.y,
+        x2: x,
+        y2: y,
+        props: d.props,
+        label: d.label,
+        visibleToPlayers: d.visibleToPlayers,
+      });
+      cancelPlacement();
+      return;
+    }
+    // polygon
+    setPlacingPoints((prev) => [...prev, { x, y }]);
+  }
+
+  function finishPolygonPlacement() {
+    if (!placingType || placingPoints.length < 3) return;
+    const entry = ELEMENT_REGISTRY[placingType];
+    const d = entry.defaults();
+    const anchor = placingPoints[0]!;
+    createElementMutation.mutate({
+      type: placingType,
+      x1: anchor.x,
+      y1: anchor.y,
+      points: placingPoints,
+      props: d.props,
+      label: d.label,
+      visibleToPlayers: d.visibleToPlayers,
+    });
+    cancelPlacement();
   }
 
   function isOwnToken(p: SnapshotParticipant): boolean {
@@ -341,6 +434,7 @@ export function BattleMap({
   return (
     <div className="flex h-full flex-col gap-4">
       {positionMutation.isError && <ErrorBanner message={errorMessage(positionMutation.error)} />}
+      {createElementMutation.isError && <ErrorBanner message={errorMessage(createElementMutation.error)} />}
 
       <div className="flex flex-shrink-0 items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1 flex-wrap">
@@ -418,6 +512,22 @@ export function BattleMap({
           {isDm && (
             <button
               type="button"
+              onClick={() => {
+                setElementEditMode((s) => !s);
+                cancelPlacement();
+                setSelectedElementId(null);
+                setPendingMove(null);
+              }}
+              className={`min-h-11 rounded-md px-3 text-xs ${
+                elementEditMode ? 'bg-amber-950/30 text-amber-400 outline outline-1 outline-amber-600' : 'bg-stone-900 shadow-sm text-stone-400 hover:bg-stone-800'
+              }`}
+            >
+              {elementEditMode ? t('encounters.mapElements.editingElements') : t('encounters.mapElements.editElements')}
+            </button>
+          )}
+          {isDm && (
+            <button
+              type="button"
               onClick={() => setShowSetup((s) => !s)}
               className="min-h-11 px-2 text-xs text-stone-400 hover:text-stone-200 underline"
             >
@@ -428,6 +538,32 @@ export function BattleMap({
       </div>
       {isDm && showSetup && (
         <MapSetupPanel campaignId={campaignId} encounterId={encounterId} map={map} onDone={() => setShowSetup(false)} />
+      )}
+      {isDm && elementEditMode && (
+        <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
+          <ElementPalette placingType={placingType} onSelectType={(type) => { setPlacingPoints([]); setPlacingType(type); setSelectedElementId(null); }} />
+          {placingType && (
+            <span className="text-xs text-stone-400">
+              {ELEMENT_REGISTRY[placingType].placement === 'point' &&
+                t('encounters.mapElements.placeHint', { type: t(ELEMENT_REGISTRY[placingType].labelKey as TranslationKey) })}
+              {ELEMENT_REGISTRY[placingType].placement === 'segment' &&
+                (placingPoints.length === 0
+                  ? t('encounters.mapElements.placeSegmentHintFirst', { type: t(ELEMENT_REGISTRY[placingType].labelKey as TranslationKey) })
+                  : t('encounters.mapElements.placeSegmentHintSecond', { type: t(ELEMENT_REGISTRY[placingType].labelKey as TranslationKey) }))}
+              {ELEMENT_REGISTRY[placingType].placement === 'polygon' && t('encounters.mapElements.placePolygonHint')}
+            </span>
+          )}
+          {placingType && ELEMENT_REGISTRY[placingType].placement === 'polygon' && placingPoints.length >= 3 && (
+            <Button variant="primary" size="sm" onClick={finishPolygonPlacement}>
+              {t('encounters.mapElements.finishShape')}
+            </Button>
+          )}
+          {placingType && (
+            <Button variant="ghost" size="sm" onClick={cancelPlacement}>
+              {t('encounters.mapElements.cancelPlacement')}
+            </Button>
+          )}
+        </div>
       )}
 
       <div
@@ -503,7 +639,7 @@ export function BattleMap({
                       shading with neither mode active stays pointer-events-
                       none so it never blocks token dragging underneath. */}
                   <div
-                    className={`absolute inset-0 grid ${paintMode || moveTargetMode ? '' : 'pointer-events-none'}`}
+                    className={`absolute inset-0 grid ${paintMode || moveTargetMode || placingType ? '' : 'pointer-events-none'}`}
                     style={{
                       gridTemplateColumns: `repeat(${map.gridColumns}, 1fr)`,
                       gridTemplateRows: `repeat(${map.gridRows}, 1fr)`,
@@ -514,33 +650,50 @@ export function BattleMap({
                         const override = overridesByCell.get(`${x},${y}`);
                         const isReachable = reachableCells.has(`${x},${y}`);
                         const isPending = pendingMove?.x === x && pendingMove?.y === y;
+                        const isPlacingPoint = placingPoints.some((pt) => pt.x === x && pt.y === y);
                         return (
                           <div
                             key={`${x},${y}`}
                             onClick={
-                              paintMode
-                                ? () => handleCellPaint(x, y)
-                                : moveTargetMode
-                                  ? () => setPendingMove({ x, y })
-                                  : undefined
+                              placingType
+                                ? () => handleElementPlacementClick(x, y)
+                                : paintMode
+                                  ? () => handleCellPaint(x, y)
+                                  : moveTargetMode
+                                    ? () => setPendingMove({ x, y })
+                                    : undefined
                             }
                             title={
-                              paintMode
-                                ? t('encounters.battleMap.cellPaintTitle', { cell: cellLabel(x, y) })
-                                : moveTargetMode
-                                  ? t('encounters.battleMap.moveHere', { cell: cellLabel(x, y) })
-                                  : (override?.note ?? undefined)
+                              placingType
+                                ? cellLabel(x, y)
+                                : paintMode
+                                  ? t('encounters.battleMap.cellPaintTitle', { cell: cellLabel(x, y) })
+                                  : moveTargetMode
+                                    ? t('encounters.battleMap.moveHere', { cell: cellLabel(x, y) })
+                                    : (override?.note ?? undefined)
                             }
-                            className={`${paintMode || moveTargetMode ? 'cursor-pointer hover:outline hover:outline-1 hover:outline-amber-500' : ''} ${
+                            className={`${paintMode || moveTargetMode || placingType ? 'cursor-pointer hover:outline hover:outline-1 hover:outline-amber-500' : ''} ${
                               override ? OVERRIDE_TINT[override.cost_type] : ''
                             } ${isReachable && !override ? 'bg-emerald-600/15' : ''} ${
                               isPending ? 'outline outline-2 outline-amber-400 bg-amber-500/25' : ''
-                            }`}
+                            } ${isPlacingPoint ? 'outline outline-2 outline-sky-400 bg-sky-500/25' : ''}`}
                           />
                         );
                       }),
                     )}
                   </div>
+
+                  <MapCanvasElements
+                    elements={mapElements}
+                    isDm={isDm}
+                    cellSizePx={map.cellSizePx}
+                    selectedElementId={selectedElementId}
+                    onSelect={(id) => {
+                      if (placingType) return;
+                      setSelectedElementId(id);
+                    }}
+                    resolveAssetUrl={resolveAssetUrl}
+                  />
 
                   {placed.map((p) => (
                     <Token
@@ -625,6 +778,10 @@ export function BattleMap({
             ))}
           </div>
         </div>
+      )}
+
+      {isDm && selectedElement && (
+        <ElementPropertyPanel encounterId={encounterId} element={selectedElement} onClose={() => setSelectedElementId(null)} />
       )}
     </div>
   );

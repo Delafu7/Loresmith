@@ -92,6 +92,7 @@ function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
           campaignId={campaignId}
           map={live.map}
           participants={live.participants}
+          mapElements={live.mapElements}
           activeParticipantId={live.activeParticipantId}
           encounter={live.encounter}
           isDm={isDm}

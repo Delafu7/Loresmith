@@ -803,6 +803,54 @@ export interface CampaignMap {
   updated_at: string;
 }
 
+// Generic DM map elements (walls/doors/lights/areas/notes/images) — see
+// server/src/services/mapElements.ts's header comment for the persistence
+// rationale (scoped to CampaignMap.id, not one encounter). Coordinates
+// (x1/y1/x2/y2, and each point in `points`) are grid-cell units — the same
+// space as SnapshotParticipant.posX/posY — not pixels, so they stay valid
+// across a background swap or cellSizePx change; fractional values are
+// allowed (e.g. a wall snapped to a cell edge sits at a whole number, but
+// nothing stops finer placement). Pixel conversion is a render-time concern
+// (`cellSizePx` from MapConfig), formalized in encounters/geometry.ts.
+//
+// One arm per `type`, discriminated exactly like ParticipantHp above. Adding
+// a new type here + a schemas/mapElements.ts Zod branch (server) + one
+// encounters/elements/registry.ts entry (client) is the whole surface area —
+// no renderer/palette/property-panel file should ever need a type-specific
+// edit (proven by `image`, which has zero legacy system underneath it).
+interface MapElementBase {
+  id: string;
+  mapId: string;
+  x1: number;
+  y1: number;
+  x2: number | null;
+  y2: number | null;
+  label: string | null;
+  visibleToPlayers: boolean;
+  locked: boolean;
+  zIndex: number;
+}
+export type MapElementType = 'wall' | 'door' | 'light' | 'area' | 'note' | 'image';
+export type MapElement =
+  | (MapElementBase & { type: 'wall'; points: null; props: Record<string, never> })
+  | (MapElementBase & { type: 'door'; points: null; props: { state: 'open' | 'closed' | 'locked' } })
+  | (MapElementBase & {
+      type: 'light';
+      points: null;
+      props: { brightRadiusFt: number; dimRadiusFt: number; color: string; intensity: number };
+    })
+  | (MapElementBase & {
+      type: 'area';
+      points: { x: number; y: number }[];
+      props: { shape: 'rect' | 'circle' | 'polygon'; costType: 'difficult' | 'note-only'; color: string };
+    })
+  | (MapElementBase & { type: 'note'; points: null; props: { body: string } })
+  | (MapElementBase & {
+      type: 'image';
+      points: null;
+      props: { assetId: string | null; widthFt: number; heightFt: number; rotationDeg: number; opacity: number };
+    });
+
 export interface Note {
   id: string;
   campaign_id: string;

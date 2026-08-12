@@ -16,6 +16,7 @@ import type {
   EncounterDisposition,
   EncounterMode,
   EncounterStatus,
+  MapElement,
   ParticipantHp,
   ResourcePool,
 } from './types';
@@ -134,6 +135,7 @@ export interface FullStateSyncEvent extends Envelope {
     legendaryActionsRemaining: number | null;
   }>;
   map: MapConfig | null;
+  mapElements: MapElement[];
 }
 
 // Phase 2 "lair actions (round-start trigger)" — room-wide, no DM/player
@@ -159,6 +161,18 @@ export interface TokenMovedEvent extends Envelope {
   participantId: string;
   x: number | null;
   y: number | null;
+}
+
+// Elements are scoped to CampaignMap.id, not one encounter (see
+// services/mapElements.ts's header comment) — every encounter linked to the
+// affected map gets its own broadcast. No visibility split, same reasoning
+// as MAP_UPDATED/TOKEN_MOVED; 'note' elements ARE present in this payload
+// for every viewer — the DM-only restriction is enforced by the client never
+// rendering them to a non-DM viewer (see encounters/elements/registry.ts).
+// 'deleted' has no row left to send, just the id.
+export interface MapElementsChangedEvent extends Envelope {
+  changeType: 'created' | 'updated' | 'deleted';
+  element: MapElement | { id: string };
 }
 
 // Exploration/combat mode toggle — the one genuinely new event this feature
@@ -438,6 +452,7 @@ export interface ServerToClientEvents {
   REVEAL_CHANGED: (payload: RevealChangedEvent) => void;
   FULL_STATE_SYNC: (payload: FullStateSyncEvent) => void;
   MAP_UPDATED: (payload: MapUpdatedEvent) => void;
+  MAP_ELEMENTS_CHANGED: (payload: MapElementsChangedEvent) => void;
   TOKEN_MOVED: (payload: TokenMovedEvent) => void;
   MODE_CHANGED: (payload: ModeChangedEvent) => void;
   DISPOSITION_CHANGED: (payload: DispositionChangedEvent) => void;

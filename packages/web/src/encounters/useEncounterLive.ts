@@ -19,6 +19,7 @@ import type {
   HpChangedEvent,
   InitiativeRolledEvent,
   MapConfig,
+  MapElementsChangedEvent,
   MapUpdatedEvent,
   ModeChangedEvent,
   ParticipantAcChangedEvent,
@@ -28,7 +29,7 @@ import type {
   TokenMovedEvent,
   TurnAdvancedEvent,
 } from '../lib/socketTypes';
-import type { EncounterDisposition, EncounterMode, EncounterStatus, SnapshotParticipant } from '../lib/types';
+import type { EncounterDisposition, EncounterMode, EncounterStatus, MapElement, SnapshotParticipant } from '../lib/types';
 
 export interface EncounterLiveState {
   seq: number;
@@ -42,6 +43,7 @@ export interface EncounterLiveState {
   activeParticipantId: string | null;
   participants: SnapshotParticipant[];
   map: MapConfig | null;
+  mapElements: MapElement[];
 }
 
 function liveQueryKey(encounterId: string) {
@@ -87,6 +89,7 @@ export function useEncounterLive(encounterId: string | undefined) {
         activeParticipantId: payload.activeParticipantId,
         participants: payload.participants,
         map: payload.map,
+        mapElements: payload.mapElements,
       });
     }
 
@@ -317,6 +320,35 @@ export function useEncounterLive(encounterId: string | undefined) {
       });
     }
 
+    // Three-way discriminated by changeType, unlike every other array patch
+    // above (those are all pure "replace by id"): 'created' appends,
+    // 'updated' replaces by id (falling back to append if the create's own
+    // broadcast raced ahead of this client's array — defensive, shouldn't
+    // normally happen), 'deleted' filters out by id.
+    function onMapElementsChanged(payload: MapElementsChangedEvent) {
+      if (payload.encounterId !== encounterId) return;
+      withSeqCheck(payload.seq, () => {
+        patch((prev) => {
+          if (payload.changeType === 'deleted') {
+            return {
+              ...prev,
+              seq: payload.seq,
+              mapElements: prev.mapElements.filter((el) => el.id !== payload.element.id),
+            };
+          }
+          const element = payload.element as MapElement;
+          const exists = prev.mapElements.some((el) => el.id === element.id);
+          return {
+            ...prev,
+            seq: payload.seq,
+            mapElements: exists
+              ? prev.mapElements.map((el) => (el.id === element.id ? element : el))
+              : [...prev.mapElements, element],
+          };
+        });
+      });
+    }
+
     function onModeChanged(payload: ModeChangedEvent) {
       if (payload.encounterId !== encounterId) return;
       withSeqCheck(payload.seq, () => {
@@ -373,6 +405,7 @@ export function useEncounterLive(encounterId: string | undefined) {
     socket.on('EFFECT_APPLIED', onEffectApplied);
     socket.on('EFFECT_EXPIRED', onEffectExpired);
     socket.on('MAP_UPDATED', onMapUpdated);
+    socket.on('MAP_ELEMENTS_CHANGED', onMapElementsChanged);
     socket.on('TOKEN_MOVED', onTokenMoved);
     socket.on('MODE_CHANGED', onModeChanged);
     socket.on('DISPOSITION_CHANGED', onDispositionChanged);
@@ -395,6 +428,7 @@ export function useEncounterLive(encounterId: string | undefined) {
       socket.off('EFFECT_APPLIED', onEffectApplied);
       socket.off('EFFECT_EXPIRED', onEffectExpired);
       socket.off('MAP_UPDATED', onMapUpdated);
+      socket.off('MAP_ELEMENTS_CHANGED', onMapElementsChanged);
       socket.off('TOKEN_MOVED', onTokenMoved);
       socket.off('MODE_CHANGED', onModeChanged);
       socket.off('DISPOSITION_CHANGED', onDispositionChanged);
