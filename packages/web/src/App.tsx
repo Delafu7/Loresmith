@@ -18,6 +18,7 @@ import { CampaignDashboardPage } from './campaigns/CampaignDashboardPage';
 import { MapSectionPage } from './campaigns/MapSectionPage';
 import { CharactersListPage } from './characters/CharactersListPage';
 import { CharacterSheetPage } from './characters/CharacterSheetPage';
+import { CharacterCreationWizard } from './characters/wizard/CharacterCreationWizard';
 import { MonstersPage } from './monsters/MonstersPage';
 import { CreatureEditorPage } from './monsters/CreatureEditorPage';
 import { ItemRepositoryPage } from './items/ItemRepositoryPage';
@@ -107,6 +108,11 @@ function App() {
                       (unchanged, still auto-pushed to on "Start combat"). */}
                   <Route path="map" element={<MapSectionPage />} />
                   <Route path="characters" element={<CharactersListPage />} />
+                  {/* Registered before the :characterId route below so
+                      react-router matches this literal path first — same
+                      "literal before dynamic param" convention as the
+                      server's /encounters/my-live route. */}
+                  <Route path="characters/new" element={<CharacterCreationWizard />} />
                   <Route path="characters/:characterId" element={<CharacterSheetPage />} />
                   {/* Task 1: the curated per-campaign bestiary — DM + player, distinct
                       from "monsters" below (the DM-only combat-spawn/homebrew

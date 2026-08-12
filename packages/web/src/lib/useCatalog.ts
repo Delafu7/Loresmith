@@ -9,6 +9,7 @@ import type {
   ItemCatalogEntry,
   RaceCatalog,
   SkillCatalog,
+  SubraceCatalog,
   SpellCatalogEntry,
   SubclassCatalog,
   WeaponMasteryPropertyCatalog,
@@ -54,6 +55,16 @@ export function useRacesCatalog(edition: '2014' | '2024' | 'both') {
   return useQuery({
     queryKey: ['catalog', 'races', edition],
     queryFn: () => api.get<{ races: RaceCatalog[] }>(`/catalog/races?edition=${edition}`),
+    staleTime: Infinity,
+  });
+}
+
+// No raceId filter server-side (routes/catalog.ts's /subraces takes the same
+// editionQuerySchema as /races) — callers filter by race_id client-side.
+export function useSubracesCatalog(edition: '2014' | '2024' | 'both') {
+  return useQuery({
+    queryKey: ['catalog', 'subraces', edition],
+    queryFn: () => api.get<{ subraces: SubraceCatalog[] }>(`/catalog/subraces?edition=${edition}`),
     staleTime: Infinity,
   });
 }

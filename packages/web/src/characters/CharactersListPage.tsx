@@ -115,14 +115,31 @@ export function CharactersListPage() {
     <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">{t('characters.list.title')}</h2>
-        <button
-          type="button"
-          disabled={creationBlockedReason !== null}
-          onClick={() => setShowCreate((v) => !v)}
-          className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 disabled:opacity-45 disabled:cursor-not-allowed font-semibold px-4 py-2 text-sm"
-        >
-          {showCreate ? t('common.cancel') : role === 'dm' ? t('characters.list.newCharacter') : t('characters.list.createMyPc')}
-        </button>
+        <div className="flex items-center gap-2">
+          {creationBlockedReason === null ? (
+            <Link
+              to="new"
+              className="rounded-md border border-amber-500 text-amber-500 hover:bg-amber-500/10 active:bg-amber-500/20 font-semibold px-4 py-2 text-sm"
+            >
+              {role === 'dm' ? t('characters.list.newCharacter') : t('characters.list.createMyPc')}
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              className="rounded-md border border-amber-500 text-amber-500 opacity-45 cursor-not-allowed font-semibold px-4 py-2 text-sm"
+            >
+              {role === 'dm' ? t('characters.list.newCharacter') : t('characters.list.createMyPc')}
+            </span>
+          )}
+          <button
+            type="button"
+            disabled={creationBlockedReason !== null}
+            onClick={() => setShowCreate((v) => !v)}
+            className="rounded-md border border-stone-600 text-stone-200 hover:bg-stone-100/5 disabled:opacity-45 disabled:cursor-not-allowed px-3 py-2 text-xs"
+          >
+            {showCreate ? t('common.cancel') : t('characters.list.quickCreate')}
+          </button>
+        </div>
       </div>
 
       {creationBlockedReason === 'disabled' && (

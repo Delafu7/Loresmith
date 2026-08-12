@@ -214,6 +214,13 @@ export interface RaceCatalog {
   edition_scope: '2014' | '2024' | 'both';
 }
 
+export interface SubraceCatalog {
+  id: string;
+  race_id: string;
+  index_key: string;
+  name: string;
+}
+
 export interface ClassCatalog {
   id: string;
   index_key: string;
