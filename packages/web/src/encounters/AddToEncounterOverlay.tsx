@@ -78,6 +78,7 @@ export function AddToEncounterOverlay({
   addParticipantMutation,
   spawnMutation,
   removeParticipantMutation,
+  initialCharacterId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -88,6 +89,8 @@ export function AddToEncounterOverlay({
   addParticipantMutation: AsyncMutationLike<{ characterId?: string; monsterInstanceId?: string }, { participant: { id: string } }>;
   spawnMutation: AsyncMutationLike<SpawnParticipantsBody, { participants: Array<{ id: string }> }>;
   removeParticipantMutation: MutationLike<string>;
+  /** Character-creation wizard's "place on map" hand-off (CharacterCreationWizard.tsx) — pre-fills the search with this character's own name so it's the only visible match, skipping the normal type-to-search step without bypassing the confirm click/Enter itself. */
+  initialCharacterId?: string | null;
 }) {
   const { t } = useLocale();
   const { showToast } = useToast();
@@ -119,14 +122,16 @@ export function AddToEncounterOverlay({
     if (open && !el.open) el.showModal();
     if (!open && el.open) el.close();
     if (open) {
-      setQuery('');
+      const initialCharacter = initialCharacterId ? availableCharacters.find((c) => c.id === initialCharacterId) : undefined;
+      setQuery(initialCharacter?.name ?? '');
       setQuantityOverride(null);
       setHighlightIndex(0);
       // Native <dialog> autofocus doesn't reliably hit a nested input across
       // browsers on first paint — a microtask-deferred focus does.
       queueMicrotask(() => inputRef.current?.focus());
     }
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialCharacterId]);
 
   function pushRecent(key: string) {
     setRecentIds((prev) => {

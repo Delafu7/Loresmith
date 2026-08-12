@@ -14,6 +14,7 @@
 // opens the overlay showing that participant's ParticipantSheetPanel.
 
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { Character, Encounter, EncounterDisposition, MonsterCatalogEntry, MonsterInstance, SnapshotParticipant } from '../lib/types';
 import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 import { EmptyState } from '../components/Feedback';
@@ -117,9 +118,28 @@ export function SessionScreen({
 }: SessionScreenProps) {
   const { t } = useLocale();
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
   const [addOverlayOpen, setAddOverlayOpen] = useState(false);
+  // Character-creation wizard's "place on map" hand-off
+  // (CharacterCreationWizard.tsx navigates here with this in router state) —
+  // opens the add-to-encounter overlay pre-filled with the freshly created
+  // character. Copied into local state (not read from location.state
+  // directly at render time) because the state-clearing navigate() below
+  // lands in the SAME render pass as opening the overlay — reading straight
+  // from location.state would already see it cleared by the time the
+  // overlay actually mounts.
+  const [pendingPlaceCharacterId, setPendingPlaceCharacterId] = useState<string | null>(null);
+  useEffect(() => {
+    const id = (location.state as { placeCharacterId?: string } | null)?.placeCharacterId;
+    if (!isDm || !id) return;
+    setPendingPlaceCharacterId(id);
+    setAddOverlayOpen(true);
+    navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDm, location.state]);
 
   // Cmd/Ctrl+K trigger, scoped to this screen (not app-global — see
   // AddToEncounterOverlay.tsx's header note on why). DM-only, matching the
@@ -331,7 +351,10 @@ export function SessionScreen({
       {isDm && (
         <AddToEncounterOverlay
           open={addOverlayOpen}
-          onClose={() => setAddOverlayOpen(false)}
+          onClose={() => {
+            setAddOverlayOpen(false);
+            setPendingPlaceCharacterId(null);
+          }}
           campaignId={campaignId}
           monsters={monsters}
           availableCharacters={availableCharacters}
@@ -339,6 +362,7 @@ export function SessionScreen({
           addParticipantMutation={addParticipantMutation}
           spawnMutation={spawnMutation}
           removeParticipantMutation={removeParticipantMutation}
+          initialCharacterId={pendingPlaceCharacterId}
         />
       )}
     </div>
