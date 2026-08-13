@@ -177,6 +177,15 @@ export const upsertEncounterMapSchema = z.object({
 });
 export type UpsertEncounterMapInput = z.infer<typeof upsertEncounterMapSchema>;
 
+// Per-map lighting state (nav point 4) — 'bright' (fully visible to
+// players), 'dim' (visible, distinct low-light rendering), 'dark' (players
+// see only what their tokens' vision reaches; the DM's own view is never
+// masked regardless of this value — enforced client-side).
+export const setMapLightingSchema = z.object({
+  lightingState: z.enum(['bright', 'dim', 'dark']),
+});
+export type SetMapLightingInput = z.infer<typeof setMapLightingSchema>;
+
 // Both x/y present together — setting a token's position or clearing it
 // entirely by sending both null. Not cross-validated against the map's
 // grid_columns/grid_rows bounds (permissive, "trust the DM" posture).

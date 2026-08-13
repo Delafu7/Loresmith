@@ -20,6 +20,7 @@ export interface MapRow {
   cell_size_px: number;
   feet_per_cell: number;
   notes: string | null;
+  lighting_state: 'bright' | 'dim' | 'dark';
   created_at: string;
   updated_at: string;
 }
@@ -60,8 +61,8 @@ export async function getMap(pool: Pool, campaignId: string, mapId: string): Pro
 export async function createMap(pool: Pool, campaignId: string, input: CreateMapInput): Promise<MapRow> {
   await validateBackgroundAssetBelongsToCampaign(pool, campaignId, input.backgroundAssetId);
   const result = await pool.query<MapRow>(
-    `INSERT INTO maps (campaign_id, name, description, background_asset_id, grid_columns, grid_rows, cell_size_px, feet_per_cell, notes)
-     VALUES ($1, $2, $3, $4, COALESCE($5, 20), COALESCE($6, 20), COALESCE($7, 50), COALESCE($8, 5), $9)
+    `INSERT INTO maps (campaign_id, name, description, background_asset_id, grid_columns, grid_rows, cell_size_px, feet_per_cell, notes, lighting_state)
+     VALUES ($1, $2, $3, $4, COALESCE($5, 20), COALESCE($6, 20), COALESCE($7, 50), COALESCE($8, 5), $9, COALESCE($10, 'bright'))
      RETURNING *`,
     [
       campaignId,
@@ -73,6 +74,7 @@ export async function createMap(pool: Pool, campaignId: string, input: CreateMap
       input.cellSizePx ?? null,
       input.feetPerCell ?? null,
       input.notes ?? null,
+      input.lightingState ?? null,
     ],
   );
   return result.rows[0]!;
@@ -97,6 +99,7 @@ export async function updateMap(pool: Pool, campaignId: string, mapId: string, i
        cell_size_px = COALESCE($10, cell_size_px),
        feet_per_cell = COALESCE($11, feet_per_cell),
        notes = CASE WHEN $12 THEN $13 ELSE notes END,
+       lighting_state = COALESCE($14, lighting_state),
        updated_at = now()
      WHERE id = $1 AND campaign_id = $2
      RETURNING *`,
@@ -114,6 +117,7 @@ export async function updateMap(pool: Pool, campaignId: string, mapId: string, i
       input.feetPerCell ?? null,
       input.notes !== undefined,
       input.notes ?? null,
+      input.lightingState ?? null,
     ],
   );
   return result.rows[0]!;

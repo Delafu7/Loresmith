@@ -14,6 +14,7 @@ import {
   rollInitiativeSchema,
   setEncounterModeSchema,
   setInitiativeSchema,
+  setMapLightingSchema,
   setParticipantFactionSchema,
   setParticipantHpVisibilitySchema,
   setParticipantPositionSchema,
@@ -345,6 +346,17 @@ encountersRouter.post('/:id/advance-turn', requireEncounterDm, async (req, res) 
 encountersRouter.put('/:id/map', requireEncounterDm, async (req, res) => {
   const input = upsertEncounterMapSchema.parse(req.body);
   const { encounter, map } = await encountersService.upsertEncounterMap(pool, (req.params.id as string), input);
+  broadcastMapUpdated(getIo(req.app), encounter, map);
+  res.json({ map: encountersService.formatMapForWire(map) });
+});
+
+// Per-map lighting state (nav point 4) — DM-only, same guard as the map
+// config route above. Not secret (map config was never DM/player-split),
+// so broadcast reuses the existing MAP_UPDATED event rather than a new one
+// — only its client-side rendering consequences differ by role.
+encountersRouter.patch('/:id/map/lighting', requireEncounterDm, async (req, res) => {
+  const input = setMapLightingSchema.parse(req.body);
+  const { encounter, map } = await encountersService.setMapLighting(pool, (req.params.id as string), input.lightingState);
   broadcastMapUpdated(getIo(req.app), encounter, map);
   res.json({ map: encountersService.formatMapForWire(map) });
 });

@@ -312,6 +312,8 @@ export async function getEncounterFlat(pool: Pool, userId: string, encounterId: 
 // getEncounter above and sockets/broadcast.ts's buildFullStateSyncPayload)
 // never need a second assets fetch just to render the map background.
 
+export type MapLightingState = 'bright' | 'dim' | 'dark';
+
 export interface EncounterMapRow {
   id: string;
   encounter_id: string;
@@ -321,6 +323,7 @@ export interface EncounterMapRow {
   grid_rows: number;
   cell_size_px: number;
   feet_per_cell: number;
+  lighting_state: MapLightingState;
 }
 
 // Resolves through encounters.active_map_id into the campaign-scoped `maps`
@@ -333,7 +336,7 @@ export interface EncounterMapRow {
 export async function getEncounterMap(pool: Pool | PoolClient, encounterId: string): Promise<EncounterMapRow | null> {
   const result = await pool.query<EncounterMapRow>(
     `SELECT m.id, e.id AS encounter_id, m.background_asset_id, ca.file_url AS background_file_url,
-            m.grid_columns, m.grid_rows, m.cell_size_px, m.feet_per_cell
+            m.grid_columns, m.grid_rows, m.cell_size_px, m.feet_per_cell, m.lighting_state
      FROM encounters e
      JOIN maps m ON m.id = e.active_map_id
      LEFT JOIN campaign_assets ca ON ca.id = m.background_asset_id
@@ -356,7 +359,44 @@ export function formatMapForWire(map: EncounterMapRow | null) {
     gridRows: map.grid_rows,
     cellSizePx: map.cell_size_px,
     feetPerCell: map.feet_per_cell,
+    // Per-map lighting state — not secret (map config was never
+    // DM/player-split, same as every other field here); only its
+    // rendering CONSEQUENCES differ per role, computed client-side
+    // (VisionOverlay.tsx's masking gate + dim tint).
+    lightingState: map.lighting_state,
   };
+}
+
+// Per-map lighting state (bright/dim/dark). DM-gated at the route
+// (requireEncounterDm); resolves through the encounter's active_map_id the
+// same way getEncounterMap does, so it always targets whichever map is
+// actually live right now.
+export async function setMapLighting(
+  pool: Pool,
+  encounterId: string,
+  lightingState: MapLightingState,
+): Promise<{ encounter: EncounterRow; map: EncounterMapRow }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const map = await getEncounterMap(client, encounterId);
+    if (!map) throw new AppError('CONFLICT', 'No map configured for this encounter yet');
+
+    await client.query(`UPDATE maps SET lighting_state = $1, updated_at = now() WHERE id = $2`, [lightingState, map.id]);
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    const updatedMap = await getEncounterMap(pool, encounterId);
+    return { encounter: encounterRes.rows[0]!, map: updatedMap! };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- Terrain cell overrides (REFACTOR-PLAN.md §4) ----

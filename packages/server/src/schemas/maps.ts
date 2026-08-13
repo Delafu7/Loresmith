@@ -13,6 +13,12 @@ export const createMapSchema = z.object({
   cellSizePx: z.number().int().min(10).max(200).optional(),
   feetPerCell: z.number().int().min(1).max(50).optional(),
   notes: z.string().max(5000).nullable().optional(),
+  // Per-map lighting state (nav point 4) — library-level default, distinct
+  // from the live encounter's PATCH .../map/lighting toggle (schemas/
+  // encounters.ts's setMapLightingSchema); editing it here doesn't
+  // broadcast (this route never has, for any field — an existing,
+  // unrelated gap, not something this task needs to fix).
+  lightingState: z.enum(['bright', 'dim', 'dark']).optional(),
 });
 export type CreateMapInput = z.infer<typeof createMapSchema>;
 
