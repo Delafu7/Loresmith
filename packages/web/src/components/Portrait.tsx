@@ -5,6 +5,8 @@
 // deliberate simplicity choice made in PLAN.md §3.5) — just CSS
 // `object-fit: cover` at whatever display size is requested.
 
+import { useState } from 'react';
+
 export type PortraitSize = 'sm' | 'md' | 'lg' | 'xl';
 export type PortraitShape = 'square' | 'circle';
 
@@ -33,11 +35,21 @@ export function Portrait({
   const shapeClass = shape === 'circle' ? 'rounded-full' : 'rounded-lg';
   const dimensionClass = SIZE_CLASSES[size];
 
-  if (fileUrl) {
+  // A fileUrl pointing at a missing/corrupt/undecodable file (deleted disk
+  // file, failed upload, etc.) previously fell straight through to the
+  // browser's native broken-image icon instead of this component's own
+  // placeholder — the one case where a portrait genuinely failed to render.
+  // Tracks the failed URL itself (not a plain boolean) so uploading a new
+  // portrait — which changes fileUrl without remounting this component —
+  // clears the failure instead of getting stuck on the placeholder.
+  const [erroredUrl, setErroredUrl] = useState<string | null>(null);
+
+  if (fileUrl && fileUrl !== erroredUrl) {
     return (
       <img
         src={fileUrl}
         alt={alt}
+        onError={() => setErroredUrl(fileUrl)}
         className={`${dimensionClass} ${shapeClass} border border-stone-800 bg-stone-950 object-cover flex-shrink-0`}
       />
     );
