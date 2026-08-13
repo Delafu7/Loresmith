@@ -30,7 +30,6 @@ import { DispositionBadge, DispositionHistoryPanel } from './DispositionPanel';
 import { ParticipantSheetPanel } from './ParticipantSheetPanel';
 import { SessionOverlayPanel } from './SessionOverlayPanel';
 import { AddToEncounterOverlay, type AsyncMutationLike } from './AddToEncounterOverlay';
-import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import type { EncounterLiveState } from './useEncounterLive';
 import type { SpawnParticipantsBody } from './useEncounterSessionData';
 import { useLocale } from '../i18n/LocaleContext';
@@ -94,8 +93,6 @@ export function SessionScreen({
   monsters,
   expandedParticipantId,
   setExpandedParticipantId,
-  showDiceRoller,
-  setShowDiceRoller,
   startMutation,
   endMutation,
   startCombatMutation,
@@ -160,24 +157,6 @@ export function SessionScreen({
     setSelectedParticipantId(participantId);
     setOverlay('sheet');
   }
-
-  // UX finding #4 (Iteration 3 audit) — the dice roller used to live INSIDE
-  // the Manage overlay's content (BattleModeDmPanel/BattleModePlayerPanel),
-  // so switching to the Log or a participant Sheet overlay hid it entirely
-  // even though showDiceRoller was still true — checking a stat block, then
-  // the log, then rolling dice meant closing and reopening panels three
-  // times. Floats independently now, in its own fixed panel, visible
-  // alongside whichever (if any) of sheet/manage/log/chat is also open.
-  //
-  // characterId resolution here is deliberately simpler than
-  // BattleModePlayerPanel's own multi-character switcher (first seated
-  // match, not the full switcher UI) — this is a quick-access convenience
-  // for the common single-character case; a player controlling two
-  // characters who needs to roll specifically as the second one still has
-  // the full switcher inside the Manage overlay itself.
-  const myParticipant = !isDm
-    ? live.participants.find((p) => p.characterId != null && myCharacterIds.has(p.characterId))
-    : undefined;
 
   const selectedParticipant = selectedParticipantId
     ? (live.participants.find((p) => p.participantId === selectedParticipantId) ?? null)
@@ -281,11 +260,6 @@ export function SessionScreen({
           <OverlayToggleButton active={overlay === 'chat'} onClick={() => setOverlay((o) => (o === 'chat' ? null : 'chat'))}>
             {t('encounters.sheet.chatButton')}
           </OverlayToggleButton>
-          {/* Independent of `overlay` on purpose — see the showDiceRoller
-              comment above (UX finding #4). */}
-          <OverlayToggleButton active={showDiceRoller} onClick={() => setShowDiceRoller((s) => !s)}>
-            {t('encounters.tracker.rollDice')}
-          </OverlayToggleButton>
         </div>
       </div>
 
@@ -337,16 +311,6 @@ export function SessionScreen({
 
       <ConcentrationCheckPrompt encounterId={encounter.id} isDm={isDm} />
       <LairActionBanner encounterId={encounter.id} />
-
-      {showDiceRoller && (
-        // Bottom-LEFT and above SessionOverlayPanel's z-40 backdrop+drawer
-        // (which docks full-height on the right) — the whole point of this
-        // panel is to stay usable and visible while that overlay is also
-        // open, not to fight it for the same screen corner.
-        <div className="fixed bottom-2 left-2 z-50 w-[min(22rem,calc(100vw-1rem))] max-h-[70vh] overflow-y-auto">
-          <QuickDiceRoller encounterId={encounter.id} characterId={myParticipant?.characterId ?? undefined} />
-        </div>
-      )}
 
       {isDm && (
         <AddToEncounterOverlay
