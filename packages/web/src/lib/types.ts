@@ -836,6 +836,10 @@ export interface CampaignMap {
 // encounters/elements/registry.ts entry (client) is the whole surface area —
 // no renderer/palette/property-panel file should ever need a type-specific
 // edit (proven by `image`, which has zero legacy system underneath it).
+// GM-only visibility layer — replaces the old visibleToPlayers boolean.
+// ownerUserId is only meaningful when visibility is 'owner_only'.
+export type GmVisibility = 'gm_only' | 'revealed_to_players' | 'owner_only';
+
 interface MapElementBase {
   id: string;
   mapId: string;
@@ -881,6 +885,9 @@ export interface Note {
   // Phase 3 "rulings log" — a discriminator, not a second table (matches
   // dice_rolls.roll_type/active_effects.source_type's precedent).
   note_type: 'note' | 'ruling';
+  // GM-only visibility layer — 'owner_only' is visible to the DM plus
+  // author_user_id.
+  visibility: GmVisibility;
   created_at: string;
   updated_at: string;
 }

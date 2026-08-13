@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Character, Location, Note } from '../lib/types';
+import type { CampaignRole, Character, GmVisibility, Location, Note } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
@@ -25,10 +25,17 @@ interface NoteFormValues {
   locationId: string;
   // Phase 3 "rulings log".
   noteType: 'note' | 'ruling';
+  // GM-only visibility layer.
+  visibility: GmVisibility;
 }
 
-function emptyNoteForm(): NoteFormValues {
-  return { title: '', body: '', characterId: '', locationId: '', noteType: 'note' };
+// Defaults from the acting user's role, mirroring the server's create-time
+// default (services/notes.ts's defaultVisibilityFor): a DM's new note
+// defaults to gm_only (prep material); a player's defaults to
+// revealed_to_players (unchanged from today's "every note visible to
+// everyone" behavior for player-authored notes).
+function emptyNoteForm(role: CampaignRole): NoteFormValues {
+  return { title: '', body: '', characterId: '', locationId: '', noteType: 'note', visibility: role === 'dm' ? 'gm_only' : 'revealed_to_players' };
 }
 
 export function NotesPage() {
@@ -36,8 +43,14 @@ export function NotesPage() {
   const { campaignId, role } = useCampaignShell();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const isDm = role === 'dm';
   const [showCreate, setShowCreate] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  // GM-only visibility layer — multi-select for the bulk reveal/hide bar,
+  // DM-only (bulk-changing another player's note visibility isn't a player
+  // action; a player's own single-note visibility is already covered by
+  // create/edit).
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
 
   const notesQuery = useQuery({
     queryKey: ['notes', campaignId],
@@ -77,7 +90,7 @@ export function NotesPage() {
 
   // Draft-persisted create form (see lib/useFormDraft.ts) so a half-written
   // note survives an accidental navigation away.
-  const [form, setForm, clearDraft] = useFormDraft(`draft:note:new:${campaignId}`, emptyNoteForm);
+  const [form, setForm, clearDraft] = useFormDraft(`draft:note:new:${campaignId}`, () => emptyNoteForm(role));
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -87,9 +100,10 @@ export function NotesPage() {
         characterId: form.characterId || undefined,
         locationId: form.locationId || undefined,
         noteType: form.noteType,
+        visibility: form.visibility,
       }),
     onSuccess: () => {
-      setForm(emptyNoteForm());
+      setForm(emptyNoteForm(role));
       clearDraft();
       setShowCreate(false);
       void queryClient.invalidateQueries({ queryKey: ['notes', campaignId] });
@@ -105,6 +119,32 @@ export function NotesPage() {
     mutationFn: (noteId: string) => api.post<{ note: Note }>(`/campaigns/${campaignId}/notes/${noteId}/duplicate`, {}),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notes', campaignId] }),
   });
+
+  // GM-only visibility layer — one-click toggle (single note) and the
+  // multi-select bulk bar both funnel through this one PATCH.
+  const setVisibilityMutation = useMutation({
+    mutationFn: ({ noteId, visibility }: { noteId: string; visibility: GmVisibility }) =>
+      api.patch<{ note: Note }>(`/campaigns/${campaignId}/notes/${noteId}`, { visibility }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notes', campaignId] }),
+  });
+
+  const batchVisibilityMutation = useMutation({
+    mutationFn: (visibility: GmVisibility) =>
+      api.patch<{ notes: Note[] }>(`/campaigns/${campaignId}/notes/visibility/batch`, { noteIds: [...selectedNoteIds], visibility }),
+    onSuccess: () => {
+      setSelectedNoteIds(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['notes', campaignId] });
+    },
+  });
+
+  function toggleNoteSelected(noteId: string) {
+    setSelectedNoteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(noteId)) next.delete(noteId);
+      else next.add(noteId);
+      return next;
+    });
+  }
 
   function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -170,6 +210,18 @@ export function NotesPage() {
               <option value="ruling">{t('notes.noteTypeRuling')}</option>
             </select>
           </Field>
+          <Field label={t('notes.visibilityLabel')} htmlFor="noteVisibility">
+            <select
+              id="noteVisibility"
+              value={form.visibility}
+              onChange={(e) => setForm((f) => ({ ...f, visibility: e.target.value as GmVisibility }))}
+              className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+            >
+              <option value="gm_only">{t('notes.visibilityGmOnly')}</option>
+              <option value="revealed_to_players">{t('notes.visibilityRevealed')}</option>
+              <option value="owner_only">{t('notes.visibilityOwnerOnly')}</option>
+            </select>
+          </Field>
           {createMutation.isError && <ErrorBanner message={errorMessage(createMutation.error)} />}
           <Button type="submit" variant="primary" disabled={createMutation.isPending}>
             {createMutation.isPending ? t('notes.saving') : t('notes.saveNote')}
@@ -207,8 +259,22 @@ export function NotesPage() {
         </>
       )}
 
-      {(deleteMutation.isError || duplicateMutation.isError) && (
-        <ErrorBanner message={errorMessage((deleteMutation.error ?? duplicateMutation.error) as unknown)} />
+      {(deleteMutation.isError || duplicateMutation.isError || setVisibilityMutation.isError || batchVisibilityMutation.isError) && (
+        <ErrorBanner
+          message={errorMessage((deleteMutation.error ?? duplicateMutation.error ?? setVisibilityMutation.error ?? batchVisibilityMutation.error) as unknown)}
+        />
+      )}
+
+      {isDm && selectedNoteIds.size > 0 && (
+        <div className="mb-3 flex items-center gap-3 rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-xs">
+          <span className="text-stone-400">{t('notes.selectedCount', { count: String(selectedNoteIds.size) })}</span>
+          <Button variant="ghost" size="sm" onClick={() => batchVisibilityMutation.mutate('revealed_to_players')} disabled={batchVisibilityMutation.isPending}>
+            {t('notes.revealSelected')}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => batchVisibilityMutation.mutate('gm_only')} disabled={batchVisibilityMutation.isPending}>
+            {t('notes.hideSelected')}
+          </Button>
+        </div>
       )}
 
       <ul className="space-y-3">
@@ -219,14 +285,47 @@ export function NotesPage() {
               <Card>
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-medium text-stone-100 flex items-center gap-2">
+                    {isDm && (
+                      <input
+                        type="checkbox"
+                        checked={selectedNoteIds.has(note.id)}
+                        onChange={() => toggleNoteSelected(note.id)}
+                        aria-label={t('notes.selectAll')}
+                      />
+                    )}
                     {note.title}
                     {note.note_type === 'ruling' && (
                       <span className="rounded-full border border-amber-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
                         {t('notes.noteTypeRuling')}
                       </span>
                     )}
+                    {note.visibility === 'gm_only' && (
+                      <span className="rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-400">
+                        {t('notes.visibilityBadgeGmOnly')}
+                      </span>
+                    )}
+                    {note.visibility === 'owner_only' && (
+                      <span className="rounded-full border border-sky-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-400">
+                        {t('notes.visibilityBadgeOwnerOnly')}
+                      </span>
+                    )}
                   </h3>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {canModify && note.visibility !== 'owner_only' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setVisibilityMutation.mutate({
+                            noteId: note.id,
+                            visibility: note.visibility === 'gm_only' ? 'revealed_to_players' : 'gm_only',
+                          })
+                        }
+                        disabled={setVisibilityMutation.isPending}
+                        className="min-h-11 px-1 text-stone-300 hover:text-stone-100 text-xs disabled:opacity-50"
+                      >
+                        {note.visibility === 'gm_only' ? t('notes.toggleToRevealed') : t('notes.toggleToGmOnly')}
+                      </button>
+                    )}
                     {canModify && (
                       <button
                         type="button"
@@ -340,6 +439,7 @@ function NoteEditForm({
     characterId: note.character_id ?? '',
     locationId: note.location_id ?? '',
     noteType: note.note_type,
+    visibility: note.visibility,
   }));
 
   const updateMutation = useMutation({
@@ -350,6 +450,7 @@ function NoteEditForm({
         characterId: form.characterId || null,
         locationId: form.locationId || null,
         noteType: form.noteType,
+        visibility: form.visibility,
       }),
     onSuccess: () => {
       clearDraft();
@@ -418,6 +519,18 @@ function NoteEditForm({
           >
             <option value="note">{t('notes.noteTypeNote')}</option>
             <option value="ruling">{t('notes.noteTypeRuling')}</option>
+          </select>
+        </Field>
+        <Field label={t('notes.visibilityLabel')} htmlFor="noteEditVisibility">
+          <select
+            id="noteEditVisibility"
+            value={form.visibility}
+            onChange={(e) => setForm((f) => ({ ...f, visibility: e.target.value as GmVisibility }))}
+            className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+          >
+            <option value="gm_only">{t('notes.visibilityGmOnly')}</option>
+            <option value="revealed_to_players">{t('notes.visibilityRevealed')}</option>
+            <option value="owner_only">{t('notes.visibilityOwnerOnly')}</option>
           </select>
         </Field>
         {updateMutation.isError && <ErrorBanner message={errorMessage(updateMutation.error)} />}
