@@ -17,7 +17,7 @@
 // plan's cross-cutting decision (noted as a cheap follow-up if it turns out
 // to matter); only CURRENTLY visible area is shown, everything else is dark.
 import { useId, useMemo, useRef } from 'react';
-import type { MapElement, SnapshotParticipant } from '../../lib/types';
+import type { MapElementOrRedacted, SnapshotParticipant } from '../../lib/types';
 import { cellToPx, feetToCells } from '../geometry';
 import { wallSegmentsFromElements } from './segments';
 import { buildFogPolygons, type FogPolygon } from './fogUnion';
@@ -39,7 +39,7 @@ export function VisionOverlay({
   active,
 }: {
   participants: SnapshotParticipant[];
-  mapElements: MapElement[];
+  mapElements: MapElementOrRedacted[];
   cellSizePx: number;
   feetPerCell: number;
   mapWidthPx: number;
