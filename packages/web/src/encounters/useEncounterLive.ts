@@ -30,7 +30,7 @@ import type {
   TokenMovedEvent,
   TurnAdvancedEvent,
 } from '../lib/socketTypes';
-import type { EncounterDisposition, EncounterMode, EncounterStatus, MapElement, SnapshotParticipant } from '../lib/types';
+import type { EncounterDisposition, EncounterMode, EncounterStatus, MapElementOrRedacted, SnapshotParticipant } from '../lib/types';
 
 export interface EncounterLiveState {
   seq: number;
@@ -44,7 +44,7 @@ export interface EncounterLiveState {
   activeParticipantId: string | null;
   participants: SnapshotParticipant[];
   map: MapConfig | null;
-  mapElements: MapElement[];
+  mapElements: MapElementOrRedacted[];
 }
 
 function liveQueryKey(encounterId: string) {
@@ -337,7 +337,7 @@ export function useEncounterLive(encounterId: string | undefined) {
               mapElements: prev.mapElements.filter((el) => el.id !== payload.element.id),
             };
           }
-          const element = payload.element as MapElement;
+          const element = payload.element as MapElementOrRedacted;
           const exists = prev.mapElements.some((el) => el.id === element.id);
           return {
             ...prev,
@@ -457,4 +457,59 @@ export function useEncounterLive(encounterId: string | undefined) {
   }, [encounterId, connected, socket, queryClient]);
 
   return query.data;
+}
+
+function previewQueryKey(encounterId: string) {
+  return ['encounterLivePreview', encounterId] as const;
+}
+
+// GM-only visibility layer — "view as player" preview mode. Deliberately a
+// point-in-time SNAPSHOT, not a second live-patched stream: keeping a
+// second continuously-synced filtered stream would double every event
+// handler in useEncounterLive above for marginal benefit (a DM previewing
+// mid-fight can just click "refresh preview" — see BattleMap.tsx's
+// previewPlayerView toggle). Populated only by the server's
+// FULL_STATE_SYNC_PREVIEW event (sockets/rooms.ts's request:sync-preview,
+// DM-only server-side), never by ambient TOKEN_MOVED-style events, so no
+// seq-gap/patch logic is needed here — same "always trusted wholesale"
+// handling as FULL_STATE_SYNC itself.
+export function useEncounterPreviewSync(encounterId: string | undefined) {
+  const queryClient = useQueryClient();
+  const { socket, connected } = useSocket();
+
+  const query = useQuery<EncounterLiveState | null>({
+    queryKey: encounterId ? previewQueryKey(encounterId) : ['encounterLivePreview', 'none'],
+    queryFn: () => null,
+    enabled: false,
+    initialData: null,
+    staleTime: Infinity,
+  });
+
+  useEffect(() => {
+    if (!encounterId || !connected) return;
+
+    function setPreviewState(payload: FullStateSyncEvent) {
+      if (payload.encounterId !== encounterId) return;
+      queryClient.setQueryData<EncounterLiveState>(previewQueryKey(encounterId!), {
+        seq: payload.seq,
+        encounter: payload.encounter,
+        activeParticipantId: payload.activeParticipantId,
+        participants: payload.participants,
+        map: payload.map,
+        mapElements: payload.mapElements,
+      });
+    }
+
+    socket.on('FULL_STATE_SYNC_PREVIEW', setPreviewState);
+    return () => {
+      socket.off('FULL_STATE_SYNC_PREVIEW', setPreviewState);
+    };
+  }, [encounterId, connected, socket, queryClient]);
+
+  function requestPreviewSync() {
+    if (!encounterId || !connected) return;
+    socket.emit('request:sync-preview', { encounterId });
+  }
+
+  return { preview: query.data, requestPreviewSync };
 }

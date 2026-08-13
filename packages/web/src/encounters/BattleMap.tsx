@@ -22,7 +22,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Character, EncounterMode, EncounterStatus, CampaignAsset, MapElement, MapElementType, SnapshotParticipant } from '../lib/types';
+import type { Character, EncounterMode, EncounterStatus, CampaignAsset, MapElement, MapElementOrRedacted, MapElementType, SnapshotParticipant } from '../lib/types';
 import type { MapConfig } from '../lib/socketTypes';
 import { Portrait } from '../components/Portrait';
 import { ImageUploadField } from '../components/ImageUploadField';
@@ -39,7 +39,7 @@ import { ELEMENT_REGISTRY } from './elements/registry';
 import { ElementPalette } from './elements/ElementPalette';
 import { MapCanvasElements } from './elements/MapCanvasElements';
 import { ElementPropertyPanel } from './elements/ElementPropertyPanel';
-import { useCreateMapElement } from './elements/useMapElements';
+import { useCreateMapElement, useSetMapElementsVisibilityBatch } from './elements/useMapElements';
 import { VisionOverlay } from './vision/VisionOverlay';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 
@@ -101,6 +101,8 @@ export function BattleMap({
   activeParticipantId,
   encounter,
   isDm,
+  preview,
+  requestPreviewSync,
   myCharacterIds = new Set(),
   characters,
   onOpenSheet,
@@ -109,13 +111,26 @@ export function BattleMap({
   campaignId: string;
   map: MapConfig | null;
   participants: SnapshotParticipant[];
-  /** Generic DM map elements (walls/doors/lights/areas/notes/images) — see encounters/elements/registry.tsx. */
-  mapElements: MapElement[];
+  /** Generic DM map elements (walls/doors/lights/areas/notes/images) — see
+   * encounters/elements/registry.tsx. GM-only visibility layer — a hidden
+   * wall/door/light arrives as a RedactedMapElement (geometry-only) for a
+   * non-DM/non-owner viewer; a hidden note/area/image is simply absent. */
+  mapElements: MapElementOrRedacted[];
   activeParticipantId: string | null;
   /** mode/status/currentTurnIndex — enough for canMoveToken.ts's client-side
    * enable/disable mirror of the server's move-validation decision. */
   encounter: { mode: EncounterMode; status: EncounterStatus; currentTurnIndex: number };
   isDm: boolean;
+  /** GM-only visibility layer — "view as player" preview snapshot (see
+   * useEncounterLive.ts's useEncounterPreviewSync). While previewPlayerView
+   * is on, the map canvas (tokens/elements/fog) renders from THIS
+   * server-computed, actually-role-filtered payload instead of the DM's own
+   * `participants`/`mapElements` — the only way to guarantee the preview
+   * matches what a real player session renders, since the DM's own payload
+   * always discloses everything. A point-in-time snapshot, not live-synced;
+   * `requestPreviewSync` re-requests a fresh one. */
+  preview?: { participants: SnapshotParticipant[]; mapElements: MapElementOrRedacted[] } | null;
+  requestPreviewSync?: () => void;
   /** Character ids owned by the current user (empty for the DM, who doesn't
    * need it — isDm alone already grants unconditional control). Used to
    * decide which tokens a non-DM viewer may drag/tap-move/self-place. */
@@ -152,6 +167,11 @@ export function BattleMap({
   // preview of exactly what a player would see (union of player-faction
   // token vision). Real (non-DM) viewers always see it, unconditionally.
   const [previewPlayerView, setPreviewPlayerView] = useState(false);
+  // GM-only visibility layer — preview is a point-in-time snapshot, not a
+  // live-synced stream (see useEncounterLive.ts's useEncounterPreviewSync
+  // doc comment on why); this local timestamp drives the "snapshot as of…"
+  // caption so a DM isn't misled into thinking it's tracking live moves.
+  const [previewRequestedAt, setPreviewRequestedAt] = useState<Date | null>(null);
   const [zoom, setZoom] = useState(1);
   const [paintMode, setPaintMode] = useState(false);
   // Generic map elements (walls/doors/lights/areas/notes/images) — mirrors
@@ -163,6 +183,11 @@ export function BattleMap({
   const [placingType, setPlacingType] = useState<MapElementType | null>(null);
   const [placingPoints, setPlacingPoints] = useState<{ x: number; y: number }[]>([]);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  // GM-only visibility layer — multi-select for the bulk reveal/hide
+  // toolbar, mirroring the token multi-select shift-click pattern
+  // (multiSelectedIds above) but kept separate since elements and tokens
+  // are different selection domains.
+  const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set());
   // Tap-to-move (docs/design-tokens.md mobile pass): "dragging is unreliable
   // with a finger covering the target — tap to select, then tap-destination,
   // then an explicit confirm control ... with an obvious cancel." Additive,
@@ -265,7 +290,38 @@ export function BattleMap({
   }
 
   const createElementMutation = useCreateMapElement(encounterId);
-  const selectedElement = mapElements.find((el) => el.id === selectedElementId) ?? null;
+  const setElementsVisibilityBatchMutation = useSetMapElementsVisibilityBatch(encounterId);
+  // Only the DM can select an element for editing (elementEditMode is
+  // isDm-gated below), and the DM's own payload is always the full,
+  // unredacted shape — this filter is a type-narrowing formality, not a
+  // real-world redacted-element exclusion.
+  const selectedElement =
+    mapElements.find((el): el is MapElement => el.id === selectedElementId && !('redacted' in el && el.redacted)) ?? null;
+
+  // GM-only visibility layer — same shift-click-toggles-membership /
+  // plain-click-clears pattern as handleTokenClick above.
+  function handleElementClick(elementId: string, e: React.MouseEvent) {
+    if (placingType) return;
+    if (e.shiftKey) {
+      setSelectedElementIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(elementId)) next.delete(elementId);
+        else next.add(elementId);
+        return next;
+      });
+      return;
+    }
+    setSelectedElementIds(new Set());
+    setSelectedElementId(elementId);
+  }
+
+  function handleBulkElementVisibility(visibility: 'gm_only' | 'revealed_to_players') {
+    if (selectedElementIds.size === 0) return;
+    setElementsVisibilityBatchMutation.mutate(
+      { elementIds: [...selectedElementIds], visibility },
+      { onSuccess: () => setSelectedElementIds(new Set()) },
+    );
+  }
 
   function cancelPlacement() {
     setPlacingType(null);
@@ -276,13 +332,13 @@ export function BattleMap({
   // creates on the first click, a 'segment' type needs two clicks (start,
   // end), a 'polygon' type accumulates clicks until finishPolygonPlacement
   // is called. No type-specific branch: every type funnels through
-  // entry.defaults() for its props/label/visibleToPlayers.
+  // entry.defaults() for its props/label/visibility.
   function handleElementPlacementClick(x: number, y: number) {
     if (!placingType) return;
     const entry = ELEMENT_REGISTRY[placingType];
     if (entry.placement === 'point') {
       const d = entry.defaults();
-      createElementMutation.mutate({ type: placingType, x1: x, y1: y, props: d.props, label: d.label, visibleToPlayers: d.visibleToPlayers });
+      createElementMutation.mutate({ type: placingType, x1: x, y1: y, props: d.props, label: d.label, visibility: d.visibility });
       cancelPlacement();
       return;
     }
@@ -301,7 +357,7 @@ export function BattleMap({
         y2: y,
         props: d.props,
         label: d.label,
-        visibleToPlayers: d.visibleToPlayers,
+        visibility: d.visibility,
       });
       cancelPlacement();
       return;
@@ -322,7 +378,7 @@ export function BattleMap({
       points: placingPoints,
       props: d.props,
       label: d.label,
-      visibleToPlayers: d.visibleToPlayers,
+      visibility: d.visibility,
     });
     cancelPlacement();
   }
@@ -360,6 +416,22 @@ export function BattleMap({
   const placed = spawnable.filter((p) => p.posX != null && p.posY != null);
   const unplaced = spawnable.filter((p) => p.posX == null || p.posY == null);
   const unplacedControllable = unplaced.filter((p) => isDm || isOwnToken(p));
+
+  // GM-only visibility layer — "view as player" preview. Only the map
+  // CANVAS (tokens/elements/fog) switches render source while previewing;
+  // the DM's own roster/side-panel controls above are unaffected. Falls
+  // back to the DM's own (real, unfiltered) data if a preview hasn't been
+  // requested yet, so toggling the preview on doesn't blank the map for the
+  // instant before the server responds.
+  const previewActive = isDm && previewPlayerView && preview != null;
+  const canvasParticipants = previewActive ? preview!.participants : participants;
+  const canvasMapElements = previewActive ? preview!.mapElements : mapElements;
+  const canvasIsDm = previewActive ? false : isDm;
+  const previewPlaced = previewActive
+    ? canvasParticipants.filter(
+        (p) => (p.monsterInstanceStatus === null || p.monsterInstanceStatus === 'alive') && p.posX != null && p.posY != null,
+      )
+    : placed;
 
   function selectParticipant(id: string | null) {
     setSelectedId(id);
@@ -559,7 +631,20 @@ export function BattleMap({
           {isDm && (
             <button
               type="button"
-              onClick={() => setPreviewPlayerView((s) => !s)}
+              onClick={() => {
+                setPreviewPlayerView((s) => {
+                  const next = !s;
+                  // GM-only visibility layer — request a fresh player-role
+                  // snapshot the moment preview turns on, so the canvas has
+                  // real data to switch to rather than blanking until some
+                  // other trigger happens to call requestPreviewSync.
+                  if (next) {
+                    requestPreviewSync?.();
+                    setPreviewRequestedAt(new Date());
+                  }
+                  return next;
+                });
+              }}
               aria-pressed={previewPlayerView}
               title={t('encounters.battleMap.previewPlayerViewTitle')}
               className={`min-h-11 rounded-md px-3 text-xs ${
@@ -568,6 +653,26 @@ export function BattleMap({
             >
               {previewPlayerView ? t('encounters.battleMap.previewingPlayerView') : t('encounters.battleMap.previewPlayerView')}
             </button>
+          )}
+          {isDm && previewPlayerView && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  requestPreviewSync?.();
+                  setPreviewRequestedAt(new Date());
+                }}
+                title={t('encounters.battleMap.refreshPreviewTitle')}
+                className="min-h-11 rounded-md px-3 text-xs bg-stone-900 shadow-sm text-stone-400 hover:bg-stone-800"
+              >
+                {t('encounters.battleMap.refreshPreview')}
+              </button>
+              {previewRequestedAt && (
+                <span className="text-xs text-stone-500">
+                  {t('encounters.battleMap.previewSnapshotCaption', { time: previewRequestedAt.toLocaleTimeString() })}
+                </span>
+              )}
+            </>
           )}
           {canControlSelected && reachableQuery.data && (
             <span className="text-xs text-stone-400 ml-2">
@@ -599,6 +704,7 @@ export function BattleMap({
                 setElementEditMode((s) => !s);
                 cancelPlacement();
                 setSelectedElementId(null);
+                setSelectedElementIds(new Set());
                 setPendingMove(null);
               }}
               className={`min-h-11 rounded-md px-3 text-xs ${
@@ -645,6 +751,29 @@ export function BattleMap({
             <Button variant="ghost" size="sm" onClick={cancelPlacement}>
               {t('encounters.mapElements.cancelPlacement')}
             </Button>
+          )}
+          {selectedElementIds.size > 1 && (
+            <>
+              <span className="text-xs text-stone-400">
+                {t('encounters.mapElements.selectedCount', { count: String(selectedElementIds.size) })}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleBulkElementVisibility('revealed_to_players')}
+                disabled={setElementsVisibilityBatchMutation.isPending}
+              >
+                {t('encounters.mapElements.revealSelected')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleBulkElementVisibility('gm_only')}
+                disabled={setElementsVisibilityBatchMutation.isPending}
+              >
+                {t('encounters.mapElements.hideSelected')}
+              </Button>
+            </>
           )}
         </div>
       )}
@@ -767,18 +896,15 @@ export function BattleMap({
                   </div>
 
                   <MapCanvasElements
-                    elements={mapElements}
-                    isDm={isDm}
+                    elements={canvasMapElements}
+                    isDm={canvasIsDm}
                     cellSizePx={map.cellSizePx}
                     selectedElementId={selectedElementId}
-                    onSelect={(id) => {
-                      if (placingType) return;
-                      setSelectedElementId(id);
-                    }}
+                    onSelect={handleElementClick}
                     resolveAssetUrl={resolveAssetUrl}
                   />
 
-                  {placed.map((p) => (
+                  {previewPlaced.map((p) => (
                     <Token
                       key={p.participantId}
                       participant={p}
@@ -787,7 +913,7 @@ export function BattleMap({
                       gridRows={map.gridRows}
                       zoom={zoom}
                       isActive={p.participantId === activeParticipantId}
-                      isDraggable={canControl(p)}
+                      isDraggable={!previewActive && canControl(p)}
                       isSelected={p.participantId === selectedId}
                       isMultiSelected={multiSelectedIds.has(p.participantId)}
                       controlBadge={controlBadgeFor(p.characterId, characters, user?.id)}
@@ -805,8 +931,8 @@ export function BattleMap({
                   ))}
 
                   <VisionOverlay
-                    participants={participants}
-                    mapElements={mapElements}
+                    participants={canvasParticipants}
+                    mapElements={canvasMapElements}
                     cellSizePx={map.cellSizePx}
                     feetPerCell={map.feetPerCell}
                     mapWidthPx={mapWidthPx}
@@ -878,7 +1004,7 @@ export function BattleMap({
       )}
 
       {isDm && selectedElement && (
-        <ElementPropertyPanel encounterId={encounterId} element={selectedElement} onClose={() => setSelectedElementId(null)} />
+        <ElementPropertyPanel campaignId={campaignId} encounterId={encounterId} element={selectedElement} onClose={() => setSelectedElementId(null)} />
       )}
     </div>
   );

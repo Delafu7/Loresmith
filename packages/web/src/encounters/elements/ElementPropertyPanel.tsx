@@ -1,11 +1,13 @@
 // Generic over ELEMENT_REGISTRY's `fields` list — one `<GenericField>` per
-// entry, driven entirely by each spec's `kind`. Label/visibleToPlayers/
-// locked are the one universal block every type shares (MapElementBase), so
-// they're rendered here directly rather than via the registry; everything
+// entry, driven entirely by each spec's `kind`. Label/visibility/locked are
+// the one universal block every type shares (MapElementBase), so they're
+// rendered here directly rather than via the registry; everything
 // type-specific comes from `fields`. No type-specific branch anywhere in
 // this file — see registry.tsx's header comment for the contract.
 import { useState } from 'react';
-import type { MapElement } from '../../lib/types';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../lib/api';
+import type { CampaignMember, GmVisibility, MapElement } from '../../lib/types';
 import { useLocale, type TranslationKey } from '../../i18n/LocaleContext';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Textarea, Select, useFieldId } from '../../components/ui/Field';
@@ -83,10 +85,12 @@ function GenericField({ spec, value, onChange, idPrefix }: { spec: ElementFieldS
 }
 
 export function ElementPropertyPanel({
+  campaignId,
   encounterId,
   element,
   onClose,
 }: {
+  campaignId: string;
   encounterId: string;
   element: MapElement;
   onClose: () => void;
@@ -96,9 +100,19 @@ export function ElementPropertyPanel({
   const idPrefix = useFieldId('mapElement');
 
   const [label, setLabel] = useState(element.label ?? '');
-  const [visibleToPlayers, setVisibleToPlayers] = useState(element.visibleToPlayers);
+  const [visibility, setVisibility] = useState<GmVisibility>(element.visibility);
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(element.ownerUserId);
   const [locked, setLocked] = useState(element.locked);
   const [props, setProps] = useState<Record<string, unknown>>(element.props);
+
+  // Only needed for the owner picker, only shown when visibility is
+  // 'owner_only' — same lazy-fetch pattern as PlotThreadsPage's membersQuery.
+  const membersQuery = useQuery({
+    queryKey: ['campaign', campaignId, 'members'],
+    queryFn: () => api.get<{ members: CampaignMember[] }>(`/campaigns/${campaignId}/members`),
+    enabled: visibility === 'owner_only',
+  });
+  const players = (membersQuery.data?.members ?? []).filter((m) => m.role !== 'dm');
 
   const updateMutation = useUpdateMapElement(encounterId);
   const deleteMutation = useDeleteMapElement(encounterId);
@@ -109,7 +123,16 @@ export function ElementPropertyPanel({
 
   function handleSave() {
     updateMutation.mutate(
-      { elementId: element.id, patch: { label: label.trim() === '' ? null : label, visibleToPlayers, locked, props } },
+      {
+        elementId: element.id,
+        patch: {
+          label: label.trim() === '' ? null : label,
+          visibility,
+          ownerUserId: visibility === 'owner_only' ? ownerUserId : null,
+          locked,
+          props,
+        },
+      },
       { onSuccess: onClose },
     );
   }
@@ -148,10 +171,31 @@ export function ElementPropertyPanel({
           <GenericField key={spec.key} spec={spec} value={props[spec.key]} onChange={(v) => setField(spec.key, v)} idPrefix={idPrefix} />
         ))}
 
-        <label className="flex items-center gap-2 text-sm text-stone-300">
-          <input type="checkbox" checked={visibleToPlayers} onChange={(e) => setVisibleToPlayers(e.target.checked)} className="accent-amber-500" />
-          {t('encounters.mapElements.visibleToPlayers')}
-        </label>
+        <Field label={t('encounters.mapElements.visibility')} htmlFor={`${idPrefix}-visibility`}>
+          <Select
+            id={`${idPrefix}-visibility`}
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as GmVisibility)}
+          >
+            <option value="gm_only">{t('encounters.mapElements.visibilityGmOnly')}</option>
+            <option value="revealed_to_players">{t('encounters.mapElements.visibilityRevealed')}</option>
+            <option value="owner_only">{t('encounters.mapElements.visibilityOwnerOnly')}</option>
+          </Select>
+        </Field>
+
+        {visibility === 'owner_only' && (
+          <Field label={t('encounters.mapElements.owner')} htmlFor={`${idPrefix}-owner`}>
+            <Select id={`${idPrefix}-owner`} value={ownerUserId ?? ''} onChange={(e) => setOwnerUserId(e.target.value || null)}>
+              <option value="">{t('encounters.mapElements.ownerSelectPlaceholder')}</option>
+              {players.map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.display_name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+
         <label className="flex items-center gap-2 text-sm text-stone-300">
           <input type="checkbox" checked={locked} onChange={(e) => setLocked(e.target.checked)} className="accent-amber-500" />
           {t('encounters.mapElements.locked')}

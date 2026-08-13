@@ -40,6 +40,12 @@ export interface SessionScreenProps {
   campaignId: string;
   isDm: boolean;
   live: EncounterLiveState;
+  /** GM-only visibility layer — "view as player" preview snapshot (see
+   * useEncounterLive.ts's useEncounterPreviewSync). Optional so existing
+   * callers that don't yet wire it through don't break; BattleMap.tsx's
+   * previewPlayerView toggle degrades to fog-only preview without it. */
+  preview?: EncounterLiveState | null;
+  requestPreviewSync?: () => void;
   myCharacterIds: Set<string>;
   characters: Character[] | undefined;
   monsterInstances: MonsterInstance[] | undefined;
@@ -87,6 +93,8 @@ export function SessionScreen({
   campaignId,
   isDm,
   live,
+  preview,
+  requestPreviewSync,
   myCharacterIds,
   characters,
   monsterInstances,
@@ -274,6 +282,8 @@ export function SessionScreen({
             activeParticipantId={live.activeParticipantId}
             encounter={live.encounter}
             isDm={isDm}
+            preview={preview}
+            requestPreviewSync={requestPreviewSync}
             myCharacterIds={myCharacterIds}
             characters={characters}
             onOpenSheet={openSheet}

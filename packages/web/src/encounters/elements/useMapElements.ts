@@ -4,7 +4,7 @@
 // positionMutation/ParticipantSheetPanel's faction mutation.
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import type { MapElementType } from '../../lib/types';
+import type { GmVisibility, MapElementType } from '../../lib/types';
 
 export interface CreateMapElementBody {
   type: MapElementType;
@@ -15,7 +15,8 @@ export interface CreateMapElementBody {
   points?: { x: number; y: number }[];
   props: Record<string, unknown>;
   label?: string | null;
-  visibleToPlayers?: boolean;
+  visibility?: GmVisibility;
+  ownerUserId?: string | null;
   locked?: boolean;
   zIndex?: number;
 }
@@ -28,7 +29,8 @@ export interface UpdateMapElementBody {
   points?: { x: number; y: number }[] | null;
   props?: Record<string, unknown>;
   label?: string | null;
-  visibleToPlayers?: boolean;
+  visibility?: GmVisibility;
+  ownerUserId?: string | null;
   locked?: boolean;
   zIndex?: number;
 }
@@ -49,5 +51,14 @@ export function useUpdateMapElement(encounterId: string) {
 export function useDeleteMapElement(encounterId: string) {
   return useMutation({
     mutationFn: (elementId: string) => api.delete(`/encounters/${encounterId}/map/elements/${elementId}`),
+  });
+}
+
+// GM-only visibility layer — bulk reveal/hide for BattleMap.tsx's
+// multi-select toolbar.
+export function useSetMapElementsVisibilityBatch(encounterId: string) {
+  return useMutation({
+    mutationFn: (body: { elementIds: string[]; visibility: GmVisibility; ownerUserId?: string | null }) =>
+      api.patch(`/encounters/${encounterId}/map/elements/visibility/batch`, body),
   });
 }

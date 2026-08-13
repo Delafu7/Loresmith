@@ -193,6 +193,8 @@ function LiveMapSession({ encounter }: { encounter: Encounter }) {
     campaignId,
     isDm,
     live,
+    preview,
+    requestPreviewSync,
     expandedParticipantId,
     setExpandedParticipantId,
     showDiceRoller,
@@ -234,6 +236,8 @@ function LiveMapSession({ encounter }: { encounter: Encounter }) {
       campaignId={campaignId}
       isDm={isDm}
       live={live}
+      preview={preview}
+      requestPreviewSync={requestPreviewSync}
       myCharacterIds={myControlledCharacterIds}
       characters={charactersQuery.data?.characters}
       monsterInstances={monsterInstancesQuery.data?.monsterInstances}

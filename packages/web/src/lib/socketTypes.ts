@@ -16,7 +16,7 @@ import type {
   EncounterDisposition,
   EncounterMode,
   EncounterStatus,
-  MapElement,
+  MapElementOrRedacted,
   ParticipantHp,
   ResourcePool,
 } from './types';
@@ -132,13 +132,23 @@ export interface FullStateSyncEvent extends Envelope {
     faction: 'player' | 'ally' | 'enemy' | 'neutral';
     imageUrl: string | null;
     visibleToPlayers: boolean;
+    // GM-only visibility layer — derived, wire-only convenience field so
+    // client code that wants a uniform `.visibility` across notes/
+    // map-elements/tokens can read one here too. visibleToPlayers above
+    // stays the actual mechanism (unchanged).
+    visibility: 'gm_only' | 'revealed_to_players';
     legendaryActionsRemaining: number | null;
     visionEnabled: boolean;
     visionRadiusFt: number;
     darkvisionRadiusFt: number;
   }>;
   map: MapConfig | null;
-  mapElements: MapElement[];
+  // GM-only visibility layer — server-filtered per viewer (see server's
+  // buildFullStateSyncPayload): a hidden wall/door/light arrives as a
+  // RedactedMapElement (geometry-only stub, needed for fog-of-war
+  // raycasting / light-radius rendering); a hidden note/area/image is
+  // omitted from this array entirely.
+  mapElements: MapElementOrRedacted[];
 }
 
 // Phase 2 "lair actions (round-start trigger)" — room-wide, no DM/player
@@ -177,14 +187,16 @@ export interface TokenMovedEvent extends Envelope {
 
 // Elements are scoped to CampaignMap.id, not one encounter (see
 // services/mapElements.ts's header comment) — every encounter linked to the
-// affected map gets its own broadcast. No visibility split, same reasoning
-// as MAP_UPDATED/TOKEN_MOVED; 'note' elements ARE present in this payload
-// for every viewer — the DM-only restriction is enforced by the client never
-// rendering them to a non-DM viewer (see encounters/elements/registry.ts).
-// 'deleted' has no row left to send, just the id.
+// affected map gets its own broadcast. GM-only visibility layer — role-split
+// server-side (see sockets/broadcast.ts's broadcastMapElementsChanged): a
+// non-DM viewer's `element` is either the full shape, a RedactedMapElement
+// stub for a hidden wall/door/light, or this event simply never arrives for
+// a fully-hidden element (e.g. a gm_only note). 'deleted' has no row left to
+// send, just the id (safe to send unconditionally — deleting something a
+// player never knew existed reveals nothing).
 export interface MapElementsChangedEvent extends Envelope {
   changeType: 'created' | 'updated' | 'deleted';
-  element: MapElement | { id: string };
+  element: MapElementOrRedacted | { id: string };
 }
 
 // Exploration/combat mode toggle — the one genuinely new event this feature
@@ -463,6 +475,12 @@ export interface ServerToClientEvents {
   LAIR_ACTION_AVAILABLE: (payload: LairActionAvailableEvent) => void;
   REVEAL_CHANGED: (payload: RevealChangedEvent) => void;
   FULL_STATE_SYNC: (payload: FullStateSyncEvent) => void;
+  // GM-only visibility layer — "view as player" preview (DM-only request,
+  // see sockets/rooms.ts's request:sync-preview). Reuses the exact same
+  // FullStateSyncEvent shape, forced to role='player' server-side — a
+  // point-in-time snapshot, not a second live-patched stream (see
+  // useEncounterLive.ts).
+  FULL_STATE_SYNC_PREVIEW: (payload: FullStateSyncEvent) => void;
   MAP_UPDATED: (payload: MapUpdatedEvent) => void;
   MAP_ELEMENTS_CHANGED: (payload: MapElementsChangedEvent) => void;
   TOKEN_MOVED: (payload: TokenMovedEvent) => void;
@@ -497,4 +515,6 @@ export interface ClientToServerEvents {
   'join:campaign': (payload: { campaignId: string }, ack?: (res: Ack) => void) => void;
   'join:encounter': (payload: { encounterId: string }, ack?: (res: Ack) => void) => void;
   'request:sync': (payload: { encounterId: string }, ack?: (res: Ack) => void) => void;
+  // GM-only visibility layer — "view as player" preview, DM-only server-side.
+  'request:sync-preview': (payload: { encounterId: string }, ack?: (res: Ack) => void) => void;
 }

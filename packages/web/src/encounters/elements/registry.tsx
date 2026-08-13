@@ -15,8 +15,8 @@
 // isolated to the three helpers at the bottom of this file — no consumer
 // component ever casts anything itself.
 
-import type { ReactNode } from 'react';
-import type { MapElement, MapElementType } from '../../lib/types';
+import type { MouseEvent, ReactNode } from 'react';
+import type { MapElement, MapElementOrRedacted, MapElementType } from '../../lib/types';
 import { WallIcon, DoorIcon, LightIcon, AreaIcon, NoteIcon, ImageIcon } from './icons';
 import { segmentStyle } from './geometry';
 
@@ -36,7 +36,10 @@ export type ElementFieldSpec =
 export interface ElementRenderCtx {
   cellSizePx: number;
   isSelected: boolean;
-  onSelect: () => void;
+  /** GM-only visibility layer — the click event is passed through so the
+   * caller can detect a shift-click for multi-select (mirrors the token
+   * multi-select shift-click pattern in BattleMap.tsx), not just "select this". */
+  onSelect: (e: MouseEvent) => void;
   /** Resolves an image element's assetId to a servable file URL — undefined while the asset list is still loading or the asset was deleted. */
   resolveAssetUrl: (assetId: string) => string | undefined;
 }
@@ -44,7 +47,7 @@ export interface ElementRenderCtx {
 export interface ElementDefaults<T extends MapElementType> {
   props: Extract<MapElement, { type: T }>['props'];
   label?: string | null;
-  visibleToPlayers?: boolean;
+  visibility?: 'gm_only' | 'revealed_to_players' | 'owner_only';
 }
 
 export interface ElementRegistryEntry<T extends MapElementType> {
@@ -56,7 +59,7 @@ export interface ElementRegistryEntry<T extends MapElementType> {
   blocksVision: (el: Extract<MapElement, { type: T }>) => boolean;
   blocksMovement: (el: Extract<MapElement, { type: T }>) => boolean;
   defaults: () => ElementDefaults<T>;
-  /** Property-panel fields, each targeting `props.<key>` — every type shares label/visibleToPlayers/locked generically (ElementPropertyPanel.tsx), so this list only ever needs type-specific `props` fields. */
+  /** Property-panel fields, each targeting `props.<key>` — every type shares label/visibility/locked generically (ElementPropertyPanel.tsx), so this list only ever needs type-specific `props` fields. */
   fields: ElementFieldSpec[];
   render: (el: Extract<MapElement, { type: T }>, ctx: ElementRenderCtx) => ReactNode;
 }
@@ -80,7 +83,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
         <div
           onClick={(e) => {
             e.stopPropagation();
-            ctx.onSelect();
+            ctx.onSelect(e);
           }}
           style={style}
           className={`cursor-pointer rounded-full bg-stone-200 ${ctx.isSelected ? 'ring-2 ring-amber-400' : ''}`}
@@ -117,7 +120,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
         <div
           onClick={(e) => {
             e.stopPropagation();
-            ctx.onSelect();
+            ctx.onSelect(e);
           }}
           style={style}
           className={`cursor-pointer rounded-full ${color} ${ctx.isSelected ? 'ring-2 ring-amber-400' : ''}`}
@@ -148,7 +151,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
         <div
           onClick={(e) => {
             e.stopPropagation();
-            ctx.onSelect();
+            ctx.onSelect(e);
           }}
           style={{
             position: 'absolute',
@@ -192,7 +195,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
         <svg
           onClick={(e) => {
             e.stopPropagation();
-            ctx.onSelect();
+            ctx.onSelect(e);
           }}
           className="absolute inset-0 h-full w-full cursor-pointer"
           style={{ pointerEvents: 'none' }}
@@ -211,13 +214,13 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     placement: 'point',
     blocksVision: () => false,
     blocksMovement: () => false,
-    defaults: () => ({ props: { body: '' }, visibleToPlayers: false }),
+    defaults: () => ({ props: { body: '' }, visibility: 'gm_only' }),
     fields: [{ key: 'body', kind: 'textarea', labelKey: 'encounters.mapElements.fields.noteBody', maxLength: 5000 }],
     render: (el, ctx) => (
       <div
         onClick={(e) => {
           e.stopPropagation();
-          ctx.onSelect();
+          ctx.onSelect(e);
         }}
         style={{ position: 'absolute', left: el.x1 * ctx.cellSizePx - 10, top: el.y1 * ctx.cellSizePx - 10 }}
         className={`flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-sky-900 text-sky-200 ${ctx.isSelected ? 'ring-2 ring-amber-400' : ''}`}
@@ -250,7 +253,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
         <div
           onClick={(e) => {
             e.stopPropagation();
-            ctx.onSelect();
+            ctx.onSelect(e);
           }}
           style={{
             position: 'absolute',
@@ -284,9 +287,19 @@ export function renderMapElement(el: MapElement, ctx: ElementRenderCtx): ReactNo
   return (entry.render as (el: MapElement, ctx: ElementRenderCtx) => ReactNode)(el, ctx);
 }
 
-export function elementBlocksVision(el: MapElement): boolean {
-  const entry = ELEMENT_REGISTRY[el.type];
-  return (entry.blocksVision as (el: MapElement) => boolean)(el);
+// GM-only visibility layer — a hidden wall/door arrives from the server as
+// a RedactedMapElement stub (geometry-only, see lib/types.ts), not a full
+// MapElement, so this must short-circuit before indexing the type registry
+// (needed by vision/segments.ts's raycasting, which sees both shapes).
+export function elementBlocksVision(el: MapElementOrRedacted): boolean {
+  if ('redacted' in el && el.redacted) return el.blocksVision ?? false;
+  // Same "one controlled cast" pattern as the other helpers in this file —
+  // `el` is a full MapElement here (the branch above already excluded
+  // RedactedMapElement), TS just can't prove it through the compound `in`
+  // check above.
+  const full = el as MapElement;
+  const entry = ELEMENT_REGISTRY[full.type];
+  return (entry.blocksVision as (el: MapElement) => boolean)(full);
 }
 
 export function elementBlocksMovement(el: MapElement): boolean {

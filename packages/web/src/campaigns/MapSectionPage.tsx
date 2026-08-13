@@ -72,7 +72,8 @@ export function MapSectionPage() {
 }
 
 function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
-  const { campaignId, isDm, live, myCharacterIds, characters, monsterInstances, monsters, removeEffectMutation } = useMapSectionData(encounter);
+  const { campaignId, isDm, live, preview, requestPreviewSync, myCharacterIds, characters, monsterInstances, monsters, removeEffectMutation } =
+    useMapSectionData(encounter);
   const { t } = useLocale();
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
 
@@ -96,6 +97,8 @@ function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
           activeParticipantId={live.activeParticipantId}
           encounter={live.encounter}
           isDm={isDm}
+          preview={preview}
+          requestPreviewSync={requestPreviewSync}
           myCharacterIds={myCharacterIds}
           characters={characters}
           onOpenSheet={setSelectedParticipantId}
@@ -143,6 +146,8 @@ function useMapSectionData(encounter: Encounter) {
     campaignId: data.campaignId,
     isDm: data.isDm,
     live: data.live,
+    preview: data.preview,
+    requestPreviewSync: data.requestPreviewSync,
     myCharacterIds: data.myControlledCharacterIds,
     characters: data.charactersQuery.data?.characters,
     monsterInstances: data.monsterInstancesQuery.data?.monsterInstances,

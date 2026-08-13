@@ -3,12 +3,12 @@
 // 'wall'` directly for the door case, so a future vision-blocking type never
 // needs an edit here — it only needs to return true from its own
 // blocksVision() and have x1/y1/x2/y2 geometry.
-import type { MapElement } from '../../lib/types';
+import type { MapElementOrRedacted } from '../../lib/types';
 import { elementBlocksVision } from '../elements/registry';
 import { segmentToPx } from '../geometry';
 import type { Segment } from './raycast';
 
-export function wallSegmentsFromElements(elements: MapElement[], cellSizePx: number): Segment[] {
+export function wallSegmentsFromElements(elements: MapElementOrRedacted[], cellSizePx: number): Segment[] {
   const segments: Segment[] = [];
   for (const el of elements) {
     if (el.x2 == null || el.y2 == null) continue; // point/polygon types never block vision via this path

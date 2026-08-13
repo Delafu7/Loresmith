@@ -20,7 +20,7 @@ import type {
 } from '../lib/types';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { useAuth } from '../auth/AuthContext';
-import { useEncounterLive } from './useEncounterLive';
+import { useEncounterLive, useEncounterPreviewSync } from './useEncounterLive';
 import type { ApplyEffectFormInput } from '../components/EffectApplyDialog';
 
 export interface SpawnParticipantsBody {
@@ -39,6 +39,8 @@ export function useEncounterSessionData(encounter: Encounter) {
   const navigate = useNavigate();
   const isDm = role === 'dm';
   const live = useEncounterLive(encounter.id);
+  // GM-only visibility layer — "view as player" preview snapshot.
+  const { preview, requestPreviewSync } = useEncounterPreviewSync(encounter.id);
   const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
   const [showDiceRoller, setShowDiceRoller] = useState(false);
 
@@ -223,6 +225,8 @@ export function useEncounterSessionData(encounter: Encounter) {
     campaignId,
     isDm,
     live,
+    preview,
+    requestPreviewSync,
     expandedParticipantId,
     setExpandedParticipantId,
     showDiceRoller,

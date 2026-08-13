@@ -848,7 +848,8 @@ interface MapElementBase {
   x2: number | null;
   y2: number | null;
   label: string | null;
-  visibleToPlayers: boolean;
+  visibility: GmVisibility;
+  ownerUserId: string | null;
   locked: boolean;
   zIndex: number;
 }
@@ -872,6 +873,25 @@ export type MapElement =
       points: null;
       props: { assetId: string | null; widthFt: number; heightFt: number; rotationDeg: number; opacity: number };
     });
+
+// A hidden wall/door/light's redacted server stub (GM-only visibility layer)
+// — geometry-only, no label/props, so a non-DM/non-owner viewer's
+// fog-of-war raycast / light-radius rendering still works without leaking
+// content. note/area/image are omitted entirely instead of redacted (they
+// never block vision) — see server's formatMapElementForViewer.
+export interface RedactedMapElement {
+  id: string;
+  mapId: string;
+  type: 'wall' | 'door' | 'light';
+  x1: number;
+  y1: number;
+  x2: number | null;
+  y2: number | null;
+  redacted: true;
+  blocksVision?: boolean; // wall/door only
+  lightRadii?: { brightRadiusFt: number; dimRadiusFt: number }; // light only
+}
+export type MapElementOrRedacted = MapElement | RedactedMapElement;
 
 export interface Note {
   id: string;

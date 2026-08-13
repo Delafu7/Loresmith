@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ELEMENT_REGISTRY, ELEMENT_TYPES, elementBlocksMovement, elementBlocksVision } from './registry';
-import type { MapElement } from '../../lib/types';
+import type { MapElement, RedactedMapElement } from '../../lib/types';
 
 const BASE = {
   id: 'el-1',
@@ -10,7 +10,8 @@ const BASE = {
   x2: null,
   y2: null,
   label: null,
-  visibleToPlayers: true,
+  visibility: 'revealed_to_players' as const,
+  ownerUserId: null,
   locked: false,
   zIndex: 0,
 };
@@ -69,8 +70,22 @@ describe('ELEMENT_REGISTRY', () => {
     }
   });
 
-  it('note defaults to hidden from players; every other type defaults to visible (or leaves it server-defaulted)', () => {
-    expect(ELEMENT_REGISTRY.note.defaults().visibleToPlayers).toBe(false);
+  it('note defaults to gm_only; every other type defaults to visible (or leaves it server-defaulted)', () => {
+    expect(ELEMENT_REGISTRY.note.defaults().visibility).toBe('gm_only');
+  });
+
+  // GM-only visibility layer — a hidden wall/door/light arrives from the
+  // server as a RedactedMapElement (geometry-only) stub, not a full
+  // MapElement; elementBlocksVision must short-circuit on it before
+  // indexing the type registry (needed by vision/segments.ts's raycasting).
+  it('elementBlocksVision reads a redacted element stub\'s own blocksVision fact, never the type registry', () => {
+    const redactedWall: RedactedMapElement = { id: 'w1', mapId: 'map-1', type: 'wall', x1: 0, y1: 0, x2: 1, y2: 0, redacted: true, blocksVision: true };
+    const redactedOpenDoor: RedactedMapElement = { id: 'd1', mapId: 'map-1', type: 'door', x1: 0, y1: 0, x2: 1, y2: 0, redacted: true, blocksVision: false };
+    const redactedClosedDoor: RedactedMapElement = { id: 'd2', mapId: 'map-1', type: 'door', x1: 0, y1: 0, x2: 1, y2: 0, redacted: true, blocksVision: true };
+
+    expect(elementBlocksVision(redactedWall)).toBe(true);
+    expect(elementBlocksVision(redactedOpenDoor)).toBe(false);
+    expect(elementBlocksVision(redactedClosedDoor)).toBe(true);
   });
 
   it('wall and door are segment-placed; light/note/image are point-placed; area is polygon-placed', () => {
