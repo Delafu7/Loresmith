@@ -50,7 +50,13 @@ export function SavingThrowsPanel({
   return (
     <div className="rounded-md bg-stone-900 shadow-sm p-4">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 mb-3">{t('characters.savingThrows.title')}</h3>
-      <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {/* Single column: each row (checkbox + name + modifier + DiceRoller's
+          advantage/disadvantage/normal button group) needs ~230px, more
+          than a 2- or 3-column grid track leaves it in this panel's width —
+          the overflowing DiceRoller controls were rendering on top of the
+          next row's column, making adjacent saving throws visually
+          overwrite each other. */}
+      <ul className="grid grid-cols-1 gap-2">
         {ordered.map((a) => {
           const key = abilityKeyFor(a);
           if (!key) return null;
