@@ -159,3 +159,22 @@ export async function setPlotThreadVisibility(
     client.release();
   }
 }
+
+// GM-only visibility layer — one-click reveal/hide built on top of
+// setPlotThreadVisibility above rather than a new visibility mechanism:
+// plot threads already default to hidden-until-granted via entity_visibility
+// (functionally 'gm_only' by default already, and strictly more granular
+// than the notes/map-elements 3-state model), so these two are just
+// convenience wrappers for the common "everyone" / "no one" cases.
+export async function revealPlotThreadToAllPlayers(pool: Pool, campaignId: string, threadId: string, role: CampaignRole): Promise<void> {
+  requireDm(role);
+  const members = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM campaign_members WHERE campaign_id = $1 AND role = 'player'`,
+    [campaignId],
+  );
+  await setPlotThreadVisibility(pool, campaignId, threadId, role, { userIds: members.rows.map((r) => r.user_id) });
+}
+
+export async function hidePlotThreadFromAllPlayers(pool: Pool, campaignId: string, threadId: string, role: CampaignRole): Promise<void> {
+  await setPlotThreadVisibility(pool, campaignId, threadId, role, { userIds: [] });
+}

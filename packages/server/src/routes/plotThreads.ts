@@ -43,3 +43,15 @@ plotThreadsRouter.put('/:threadId/visibility', requireRole('dm'), async (req, re
   await plotThreadsService.setPlotThreadVisibility(pool, req.campaignId!, (req.params.threadId as string), req.campaignRole!, input);
   res.status(204).send();
 });
+
+// GM-only visibility layer — one-click reveal/hide for the plot threads
+// page's per-item buttons and multi-select bulk bar.
+plotThreadsRouter.post('/:threadId/reveal-all', requireRole('dm'), async (req, res) => {
+  await plotThreadsService.revealPlotThreadToAllPlayers(pool, req.campaignId!, (req.params.threadId as string), req.campaignRole!);
+  res.status(204).send();
+});
+
+plotThreadsRouter.post('/:threadId/hide-all', requireRole('dm'), async (req, res) => {
+  await plotThreadsService.hidePlotThreadFromAllPlayers(pool, req.campaignId!, (req.params.threadId as string), req.campaignRole!);
+  res.status(204).send();
+});

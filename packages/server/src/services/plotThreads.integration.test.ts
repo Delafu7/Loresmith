@@ -10,7 +10,9 @@ import { AppError } from '../middleware/errors.js';
 import {
   createPlotThread,
   deletePlotThread,
+  hidePlotThreadFromAllPlayers,
   listPlotThreads,
+  revealPlotThreadToAllPlayers,
   setPlotThreadVisibility,
   touchPlotThread,
   updatePlotThread,
@@ -113,6 +115,32 @@ describe('plot threads (integration, live DB, throwaway fixtures)', () => {
     const touched = await touchPlotThread(pool, campaignId, thread.id, 'dm');
     expect(touched.description).toBe('Original.');
     expect(new Date(touched.last_touched_at).getTime()).toBeGreaterThan(new Date(thread.last_touched_at).getTime());
+  });
+
+  // GM-only visibility layer — one-click reveal/hide convenience wrappers
+  // built on top of setPlotThreadVisibility.
+  it('revealPlotThreadToAllPlayers grants every player in the campaign, not just some', async () => {
+    const thread = await createPlotThread(pool, campaignId, 'dm', { title: 'Reveal All Test' });
+    await revealPlotThreadToAllPlayers(pool, campaignId, thread.id, 'dm');
+
+    const playerAAfter = await listPlotThreads(pool, campaignId, playerAUserId, 'player');
+    expect(playerAAfter.map((t) => t.id)).toContain(thread.id);
+    const playerBAfter = await listPlotThreads(pool, campaignId, playerBUserId, 'player');
+    expect(playerBAfter.map((t) => t.id)).toContain(thread.id);
+
+    const dmAfter = await listPlotThreads(pool, campaignId, dmUserId, 'dm');
+    expect(dmAfter.find((t) => t.id === thread.id)?.visibleToUserIds?.sort()).toEqual([playerAUserId, playerBUserId].sort());
+  });
+
+  it('hidePlotThreadFromAllPlayers clears every grant', async () => {
+    const thread = await createPlotThread(pool, campaignId, 'dm', { title: 'Hide All Test' });
+    await revealPlotThreadToAllPlayers(pool, campaignId, thread.id, 'dm');
+    await hidePlotThreadFromAllPlayers(pool, campaignId, thread.id, 'dm');
+
+    const playerAAfter = await listPlotThreads(pool, campaignId, playerAUserId, 'player');
+    expect(playerAAfter.map((t) => t.id)).not.toContain(thread.id);
+    const dmAfter = await listPlotThreads(pool, campaignId, dmUserId, 'dm');
+    expect(dmAfter.find((t) => t.id === thread.id)?.visibleToUserIds).toEqual([]);
   });
 
   it('deletePlotThread removes the thread and a non-DM cannot delete', async () => {
