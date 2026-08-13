@@ -90,6 +90,46 @@ export function PlotThreadsPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['plotThreads', campaignId] }),
   });
 
+  // GM-only visibility layer — one-click reveal/hide, built on top of the
+  // existing per-user entity_visibility allowlist (see services/
+  // plotThreads.ts's revealPlotThreadToAllPlayers/hidePlotThreadFromAllPlayers).
+  const revealAllMutation = useMutation({
+    mutationFn: (threadId: string) => api.post(`/campaigns/${campaignId}/plot-threads/${threadId}/reveal-all`, {}),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['plotThreads', campaignId] }),
+  });
+  const hideAllMutation = useMutation({
+    mutationFn: (threadId: string) => api.post(`/campaigns/${campaignId}/plot-threads/${threadId}/hide-all`, {}),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['plotThreads', campaignId] }),
+  });
+
+  // Multi-select bulk bar — each call is a cheap single-row allowlist
+  // replace, not a hot broadcast path, so a client-side loop over the two
+  // endpoints above is fine (no new batch server route needed).
+  const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
+  const batchRevealMutation = useMutation({
+    mutationFn: (threadIds: string[]) => Promise.all(threadIds.map((id) => api.post(`/campaigns/${campaignId}/plot-threads/${id}/reveal-all`, {}))),
+    onSuccess: () => {
+      setSelectedThreadIds(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['plotThreads', campaignId] });
+    },
+  });
+  const batchHideMutation = useMutation({
+    mutationFn: (threadIds: string[]) => Promise.all(threadIds.map((id) => api.post(`/campaigns/${campaignId}/plot-threads/${id}/hide-all`, {}))),
+    onSuccess: () => {
+      setSelectedThreadIds(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['plotThreads', campaignId] });
+    },
+  });
+
+  function toggleThreadSelected(threadId: string) {
+    setSelectedThreadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(threadId)) next.delete(threadId);
+      else next.add(threadId);
+      return next;
+    });
+  }
+
   function handleCreate(e: FormEvent) {
     e.preventDefault();
     if (!form.title.trim()) return;
@@ -136,8 +176,46 @@ export function PlotThreadsPage() {
       {threadsQuery.isError && <ErrorBanner message={errorMessage(threadsQuery.error)} />}
       {threadsQuery.data && threads.length === 0 && <EmptyState message={t('plotThreads.noThreads')} />}
 
-      {(touchMutation.isError || statusMutation.isError || deleteMutation.isError) && (
-        <ErrorBanner message={errorMessage((touchMutation.error ?? statusMutation.error ?? deleteMutation.error) as unknown)} />
+      {(touchMutation.isError ||
+        statusMutation.isError ||
+        deleteMutation.isError ||
+        revealAllMutation.isError ||
+        hideAllMutation.isError ||
+        batchRevealMutation.isError ||
+        batchHideMutation.isError) && (
+        <ErrorBanner
+          message={errorMessage(
+            (touchMutation.error ??
+              statusMutation.error ??
+              deleteMutation.error ??
+              revealAllMutation.error ??
+              hideAllMutation.error ??
+              batchRevealMutation.error ??
+              batchHideMutation.error) as unknown,
+          )}
+        />
+      )}
+
+      {isDm && selectedThreadIds.size > 0 && (
+        <div className="mb-3 flex items-center gap-3 rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-xs">
+          <span className="text-stone-400">{t('plotThreads.selectedCount', { count: selectedThreadIds.size })}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => batchRevealMutation.mutate([...selectedThreadIds])}
+            disabled={batchRevealMutation.isPending}
+          >
+            {t('plotThreads.revealSelected')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => batchHideMutation.mutate([...selectedThreadIds])}
+            disabled={batchHideMutation.isPending}
+          >
+            {t('plotThreads.hideSelected')}
+          </Button>
+        </div>
       )}
 
       <ul className="space-y-3">
@@ -148,6 +226,14 @@ export function PlotThreadsPage() {
               <Card>
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-medium text-stone-100 flex items-center gap-2">
+                    {isDm && (
+                      <input
+                        type="checkbox"
+                        checked={selectedThreadIds.has(thread.id)}
+                        onChange={() => toggleThreadSelected(thread.id)}
+                        aria-label={t('plotThreads.selectAll')}
+                      />
+                    )}
                     {thread.title}
                     {thread.status === 'resolved' && (
                       <span className="rounded-full border border-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
@@ -162,6 +248,21 @@ export function PlotThreadsPage() {
                   </h3>
                   {isDm && (
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          (thread.visibleToUserIds && thread.visibleToUserIds.length === players.length && players.length > 0
+                            ? hideAllMutation
+                            : revealAllMutation
+                          ).mutate(thread.id)
+                        }
+                        disabled={revealAllMutation.isPending || hideAllMutation.isPending}
+                        className="min-h-11 px-1 text-sky-400 hover:text-sky-300 text-xs disabled:opacity-50"
+                      >
+                        {thread.visibleToUserIds && thread.visibleToUserIds.length === players.length && players.length > 0
+                          ? t('plotThreads.hideAll')
+                          : t('plotThreads.revealAll')}
+                      </button>
                       <button
                         type="button"
                         onClick={() => touchMutation.mutate(thread.id)}
@@ -201,10 +302,17 @@ export function PlotThreadsPage() {
                 </div>
                 {thread.description && <p className="text-sm text-stone-300 whitespace-pre-wrap">{thread.description}</p>}
                 {isDm && (
-                  <p className="text-xs text-stone-500">
-                    {thread.visibleToUserIds && thread.visibleToUserIds.length > 0
-                      ? t('plotThreads.sharedWithCount', { count: thread.visibleToUserIds.length })
-                      : t('plotThreads.dmOnly')}
+                  <p className="text-xs">
+                    {(() => {
+                      const count = thread.visibleToUserIds?.length ?? 0;
+                      if (count === 0) {
+                        return <span className="text-red-400">{t('plotThreads.dmOnly')}</span>;
+                      }
+                      if (players.length > 0 && count === players.length) {
+                        return <span className="text-emerald-400">{t('plotThreads.revealedToEveryone')}</span>;
+                      }
+                      return <span className="text-stone-500">{t('plotThreads.sharedWithCount', { count })}</span>;
+                    })()}
                   </p>
                 )}
                 <p className="text-xs text-stone-500">

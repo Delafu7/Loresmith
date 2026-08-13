@@ -21,6 +21,13 @@ export const plotThreads = {
   sharedWithLabel: 'Compartida con',
   sharedWithCount: 'Compartida con {count} jugador(es)',
   dmOnly: 'Solo DJ — no compartida con ningún jugador',
+  revealedToEveryone: 'Revelada a todos',
   noPlayers: 'Aún no hay jugadores en esta campaña.',
   lastTouched: 'Última actualización {date}',
+  revealAll: 'Revelar a todos',
+  hideAll: 'Ocultar a todos',
+  selectAll: 'Seleccionar todo',
+  revealSelected: 'Revelar seleccionadas',
+  hideSelected: 'Ocultar seleccionadas',
+  selectedCount: '{count} seleccionadas',
 };

@@ -21,6 +21,15 @@ export const plotThreads = {
   sharedWithLabel: 'Shared with',
   sharedWithCount: 'Shared with {count} player(s)',
   dmOnly: 'DM only — not shared with any player',
+  revealedToEveryone: 'Revealed to everyone',
   noPlayers: 'No players in this campaign yet.',
   lastTouched: 'Last touched {date}',
+  // GM-only visibility layer — one-click reveal/hide on top of the existing
+  // per-user sharing checklist above.
+  revealAll: 'Reveal to all',
+  hideAll: 'Hide from all',
+  selectAll: 'Select all',
+  revealSelected: 'Reveal selected',
+  hideSelected: 'Hide selected',
+  selectedCount: '{count} selected',
 };
