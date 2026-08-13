@@ -23,6 +23,17 @@ if (!connectionString) {
 // module, so it must run before any query.
 types.setTypeParser(20, (value: string) => parseInt(value, 10));
 
+// node-postgres's default parser for DATE (OID 1082) returns a JS Date,
+// which JSON.stringify then serializes as a full ISO datetime (e.g.
+// "2024-06-14T00:00:00.000Z") instead of the "YYYY-MM-DD" the column
+// actually holds. Every DATE column in this schema (currently only
+// sessions.played_at) round-trips through updateSessionLogSchema's
+// z.string().date(), which requires the plain "YYYY-MM-DD" form, so
+// leaving the default parser in place makes any PATCH that echoes back a
+// previously-fetched played_at fail validation. Returning the raw text
+// keeps it in the same format the client sent and the schema expects.
+types.setTypeParser(1082, (value: string) => value);
+
 export const pool = new Pool({ connectionString });
 
 pool.on('error', (err) => {

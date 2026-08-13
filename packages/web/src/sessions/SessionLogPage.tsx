@@ -40,6 +40,15 @@ function emptyToNull(value: string): string | null {
   return value.trim() === '' ? null : value;
 }
 
+// Mirrors the server's z.string().date() check (schemas/campaigns.ts):
+// only a plain "YYYY-MM-DD" or empty/unset is valid. Catches a malformed
+// playedAt client-side, with a visible message, instead of letting it
+// reach the server as a silent 400.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+function isValidPlayedAt(value: string): boolean {
+  return value.trim() === '' || DATE_ONLY.test(value);
+}
+
 export function SessionLogPage() {
   const { t } = useLocale();
   const { campaignId, role } = useCampaignShell();
@@ -63,6 +72,7 @@ export function SessionLogPage() {
   // Draft-persisted create form (see lib/useFormDraft.ts) so a half-written
   // entry survives an accidental navigation away.
   const [form, setForm, clearDraft] = useFormDraft(`draft:sessionLog:new:${campaignId}`, emptySessionLogForm);
+  const [createValidationError, setCreateValidationError] = useState<string | null>(null);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -91,6 +101,11 @@ export function SessionLogPage() {
     e.preventDefault();
     const num = Number(form.sessionNumber);
     if (!Number.isInteger(num) || num <= 0) return;
+    if (!isValidPlayedAt(form.playedAt)) {
+      setCreateValidationError(t('sessionLog.invalidDate'));
+      return;
+    }
+    setCreateValidationError(null);
     createMutation.mutate();
   }
 
@@ -155,6 +170,7 @@ export function SessionLogPage() {
               ))}
             </select>
           </Field>
+          {createValidationError && <ErrorBanner message={createValidationError} />}
           {createMutation.isError && <ErrorBanner message={errorMessage(createMutation.error)} />}
           <Button type="submit" variant="primary" disabled={createMutation.isPending}>
             {createMutation.isPending ? t('sessionLog.saving') : t('sessionLog.saveEntry')}
@@ -291,6 +307,7 @@ function SessionLogEditForm({
     playerRecap: session.player_recap ?? '',
     locationId: session.location_id ?? '',
   }));
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const updateMutation = useMutation({
     mutationFn: () =>
@@ -313,6 +330,11 @@ function SessionLogEditForm({
     e.preventDefault();
     const num = Number(form.sessionNumber);
     if (!Number.isInteger(num) || num <= 0) return;
+    if (!isValidPlayedAt(form.playedAt)) {
+      setValidationError(t('sessionLog.invalidDate'));
+      return;
+    }
+    setValidationError(null);
     updateMutation.mutate();
   }
 
@@ -372,6 +394,7 @@ function SessionLogEditForm({
             ))}
           </select>
         </Field>
+        {validationError && <ErrorBanner message={validationError} />}
         {updateMutation.isError && <ErrorBanner message={errorMessage(updateMutation.error)} />}
         <div className="flex gap-2">
           <Button type="submit" variant="primary" disabled={updateMutation.isPending}>

@@ -18,4 +18,5 @@ export const sessionLog = {
   createdUpdated: 'Créée le {created} · Mise à jour le {updated}',
   editModalTitle: "Modifier l'entrée de session",
   saveChanges: 'Enregistrer les modifications',
+  invalidDate: 'La date de la partie doit être une date valide.',
 };

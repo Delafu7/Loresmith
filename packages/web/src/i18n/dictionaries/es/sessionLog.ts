@@ -18,4 +18,5 @@ export const sessionLog = {
   createdUpdated: 'Creada el {created} · Actualizada el {updated}',
   editModalTitle: 'Editar entrada de sesión',
   saveChanges: 'Guardar cambios',
+  invalidDate: 'La fecha de la partida debe ser una fecha válida.',
 };
