@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember, requireRole } from '../middleware/campaign.js';
-import { createNoteSchema, searchNotesQuerySchema, updateNoteSchema } from '../schemas/notes.js';
+import { batchSetNotesVisibilitySchema, createNoteSchema, searchNotesQuerySchema, updateNoteSchema } from '../schemas/notes.js';
 import * as notesService from '../services/notes.js';
 
 // Mounted at /campaigns/:id/notes
@@ -10,7 +10,7 @@ export const notesRouter = Router({ mergeParams: true });
 notesRouter.use(requireAuth, requireCampaignMember());
 
 notesRouter.get('/', async (req, res) => {
-  const notes = await notesService.listNotes(pool, req.campaignId!, req.campaignRole!);
+  const notes = await notesService.listNotes(pool, req.campaignId!, req.user!.id, req.campaignRole!);
   res.json({ notes });
 });
 
@@ -21,7 +21,15 @@ notesRouter.get('/', async (req, res) => {
 // note id and hit a Postgres uuid-cast error instead of a clean route match).
 notesRouter.get('/search', async (req, res) => {
   const query = searchNotesQuerySchema.parse(req.query);
-  const notes = await notesService.searchNotes(pool, req.campaignId!, query.q);
+  const notes = await notesService.searchNotes(pool, req.campaignId!, req.user!.id, req.campaignRole!, query.q);
+  res.json({ notes });
+});
+
+// GM-only visibility layer — bulk reveal/hide, registered before /:noteId
+// for the same literal-path-first reason as /search above.
+notesRouter.patch('/visibility/batch', requireRole('dm'), async (req, res) => {
+  const input = batchSetNotesVisibilitySchema.parse(req.body);
+  const notes = await notesService.setNotesVisibilityBatch(pool, req.campaignId!, input.noteIds, input.visibility);
   res.json({ notes });
 });
 
@@ -32,7 +40,7 @@ notesRouter.post('/', requireRole('not-spectator'), async (req, res) => {
 });
 
 notesRouter.get('/:noteId', async (req, res) => {
-  const note = await notesService.getNote(pool, req.campaignId!, (req.params.noteId as string), req.campaignRole!);
+  const note = await notesService.getNote(pool, req.campaignId!, (req.params.noteId as string), req.user!.id, req.campaignRole!);
   res.json({ note });
 });
 

@@ -71,6 +71,10 @@ describe('duplicateNote (integration, live DB, throwaway fixtures)', () => {
     expect(copy.body).toBe('Some lore text');
     expect(copy.campaign_id).toBe(campaignId);
     expect(copy.author_user_id).toBe(dmUserId); // re-stamped to the actor, not the original author
+    // GM-only visibility layer — the generic "copy every column" duplication
+    // logic must carry `visibility` along for free, same as every other
+    // column, without any special-cased handling in duplicateNote itself.
+    expect(copy.visibility).toBe('gm_only');
     expect(new Date(copy.created_at as string).getTime()).toBeGreaterThan(0);
     expect(copy.created_at).not.toBe(undefined);
     expect(copy.updated_at).not.toBe(undefined);

@@ -11,6 +11,11 @@ export const createNoteSchema = z.object({
   noteType: z.enum(['note', 'ruling']).optional(),
   // Phase 3 "locations and factions".
   locationId: z.string().uuid().optional().nullable(),
+  // GM-only visibility layer — omitted defaults at the service layer to
+  // 'gm_only' for a DM-authored note or 'revealed_to_players' for a
+  // player-authored one (see services/notes.ts's createNote), not a flat
+  // .default() here, since the right default depends on the actor's role.
+  visibility: z.enum(['gm_only', 'revealed_to_players', 'owner_only']).optional(),
 });
 export type CreateNoteInput = z.infer<typeof createNoteSchema>;
 
@@ -22,3 +27,11 @@ export const searchNotesQuerySchema = z.object({
   q: z.string().min(1).max(200),
 });
 export type SearchNotesQuery = z.infer<typeof searchNotesQuerySchema>;
+
+// GM-only visibility layer — bulk reveal/hide for the notes page's
+// multi-select bar, DM-only (see routes/notes.ts).
+export const batchSetNotesVisibilitySchema = z.object({
+  noteIds: z.array(z.string().uuid()).min(1),
+  visibility: z.enum(['gm_only', 'revealed_to_players', 'owner_only']),
+});
+export type BatchSetNotesVisibilityInput = z.infer<typeof batchSetNotesVisibilitySchema>;

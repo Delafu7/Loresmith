@@ -51,22 +51,22 @@ describe('searchNotes (integration, live DB, throwaway fixtures)', () => {
   });
 
   it('matches a note by a word in its title', async () => {
-    const results = await searchNotes(pool, campaignId, 'dragon');
+    const results = await searchNotes(pool, campaignId, dmUserId, 'dm', 'dragon');
     expect(results.map((r) => r.id)).toEqual([dragonNoteId]);
   });
 
   it('matches a note by a word in its body, not just the title', async () => {
-    const results = await searchNotes(pool, campaignId, 'tavern');
+    const results = await searchNotes(pool, campaignId, dmUserId, 'dm', 'tavern');
     expect(results.map((r) => r.id)).toEqual([tavernNoteId]);
   });
 
   it('stems the query — "sleeping" still matches "sleeps"', async () => {
-    const results = await searchNotes(pool, campaignId, 'sleeping');
+    const results = await searchNotes(pool, campaignId, dmUserId, 'dm', 'sleeping');
     expect(results.map((r) => r.id)).toEqual([dragonNoteId]);
   });
 
   it('returns nothing for a query that matches neither note', async () => {
-    const results = await searchNotes(pool, campaignId, 'spaceship');
+    const results = await searchNotes(pool, campaignId, dmUserId, 'dm', 'spaceship');
     expect(results).toHaveLength(0);
   });
 
@@ -77,10 +77,28 @@ describe('searchNotes (integration, live DB, throwaway fixtures)', () => {
     );
     const otherCampaignId = otherCampaignRes.rows[0]!.id;
     try {
-      const results = await searchNotes(pool, otherCampaignId, 'dragon');
+      const results = await searchNotes(pool, otherCampaignId, dmUserId, 'dm', 'dragon');
       expect(results).toHaveLength(0);
     } finally {
       await pool.query(`DELETE FROM campaigns WHERE id = $1`, [otherCampaignId]);
+    }
+  });
+
+  // GM-only visibility layer — a non-DM viewer's search never returns a
+  // gm_only note, even when the query text matches it.
+  it('never returns a gm_only note to a non-DM viewer, even on a matching query', async () => {
+    const playerRes = await pool.query<{ id: string }>(
+      `INSERT INTO users (email, display_name, password_hash) VALUES ($1, 'Notes Search Test Player', 'x') RETURNING id`,
+      [`notes-search-player-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`],
+    );
+    const playerUserId = playerRes.rows[0]!.id;
+    await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player')`, [campaignId, playerUserId]);
+    try {
+      const results = await searchNotes(pool, campaignId, playerUserId, 'player', 'dragon');
+      expect(results).toHaveLength(0);
+    } finally {
+      await pool.query(`DELETE FROM campaign_members WHERE campaign_id = $1 AND user_id = $2`, [campaignId, playerUserId]);
+      await pool.query(`DELETE FROM users WHERE id = $1`, [playerUserId]);
     }
   });
 });

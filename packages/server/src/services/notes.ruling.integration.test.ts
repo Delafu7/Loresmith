@@ -45,7 +45,7 @@ describe('note_type / rulings log (integration, live DB, throwaway fixtures)', (
     });
     expect(ruling.note_type).toBe('ruling');
 
-    const results = await searchNotes(pool, campaignId, 'grapple');
+    const results = await searchNotes(pool, campaignId, dmUserId, 'dm', 'grapple');
     expect(results.map((r) => r.id)).toContain(ruling.id);
   });
 
