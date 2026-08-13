@@ -9,7 +9,12 @@ import { z } from 'zod';
 
 const baseFields = {
   label: z.string().max(200).nullable().optional(),
-  visibleToPlayers: z.boolean().optional(),
+  // GM-only visibility layer — 'gm_only' | 'revealed_to_players' |
+  // 'owner_only', replacing the old visibleToPlayers boolean. ownerUserId is
+  // only meaningful (and only persisted) when visibility is 'owner_only'
+  // (see services/mapElements.ts's createMapElement/updateMapElement).
+  visibility: z.enum(['gm_only', 'revealed_to_players', 'owner_only']).optional(),
+  ownerUserId: z.string().uuid().nullable().optional(),
   locked: z.boolean().optional(),
   zIndex: z.number().int().optional(),
 };
@@ -57,10 +62,13 @@ const areaElementSchema = z.object({
   ...baseFields,
 });
 
-// `note` elements are DM-only by construction — visibleToPlayers is accepted
-// for schema symmetry but the route layer never honors true for this type
-// (see routes/encounters.ts's map-elements GET, which strips notes for
-// non-DM viewers unconditionally).
+// `note` elements now honor `visibility` uniformly like every other type —
+// server-side filtering (services/mapElements.ts's formatMapElementForViewer)
+// is what enforces it (GET /:id/map/elements, FULL_STATE_SYNC, and
+// MAP_ELEMENTS_CHANGED all route through it). Notes are backfilled to
+// 'gm_only' on migrate regardless of their old visible_to_players value,
+// since that's what the client actually enforced in practice before this
+// layer existed (see 1784269819666_add-map-elements-visibility.ts).
 const noteElementSchema = z.object({
   type: z.literal('note'),
   x1: z.number(),
@@ -107,3 +115,12 @@ export const updateMapElementSchema = z.object({
   ...baseFields,
 });
 export type UpdateMapElementInput = z.infer<typeof updateMapElementSchema>;
+
+// GM-only visibility layer — bulk reveal/hide for BattleMap.tsx's
+// multi-select toolbar.
+export const batchSetMapElementsVisibilitySchema = z.object({
+  elementIds: z.array(z.string().uuid()).min(1),
+  visibility: z.enum(['gm_only', 'revealed_to_players', 'owner_only']),
+  ownerUserId: z.string().uuid().nullable().optional(),
+});
+export type BatchSetMapElementsVisibilityInput = z.infer<typeof batchSetMapElementsVisibilitySchema>;

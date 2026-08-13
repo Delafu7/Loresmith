@@ -95,6 +95,15 @@ export const setParticipantVisibilitySchema = z.object({
 });
 export type SetParticipantVisibilityInput = z.infer<typeof setParticipantVisibilitySchema>;
 
+// GM-only visibility layer — bulk reveal/hide for BattleMap.tsx's
+// multi-select toolbar (reuses the existing multiSelectedIds token
+// selection).
+export const batchSetParticipantVisibilitySchema = z.object({
+  participantIds: z.array(z.string().uuid()).min(1),
+  visible: z.boolean(),
+});
+export type BatchSetParticipantVisibilityInput = z.infer<typeof batchSetParticipantVisibilitySchema>;
+
 // Phase 2 "restore hp_visibility + banding" — DM-only toggle for how much
 // of a participant's HP a non-DM viewer sees. Orthogonal to `visible`
 // above: a participant can be fully visible on the roster with its HP

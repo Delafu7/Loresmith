@@ -924,6 +924,39 @@ export async function setParticipantVisibility(
   }
 }
 
+// GM-only visibility layer — bulk sibling of setParticipantVisibility above
+// for the multi-select "Reveal selected / Hide selected" toolbar. Same
+// shape, one UPDATE over an id array instead of a single id.
+export async function setParticipantVisibilityBatch(
+  pool: Pool,
+  encounterId: string,
+  participantIds: string[],
+  visible: boolean,
+): Promise<{ encounter: EncounterRow; participants: ParticipantRow[] }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET visible_to_players = $1 WHERE id = ANY($2::uuid[]) AND encounter_id = $3 RETURNING *`,
+      [visible, participantIds, encounterId],
+    );
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participants: updated.rows };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Phase 2 "restore hp_visibility + banding" — same shape as
 // setParticipantVisibility just above (and same reason the route broadcasts
 // via broadcastFullStateResync rather than a dedicated event: this changes

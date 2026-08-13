@@ -9,6 +9,7 @@ import { requireMembership, requireDm, type CampaignRole } from '../services/aut
 import {
   addParticipantSchema,
   applyActionEconomySchema,
+  batchSetParticipantVisibilitySchema,
   createEncounterSchema,
   rollInitiativeSchema,
   setEncounterModeSchema,
@@ -38,7 +39,7 @@ import * as mapsService from '../services/maps.js';
 import { setActiveMapSchema } from '../schemas/maps.js';
 import * as mapElementsService from '../services/mapElements.js';
 import { formatMapElementForWire } from '../services/mapElements.js';
-import { createMapElementSchema, updateMapElementSchema } from '../schemas/mapElements.js';
+import { batchSetMapElementsVisibilitySchema, createMapElementSchema, updateMapElementSchema } from '../schemas/mapElements.js';
 import {
   getIo,
   broadcastCombatStarted,
@@ -473,15 +474,34 @@ encountersRouter.delete('/:id/map/cell-overrides/:x/:y', requireEncounterDm, asy
 // Generic map elements (walls/doors/lights/areas/notes/images — see
 // services/mapElements.ts). Deliberately membership-gated for the read, NOT
 // requireEncounterDm like cell-overrides just above: a player needs to see
-// walls/doors/lights/areas/images rendered on their own screen. 'note'
-// elements ARE included in this response for everyone — the DM-only
-// restriction on notes is enforced by the CLIENT never rendering them to a
-// non-DM viewer (see the web registry), matching this app's existing "no
-// wire-level DM/player split for non-HP-sensitive data" precedent
-// (MAP_UPDATED/TOKEN_MOVED). Writes stay requireEncounterDm-gated same as
-// the rest of the map-configuration surface.
+// walls/doors/lights/areas/images rendered on their own screen. GM-only
+// visibility layer (nav point 2) — every element is passed through
+// formatMapElementForViewer, which returns the full row when visible to
+// this viewer, a geometry-only redacted stub for a hidden wall/door/light
+// (needed for fog-of-war raycasting / light-radius rendering to keep
+// working), or omits a hidden note/area/image entirely. Writes stay
+// requireEncounterDm-gated same as the rest of the map-configuration surface.
 encountersRouter.get('/:id/map/elements', requireEncounterMember, async (req, res) => {
   const elements = await mapElementsService.listMapElements(pool, (req.params.id as string));
+  const out = elements
+    .map((el) => mapElementsService.formatMapElementForViewer(el, req.user!.id, req.campaignRole!))
+    .filter((el): el is NonNullable<typeof el> => el != null);
+  res.json({ elements: out });
+});
+
+// GM-only visibility layer — bulk reveal/hide for BattleMap.tsx's
+// multi-select toolbar. Registered before /:elementId-shaped routes below
+// isn't a concern here (this segment count never collides with
+// /:elementId), but kept alongside the other map-elements routes for
+// readability.
+encountersRouter.patch('/:id/map/elements/visibility/batch', requireEncounterDm, async (req, res) => {
+  const input = batchSetMapElementsVisibilitySchema.parse(req.body);
+  const { elements, affectedEncounters } = await mapElementsService.setMapElementsVisibilityBatch(
+    pool, (req.params.id as string), input.elementIds, input.visibility, input.ownerUserId ?? null,
+  );
+  for (const element of elements) {
+    await broadcastMapElementsChanged(getIo(req.app), affectedEncounters, 'updated', element);
+  }
   res.json({ elements: elements.map(formatMapElementForWire) });
 });
 
@@ -490,9 +510,8 @@ encountersRouter.post('/:id/map/elements', requireEncounterDm, async (req, res) 
   const { element, affectedEncounters } = await mapElementsService.createMapElement(
     pool, (req.params.id as string), input,
   );
-  const wire = formatMapElementForWire(element);
-  broadcastMapElementsChanged(getIo(req.app), affectedEncounters, 'created', wire);
-  res.status(201).json({ element: wire });
+  await broadcastMapElementsChanged(getIo(req.app), affectedEncounters, 'created', element);
+  res.status(201).json({ element: formatMapElementForWire(element) });
 });
 
 encountersRouter.patch('/:id/map/elements/:elementId', requireEncounterDm, async (req, res) => {
@@ -500,9 +519,8 @@ encountersRouter.patch('/:id/map/elements/:elementId', requireEncounterDm, async
   const { element, affectedEncounters } = await mapElementsService.updateMapElement(
     pool, (req.params.id as string), (req.params.elementId as string), input,
   );
-  const wire = formatMapElementForWire(element);
-  broadcastMapElementsChanged(getIo(req.app), affectedEncounters, 'updated', wire);
-  res.json({ element: wire });
+  await broadcastMapElementsChanged(getIo(req.app), affectedEncounters, 'updated', element);
+  res.json({ element: formatMapElementForWire(element) });
 });
 
 encountersRouter.delete('/:id/map/elements/:elementId', requireEncounterDm, async (req, res) => {
@@ -510,7 +528,10 @@ encountersRouter.delete('/:id/map/elements/:elementId', requireEncounterDm, asyn
     pool, (req.params.id as string), (req.params.elementId as string),
   );
   if (result) {
-    broadcastMapElementsChanged(getIo(req.app), result.affectedEncounters, 'deleted', { id: result.elementId });
+    // 'deleted' has no full row left — the id-only stub is safe to send to
+    // everyone unconditionally, same as today: deleting something a player
+    // never knew existed reveals nothing.
+    await broadcastMapElementsChanged(getIo(req.app), result.affectedEncounters, 'deleted', { id: result.elementId, map_id: result.map.id });
   }
   res.status(204).send();
 });
@@ -551,6 +572,19 @@ encountersRouter.patch('/:id/participants/:pid/visibility', requireEncounterDm, 
   );
   await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
   res.json({ participant });
+});
+
+// GM-only visibility layer — bulk reveal/hide for the multi-select toolbar.
+// No path collision with .../:pid/visibility above (different segment
+// counts). Same role-split resync broadcast as the single-participant
+// route, once for the whole batch rather than once per participant.
+encountersRouter.patch('/:id/participants/visibility/batch', requireEncounterDm, async (req, res) => {
+  const input = batchSetParticipantVisibilitySchema.parse(req.body);
+  const { encounter, participants } = await encountersService.setParticipantVisibilityBatch(
+    pool, (req.params.id as string), input.participantIds, input.visible,
+  );
+  await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
+  res.json({ participants });
 });
 
 // Phase 2 "restore hp_visibility + banding" — DM-only, resyncs both roles

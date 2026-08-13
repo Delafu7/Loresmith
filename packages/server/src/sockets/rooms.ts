@@ -111,7 +111,7 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
       // join:encounter" — push it immediately so the client doesn't need a
       // second round-trip, without skipping the explicit request:sync path
       // below (used for later on-demand resyncs, e.g. after a seq gap).
-      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, role);
+      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, role, userIdOf(socket));
       socket.emit('FULL_STATE_SYNC', syncPayload);
     } catch (err) {
       ack?.(errAck(err));
@@ -131,8 +131,38 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
       }
       const { campaignId } = await encounterContext(encounterId);
       const role = await requireMembership(pool, campaignId, userIdOf(socket));
-      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, role);
+      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, role, userIdOf(socket));
       socket.emit('FULL_STATE_SYNC', syncPayload);
+      ack?.({ ok: true });
+    } catch (err) {
+      ack?.(errAck(err));
+    }
+  });
+
+  // GM-only visibility layer — "view as player" preview (DM-only). Forces
+  // role='player', viewerId=null: a true "what does an anonymous player
+  // see" snapshot, not "what does THIS DM see if downgraded to player" —
+  // there's no natural "this DM's own player identity" to pass as
+  // viewerId, and 'owner_only' content should render as a real player
+  // would see it (nothing, since the DM has no 'owner_only' rows of their
+  // own). Emits a distinctly-named event so it never collides with the
+  // live FULL_STATE_SYNC the same socket also receives as the DM.
+  socket.on('request:sync-preview', async (payload: { encounterId?: string }, ack?: Ack) => {
+    try {
+      const encounterId = payload?.encounterId;
+      if (!isUuid(encounterId)) {
+        throw new AppError('VALIDATION_ERROR', 'encounterId must be a valid id');
+      }
+      if (!socket.rooms.has(encounterRoom(encounterId))) {
+        throw new AppError('FORBIDDEN_ROLE', 'Not joined to this encounter room');
+      }
+      const { campaignId } = await encounterContext(encounterId);
+      const role = await requireMembership(pool, campaignId, userIdOf(socket));
+      if (role !== 'dm') {
+        throw new AppError('FORBIDDEN_ROLE', 'Only the DM can preview the player view');
+      }
+      const syncPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player', null);
+      socket.emit('FULL_STATE_SYNC_PREVIEW', syncPayload);
       ack?.({ ok: true });
     } catch (err) {
       ack?.(errAck(err));

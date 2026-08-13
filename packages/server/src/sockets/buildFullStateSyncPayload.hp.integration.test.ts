@@ -102,7 +102,7 @@ describe('buildFullStateSyncPayload HP redaction (integration, live DB, throwawa
   });
 
   it("the DM's payload always carries exact HP for both participants", async () => {
-    const payload = (await buildFullStateSyncPayload(pool, encounterId, campaignId, 'dm')) as {
+    const payload = (await buildFullStateSyncPayload(pool, encounterId, campaignId, 'dm', null)) as {
       participants: Array<{ participantId: string; hp: Record<string, unknown> }>;
     };
     const char = payload.participants.find((p) => p.participantId === characterParticipantId)!;
@@ -112,7 +112,7 @@ describe('buildFullStateSyncPayload HP redaction (integration, live DB, throwawa
   });
 
   it("a player's payload gives exact HP for the character participant despite its default 'banded' setting", async () => {
-    const payload = (await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player')) as {
+    const payload = (await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player', null)) as {
       participants: Array<{ participantId: string; hp: Record<string, unknown> }>;
     };
     const char = payload.participants.find((p) => p.participantId === characterParticipantId)!;
@@ -120,7 +120,7 @@ describe('buildFullStateSyncPayload HP redaction (integration, live DB, throwawa
   });
 
   it("a player's payload hides the monster instance's HP entirely when hp_visibility is 'hidden'", async () => {
-    const payload = (await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player')) as {
+    const payload = (await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player', null)) as {
       participants: Array<{ participantId: string; hp: Record<string, unknown> }>;
     };
     const monster = payload.participants.find((p) => p.participantId === monsterParticipantId)!;
@@ -129,7 +129,7 @@ describe('buildFullStateSyncPayload HP redaction (integration, live DB, throwawa
 
   it("a player's payload bands the monster instance's HP when hp_visibility is 'banded'", async () => {
     await setParticipantHpVisibility(pool, encounterId, monsterParticipantId, { hpVisibility: 'banded' });
-    const payload = (await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player')) as {
+    const payload = (await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player', null)) as {
       participants: Array<{ participantId: string; hp: Record<string, unknown> }>;
     };
     const monster = payload.participants.find((p) => p.participantId === monsterParticipantId)!;

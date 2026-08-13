@@ -22,7 +22,8 @@ import { campaignRoom, encounterRoom } from './roomNames.js';
 import type { SocketData } from './types.js';
 import { getEncounterCombatSnapshot, getEncounterMap, formatMapForWire } from '../services/encounters.js';
 import type { EncounterMapRow } from '../services/encounters.js';
-import { listMapElements, formatMapElementForWire } from '../services/mapElements.js';
+import { listMapElements, formatMapElementForWire, formatMapElementForViewer } from '../services/mapElements.js';
+import type { MapElementRow } from '../services/mapElements.js';
 import type { CampaignRole } from '../services/authz.js';
 import { isActionVisibleToPlayers, type CombatActionView } from '../services/combatActions.js';
 import { isRollVisibleToViewer } from '../services/diceRolls.js';
@@ -291,7 +292,9 @@ export async function pushEncounterRoomJoinForOwner(
   await Promise.all(targets.map((s) => s.join(room)));
   // Always a player: this function only ever auto-joins the OWNING player's
   // sockets for their own new PC (see this function's own header comment).
-  const syncPayload = await buildFullStateSyncPayload(pool_, encounterId, campaignId, 'player');
+  // viewerId is that same owning player — correctly resolves any of their
+  // own 'owner_only' map elements as visible.
+  const syncPayload = await buildFullStateSyncPayload(pool_, encounterId, campaignId, 'player', ownerUserId);
   for (const s of targets) s.emit('FULL_STATE_SYNC', syncPayload);
 }
 
@@ -356,24 +359,52 @@ export async function broadcastTokenMoved(
 // services/mapElements.ts's header comment) — every encounter currently
 // linked to the affected map gets its own broadcast, each carrying that
 // encounter's own freshly-bumped sync_seq (same "envelope reflects real
-// per-encounter state" discipline as every other event here). No DM/player
-// split, same reasoning as MAP_UPDATED/TOKEN_MOVED (not HP-sensitive info) —
-// the one exception is 'note' elements, which the CLIENT never renders to a
-// non-DM viewer regardless of visibleToPlayers (see the web registry's note
-// entry); that's a display-layer rule, not a wire-payload redaction.
-export function broadcastMapElementsChanged(
+// per-encounter state" discipline as every other event here).
+//
+// GM-only visibility layer (nav point 2) — role-split like HP_CHANGED/
+// participant events above, NOT a plain room-wide emit like MAP_UPDATED/
+// TOKEN_MOVED anymore: the DM bucket always gets the full row, the player
+// bucket gets formatMapElementForViewer(row, null, 'player') (a redacted
+// geometry-only stub for a hidden wall/door/light, or no event at all if
+// the element is fully hidden — e.g. a gm_only note). `viewerId: null` for
+// the shared player bucket means an 'owner_only' element never appears in
+// this live push even to its own owner — that player only sees it on their
+// next REST fetch/resync (see services/mapElements.ts's formatMapElementForViewer
+// doc comment; same limitation this codebase already accepts for plot
+// threads' per-user visibility, which is REST-only with no live push).
+export async function broadcastMapElementsChanged(
   io: Server,
   affectedEncounters: { id: string; campaign_id: string; sync_seq: number }[],
   changeType: 'created' | 'updated' | 'deleted',
-  // 'deleted' has no row left to format — callers pass just the id in that case.
-  element: ReturnType<typeof formatMapElementForWire> | { id: string },
-): void {
+  // 'deleted' has no row left to format — callers pass just the id (+ the
+  // map_id, unused here but kept for shape symmetry) in that case.
+  elementRow: MapElementRow | { id: string; map_id: string },
+): Promise<void> {
   for (const encounter of affectedEncounters) {
-    io.to(encounterRoom(encounter.id)).emit('MAP_ELEMENTS_CHANGED', {
-      ...envelope(encounter),
-      changeType,
-      element,
-    });
+    const base = { ...envelope(encounter), changeType };
+
+    if (changeType === 'deleted') {
+      // Deleting something a player never knew existed reveals nothing —
+      // safe to send the id-only stub to everyone unconditionally.
+      io.to(encounterRoom(encounter.id)).emit('MAP_ELEMENTS_CHANGED', { ...base, element: elementRow });
+      continue;
+    }
+
+    const row = elementRow as MapElementRow;
+    const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, encounter.campaign_id, encounterRoom(encounter.id));
+    if (dmSocketIds.length > 0) {
+      io.to(dmSocketIds).emit('MAP_ELEMENTS_CHANGED', { ...base, element: formatMapElementForWire(row) });
+    }
+    if (playerSocketIds.length > 0) {
+      const forPlayers = formatMapElementForViewer(row, null, 'player');
+      if (forPlayers != null) {
+        io.to(playerSocketIds).emit('MAP_ELEMENTS_CHANGED', { ...base, element: forPlayers });
+      }
+      // else: a gm_only/owner_only element that was never visible to
+      // players gets no player-side event at all — correct, matches the
+      // "no row at all for a hidden participant" precedent
+      // (buildFullStateSyncPayload's visibleParticipantsOut).
+    }
   }
 }
 
@@ -889,6 +920,12 @@ export async function buildFullStateSyncPayload(
   encounterId: string,
   campaignId: string,
   viewerRole: CampaignRole,
+  // GM-only visibility layer — the specific viewer this payload is being
+  // built for, needed to correctly resolve 'owner_only' map elements (null
+  // for a shared-bucket broadcast with no single known viewer, e.g. the
+  // player half of broadcastFullStateResync's role split — see
+  // formatMapElementForViewer's own doc comment on that limitation).
+  viewerId: string | null,
 ): Promise<Record<string, unknown>> {
   const snapshot = await getEncounterCombatSnapshot(poolOrClient, encounterId);
   const { encounter, participants } = snapshot;
@@ -944,6 +981,14 @@ export async function buildFullStateSyncPayload(
     ),
     effects: (effectsByTarget.get(effectTargetKey(p.character_id, p.monster_instance_id)) ?? []).map(formatEffectForWire),
     visibleToPlayers: p.visible_to_players,
+    // GM-only visibility layer — derived, wire-only field so client code
+    // that wants a uniform `.visibility` across notes/map-elements/tokens
+    // can read one here too. combat_participants keeps visible_to_players
+    // as its actual schema/broadcast-filtering mechanism (unchanged, still
+    // heavily tested) — no 'owner_only' for tokens, matching the task's own
+    // target-state text (only gm_only/revealed_to_players defaults given
+    // for tokens).
+    visibility: p.visible_to_players === false ? 'gm_only' : 'revealed_to_players',
     legendaryActionsRemaining: p.legendary_actions_remaining,
     visionEnabled: p.vision_enabled,
     visionRadiusFt: p.vision_radius_ft,
@@ -962,10 +1007,15 @@ export async function buildFullStateSyncPayload(
   // broadcasts, this isn't sensitive info.
   const map = await getEncounterMap(poolOrClient, encounterId);
 
-  // Same no-split rule as `map` above — including for 'note' elements; the
-  // client is what hides notes from non-DM viewers (see
-  // broadcastMapElementsChanged's header comment).
-  const mapElements = (await listMapElements(poolOrClient, encounterId)).map(formatMapElementForWire);
+  // GM-only visibility layer (nav point 2) — each element routes through
+  // formatMapElementForViewer per viewer: full row when visible, a
+  // geometry-only redacted stub for a hidden wall/door/light (so
+  // fog-of-war raycasting / light-radius rendering keeps working), or
+  // omitted entirely for a hidden note/area/image (see
+  // services/mapElements.ts's doc comment on that function).
+  const mapElements = (await listMapElements(poolOrClient, encounterId))
+    .map((el) => formatMapElementForViewer(el, viewerId, viewerRole))
+    .filter((el): el is NonNullable<typeof el> => el != null);
 
   return {
     encounterId: encounter.id,
@@ -998,11 +1048,17 @@ export async function broadcastFullStateResync(io: Server, encounterId: string, 
   const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, campaignId, room);
 
   if (dmSocketIds.length > 0) {
-    const dmPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'dm');
+    // viewerId is irrelevant for the DM bucket — resolveVisibilitySync
+    // short-circuits on viewerRole === 'dm' before ever consulting it.
+    const dmPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'dm', null);
     io.to(dmSocketIds).emit('FULL_STATE_SYNC', dmPayload);
   }
   if (playerSocketIds.length > 0) {
-    const playerPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player');
+    // viewerId: null — this is a single shared payload fanned out to every
+    // player socket in the room, so no one player's 'owner_only' map
+    // elements can be included here (see formatMapElementForViewer's doc
+    // comment on this limitation for the live-broadcast path).
+    const playerPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player', null);
     io.to(playerSocketIds).emit('FULL_STATE_SYNC', playerPayload);
   }
 }
