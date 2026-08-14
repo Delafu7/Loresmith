@@ -105,7 +105,9 @@ campaignEncountersRouter.get('/:encounterId', async (req, res) => {
 // getEncounterXpBudget header comment for why: difficulty is a planning
 // tool, not something a player needs or should see ahead of the fight).
 campaignEncountersRouter.get('/:encounterId/xp-budget', requireRole('dm'), async (req, res) => {
-  const xpBudget = await encountersService.getEncounterXpBudget(pool, req.campaignId!, (req.params.encounterId as string));
+  const encounterId = req.params.encounterId as string;
+  if (!isUuid(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
+  const xpBudget = await encountersService.getEncounterXpBudget(pool, req.campaignId!, encounterId);
   res.json({ xpBudget });
 });
 
