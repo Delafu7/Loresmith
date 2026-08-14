@@ -1,13 +1,20 @@
-// Config for the 11 catalog entity types that got homebrew CRUD (server:
-// routes/catalogHomebrew.ts). One generic editor (CatalogEditorPage.tsx)
-// renders all of them from this data rather than 11 bespoke pages — the
-// entities are structurally similar enough (a handful of scalar fields,
-// each table's own edition_scope/description/etc.) that hand-building 11
+// Config for the 13 catalog entity types that got homebrew CRUD (server:
+// routes/catalogHomebrew.ts + routes/compendium.ts). One generic editor
+// (CatalogEditorPage.tsx / CompendiumEditorPage.tsx) renders all of them
+// from this data rather than 13 bespoke pages — the entities are
+// structurally similar enough (a handful of scalar fields, each table's own
+// edition_scope/description/etc.) that hand-building that many
 // near-identical rich forms would be pure duplication; the few genuinely
 // complex fields (JSONB objects/arrays like ability_bonuses, traits,
 // properties) fall back to a raw-JSON textarea rather than a bespoke widget
 // per field — honest and functional, not a fake-polished editor for data
 // shapes this pass didn't have time to build a real widget for.
+//
+// `conditions` (added alongside the personal-compendium feature) is the
+// proof this registry is genuinely generic: it's a real 13th entry with no
+// changes anywhere else — CatalogEditorPage.tsx, CompendiumEditorPage.tsx,
+// and CatalogEntryForm.tsx render it exactly like the other 12 already
+// solely from this data.
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'json' | 'reference' | 'reference-array';
 
@@ -260,6 +267,19 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'concentration', label: 'Concentration', type: 'boolean' },
       { key: 'stackingRule', label: 'Stacking rule', type: 'select', required: true, options: ['none', 'stack', 'refresh'] },
       { key: 'conditionId', label: 'Condition', type: 'reference', reference: REFERENCE_CATALOGS.conditions },
+    ],
+  },
+  {
+    segment: 'conditions',
+    label: 'Condition',
+    pluralLabel: 'Conditions',
+    listResponseKey: 'conditions',
+    hasEdition: true,
+    fields: [
+      { key: 'indexKey', label: 'Key', type: 'text', required: true },
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      editionField,
+      { key: 'description', label: 'Description', type: 'textarea', required: true },
     ],
   },
 ];

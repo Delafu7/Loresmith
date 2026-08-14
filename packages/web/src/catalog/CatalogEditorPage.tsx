@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { CATALOG_ENTITIES, type CatalogEntityConfig } from './catalogEntities';
+import { useCatalogEntityCrud, type CatalogRow } from './useCatalogEntityCrud';
 import { CatalogEntryForm } from './CatalogEntryForm';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Button } from '../components/ui/Button';
@@ -12,80 +11,31 @@ import { Select } from '../components/ui/Field';
 import { formatTimestamp } from '../lib/dates';
 import { useLocale } from '../i18n/LocaleContext';
 
-type CatalogRow = Record<string, unknown> & {
-  id: string;
-  name: string;
-  is_homebrew: boolean;
-  owning_campaign_id: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-// One generic editor for all 11 homebrew-capable catalog entities (see
-// catalogEntities.ts for why this isn't 11 bespoke pages). Any campaign
-// member can browse; only the DM can create/edit/duplicate/delete, matching
-// the server's requireRole('dm') gate on every write route.
+// One generic editor for all 13 homebrew-capable catalog entities (see
+// catalogEntities.ts for why this isn't 13 bespoke pages). Any campaign
+// member can browse; only the DM can create/edit/duplicate/delete/promote,
+// matching the server's requireRole('dm') gate on every write route. Shares
+// its query/mutation logic with the personal-compendium editor
+// (compendium/CompendiumEditorPage.tsx) via useCatalogEntityCrud.
 export function CatalogEditorPage() {
   const { campaignId, campaign, role } = useCampaignShell();
   const { t } = useLocale();
   const isDm = role === 'dm';
-  const queryClient = useQueryClient();
   const [entitySegment, setEntitySegment] = useState(CATALOG_ENTITIES[0]!.segment);
   const config = CATALOG_ENTITIES.find((e) => e.segment === entitySegment)!;
   const [editingEntry, setEditingEntry] = useState<CatalogRow | null | 'new'>(null);
 
-  const listQuery = useQuery({
-    queryKey: ['catalog', config.segment, 'campaign', campaignId],
-    queryFn: () => {
-      const params = new URLSearchParams({ campaignId });
-      if (config.hasEdition) params.set('edition', campaign.srd_edition);
-      return api.get<Record<string, CatalogRow[]>>(`/catalog/${config.segment}?${params.toString()}`);
-    },
-  });
-  const entries = listQuery.data?.[config.listResponseKey] ?? [];
-
-  function invalidate() {
-    return queryClient.invalidateQueries({ queryKey: ['catalog', config.segment, 'campaign', campaignId] });
-  }
-
-  const createMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      api.post<{ entry: CatalogRow }>(`/campaigns/${campaignId}/catalog/${config.segment}`, payload),
-    onSuccess: async () => {
-      await invalidate();
-      setEditingEntry(null);
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) =>
-      api.patch<{ entry: CatalogRow }>(`/campaigns/${campaignId}/catalog/${config.segment}/${id}`, payload),
-    onSuccess: async () => {
-      await invalidate();
-      setEditingEntry(null);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete<void>(`/campaigns/${campaignId}/catalog/${config.segment}/${id}`),
-    onSuccess: () => invalidate(),
-  });
-
-  const duplicateMutation = useMutation({
-    mutationFn: (id: string) =>
-      api.post<{ entry: CatalogRow }>(`/campaigns/${campaignId}/catalog/${config.segment}/${id}/duplicate`, {}),
-    onSuccess: async (data) => {
-      await invalidate();
-      // Land the DM straight into editing their new copy — this is the
-      // "fork-on-edit" flow in practice: duplicate official content, then
-      // edit your own copy immediately, rather than a silent background copy.
-      setEditingEntry(data.entry);
-    },
-  });
-
-  function ownsEntry(entry: CatalogRow): boolean {
-    return entry.is_homebrew && entry.owning_campaign_id === campaignId;
-  }
+  const scope = { kind: 'campaign' as const, campaignId, edition: campaign.srd_edition };
+  const {
+    listQuery,
+    entries,
+    createMutation,
+    updateMutation,
+    deleteMutation,
+    duplicateMutation,
+    promoteMutation,
+    ownsEntry,
+  } = useCatalogEntityCrud(scope, config);
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto space-y-4">
@@ -160,6 +110,16 @@ export function CatalogEditorPage() {
                 {ownsEntry(entry) && (
                   <button
                     type="button"
+                    onClick={() => promoteMutation.mutate(entry.id)}
+                    disabled={promoteMutation.isPending}
+                    className="min-h-11 px-2 text-stone-300 hover:text-stone-100 text-sm disabled:opacity-50"
+                  >
+                    {t('catalog.list.promoteToLibrary')}
+                  </button>
+                )}
+                {ownsEntry(entry) && (
+                  <button
+                    type="button"
                     onClick={() => {
                       if (confirm(t('catalog.list.confirmDelete', { name: entry.name }))) deleteMutation.mutate(entry.id);
                     }}
@@ -175,11 +135,12 @@ export function CatalogEditorPage() {
         ))}
       </ul>
 
-      {(deleteMutation.isError || duplicateMutation.isError) && (
-        <ErrorBanner message={errorMessage((deleteMutation.error ?? duplicateMutation.error) as unknown)} />
+      {(deleteMutation.isError || duplicateMutation.isError || promoteMutation.isError) && (
+        <ErrorBanner message={errorMessage((deleteMutation.error ?? duplicateMutation.error ?? promoteMutation.error) as unknown)} />
       )}
 
       <CatalogEntryModal
+        draftScope={`campaign:${campaignId}`}
         campaignId={campaignId}
         edition={campaign.srd_edition}
         config={config}
@@ -193,7 +154,8 @@ export function CatalogEditorPage() {
   );
 }
 
-function CatalogEntryModal({
+export function CatalogEntryModal({
+  draftScope,
   campaignId,
   edition,
   config,
@@ -203,7 +165,8 @@ function CatalogEntryModal({
   onUpdate,
   submitting,
 }: {
-  campaignId: string;
+  draftScope: string; // unique per editor scope, prefixes the draft storage key
+  campaignId: string | undefined;
   edition: string;
   config: CatalogEntityConfig;
   editingEntry: CatalogRow | null | 'new';
@@ -215,7 +178,7 @@ function CatalogEntryModal({
   const { t } = useLocale();
   if (editingEntry === null) return null;
   const entry = editingEntry === 'new' ? null : editingEntry;
-  const draftKey = `draft:catalog:${campaignId}:${config.segment}:${entry ? entry.id : 'new'}`;
+  const draftKey = `draft:catalog:${draftScope}:${config.segment}:${entry ? entry.id : 'new'}`;
 
   return (
     <Modal

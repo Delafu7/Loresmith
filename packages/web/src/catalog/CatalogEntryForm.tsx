@@ -76,9 +76,13 @@ export function buildPayload(
 // Fetches another catalog table's rows for a reference/reference-array
 // field's dropdown, scoped by campaignId/edition only when that reference
 // actually varies by them (see REFERENCE_CATALOGS in catalogEntities.ts).
-function useReferenceOptions(ref: ReferenceConfig, campaignId: string, edition: string): Array<{ id: string; name: string }> {
+// campaignId is undefined when authoring in the personal compendium (no
+// campaign context) — the server union already includes the caller's own
+// compendium rows unconditionally, so simply omitting the param still
+// returns official rows + the caller's own homebrew, just no campaign's.
+function useReferenceOptions(ref: ReferenceConfig, campaignId: string | undefined, edition: string): Array<{ id: string; name: string }> {
   const params = new URLSearchParams();
-  if (ref.campaignScoped) params.set('campaignId', campaignId);
+  if (ref.campaignScoped && campaignId) params.set('campaignId', campaignId);
   if (ref.editioned) params.set('edition', edition);
   const qs = params.toString();
   const query = useQuery({
@@ -98,7 +102,7 @@ function ReferenceSelectField({
   field: CatalogField;
   value: string;
   onChange: (value: string) => void;
-  campaignId: string;
+  campaignId: string | undefined;
   edition: string;
 }) {
   const { t } = useLocale();
@@ -128,7 +132,7 @@ function ReferenceMultiSelectField({
   field: CatalogField;
   value: string;
   onChange: (value: string) => void;
-  campaignId: string;
+  campaignId: string | undefined;
   edition: string;
 }) {
   const options = useReferenceOptions(field.reference!, campaignId, edition);
@@ -173,9 +177,9 @@ export function CatalogEntryForm({
 }: {
   fields: CatalogField[];
   entry: Record<string, unknown> | null; // null = create; otherwise the row being edited
-  draftKey: string; // unique per campaign+entity-type+(row id or 'new') — see lib/useFormDraft.ts
-  campaignId: string; // for reference fields scoped to this campaign's own homebrew + global rows
-  edition: string; // campaign's srd_edition, for edition-varying reference fields
+  draftKey: string; // unique per scope+entity-type+(row id or 'new') — see lib/useFormDraft.ts
+  campaignId: string | undefined; // for reference fields scoped to this campaign's own homebrew + global rows; undefined in the personal compendium (no campaign context)
+  edition: string; // campaign's srd_edition, or 'both' (no filter) in the personal compendium, for edition-varying reference fields
   onSubmit: (payload: Record<string, unknown>) => Promise<unknown>;
   onCancel: () => void;
   submitting: boolean;

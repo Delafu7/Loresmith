@@ -3,6 +3,7 @@ export const dashboard = {
   welcome: 'Bon retour, {name}',
   navCampaigns: 'Toutes les campagnes',
   navBestiary: 'Bestiaire',
+  navCompendium: 'Recueil',
   navNotes: 'Notes',
   yourCharacters: 'Vos personnages',
   noCharacters: 'Vous ne possédez encore aucun personnage.',

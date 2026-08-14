@@ -15,6 +15,11 @@ export const catalog = {
     modalEditTitle: 'Edit {label}',
     modalNewTitle: 'New {label}',
     createdUpdated: 'Created {created} · Updated {updated}',
+    compendiumSubtitle:
+      "Your personal {plural}, reusable across every campaign you run. Official {plural} can't be edited in place — duplicate one to fork it into your own copy.",
+    promoteToLibrary: 'Move to my compendium',
+    assignToCampaign: 'Move to this campaign',
+    selectCampaign: 'Select campaign…',
   },
   form: {
     selectPlaceholder: 'Select…',

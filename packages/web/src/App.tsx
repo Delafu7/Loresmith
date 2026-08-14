@@ -42,6 +42,9 @@ import { NotesIndexPage } from './notes/NotesIndexPage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
 import { AboutPage } from './about/AboutPage';
 import { CatalogEditorPage } from './catalog/CatalogEditorPage';
+import { CompendiumLayout } from './compendium/CompendiumLayout';
+import { CompendiumEditorPage } from './compendium/CompendiumEditorPage';
+import { GlobalItemInventoryPage } from './items/GlobalItemInventoryPage';
 import { CampaignMembersPage } from './campaigns/CampaignMembersPage';
 import { CampaignSettingsPage } from './campaigns/CampaignSettingsPage';
 import { AssetsPage } from './assets/AssetsPage';
@@ -92,6 +95,14 @@ function App() {
                   <Route path="campaign/:id" element={<BestiaryCampaignPage />} />
                 </Route>
                 <Route path="/creature/:id" element={<CreatureSheetPage />} />
+
+                {/* Personal, campaign-independent compendium — cross-campaign,
+                    distinct from the per-campaign Catalog tab inside
+                    CampaignShell below. */}
+                <Route path="/compendium" element={<CompendiumLayout />}>
+                  <Route index element={<CompendiumEditorPage />} />
+                  <Route path="items" element={<GlobalItemInventoryPage />} />
+                </Route>
 
                 <Route path="/notes" element={<NotesIndexPage />} />
 

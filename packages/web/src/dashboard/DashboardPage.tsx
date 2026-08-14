@@ -70,6 +70,7 @@ export function DashboardPage() {
               <nav className="flex flex-wrap gap-1 text-sm" aria-label="Sections">
                 <HubNavLink to="/campaigns">{t('dashboard.navCampaigns')}</HubNavLink>
                 <HubNavLink to="/bestiary">{t('dashboard.navBestiary')}</HubNavLink>
+                <HubNavLink to="/compendium">{t('dashboard.navCompendium')}</HubNavLink>
                 <HubNavLink to="/notes">{t('dashboard.navNotes')}</HubNavLink>
               </nav>
             </div>

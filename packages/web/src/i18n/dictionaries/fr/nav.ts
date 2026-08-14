@@ -16,6 +16,7 @@ export const nav = {
   assets: 'Ressources',
   reference: 'Référence',
   catalog: 'Catalogue',
+  compendium: 'Recueil',
   members: 'Membres',
   settings: 'Paramètres',
   exportCampaign: 'Exporter la campagne (JSON)',
