@@ -10,7 +10,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 // remount everything (a real API-contract change), the dev proxy is adapted
 // here to match wherever the server actually serves routes: one proxy entry
 // per top-level resource prefix, plus the Socket.io upgrade path.
-const API_PREFIXES = ['/auth', '/me', '/campaigns', '/characters', '/monster-instances', '/encounters', '/effects', '/catalog', '/assets', '/uploads', '/health']
+const API_PREFIXES = ['/auth', '/me', '/campaigns', '/characters', '/monster-instances', '/encounters', '/effects', '/catalog', '/compendium', '/assets', '/uploads', '/health']
 
 // Because there's no /api prefix, a few paths are genuinely ambiguous: e.g.
 // GET /campaigns/1/characters is BOTH a real backend REST endpoint AND a
