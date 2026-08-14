@@ -355,11 +355,16 @@ encountersRouter.put('/:id/map', requireEncounterDm, async (req, res) => {
 // Per-map lighting state (nav point 4) — DM-only, same guard as the map
 // config route above. Not secret (map config was never DM/player-split),
 // so broadcast reuses the existing MAP_UPDATED event rather than a new one
-// — only its client-side rendering consequences differ by role.
+// — only its client-side rendering consequences differ by role. Toggling
+// into or out of 'dark' changes buildFullStateSyncPayload's server-side
+// vision filter (domain/vision.ts), so a resync follows the map-config
+// broadcast to immediately re-filter (or un-filter) every connected
+// player's participant list, not just wait for the next unrelated sync.
 encountersRouter.patch('/:id/map/lighting', requireEncounterDm, async (req, res) => {
   const input = setMapLightingSchema.parse(req.body);
   const { encounter, map } = await encountersService.setMapLighting(pool, (req.params.id as string), input.lightingState);
   broadcastMapUpdated(getIo(req.app), encounter, map);
+  await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
   res.json({ map: encountersService.formatMapForWire(map) });
 });
 

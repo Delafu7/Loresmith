@@ -1359,6 +1359,14 @@ export interface CombatSnapshotParticipant {
   vision_enabled: boolean;
   vision_radius_ft: number;
   darkvision_radius_ft: number;
+  // Server-side darkness vision filter (domain/vision.ts) — which connected
+  // player USER a character-participant "belongs to", so a viewer only ever
+  // sees through their OWN character's eyes, not the whole party's. Null for
+  // monster/NPC participants and for an unowned/NPC character. Internal
+  // only: never copied into buildFullStateSyncPayload's wire participants
+  // (no call site needs a player to learn who owns what beyond what faction
+  // already implies).
+  character_owner_user_id: string | null;
 }
 
 export interface CombatSnapshot {
@@ -1386,7 +1394,8 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft,
             COALESCE(ca_char.file_url, ca_monster.file_url, m.image_url) AS image_url,
             cp.visible_to_players, cp.hp_visibility, cp.legendary_actions_remaining,
-            cp.vision_enabled, cp.vision_radius_ft, cp.darkvision_radius_ft
+            cp.vision_enabled, cp.vision_radius_ft, cp.darkvision_radius_ft,
+            c.owner_user_id AS character_owner_user_id
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id
      LEFT JOIN campaign_assets ca_char ON ca_char.id = c.portrait_asset_id

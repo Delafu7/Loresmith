@@ -80,7 +80,15 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     placement: 'segment',
     blocksVision: () => true,
     blocksMovement: () => true,
-    defaults: () => ({ props: {} }),
+    // GM-only visibility layer — a wall is a structural GM aid, not
+    // something a player is meant to see drawn on the map (only its
+    // vision-blocking EFFECT matters to them). Defaults to 'gm_only' so a
+    // freshly-placed wall is invisible to players immediately; formatMapElementForViewer
+    // still forwards a geometry-only redacted stub (blocksVision: true) for
+    // the darkness vision filter/fog-of-war raycaster either way, and a DM
+    // can still flip it to 'revealed_to_players' via the existing
+    // reveal/hide toggle if they ever want one drawn for players too.
+    defaults: () => ({ props: {}, visibility: 'gm_only' }),
     fields: [],
     render: (el, ctx) => {
       if (el.x2 == null || el.y2 == null) return null;
@@ -92,7 +100,10 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
             ctx.onSelect(e);
           }}
           style={style}
-          className={`cursor-pointer rounded-full bg-stone-200 ${ctx.isSelected ? 'ring-2 ring-amber-400' : ''}`}
+          // Distinct saturated accent (cyan) — GM-only, so this only ever
+          // renders for the DM (see MapCanvasElements.tsx: a redacted stub
+          // is never rendered), unused by any other element type's color.
+          className={`cursor-pointer rounded-full bg-cyan-400 ${ctx.isSelected ? 'ring-2 ring-amber-400' : ''}`}
         />
       );
     },

@@ -1,11 +1,15 @@
 // Per-map lighting state (nav point 4) — 'bright' (default, fully visible
 // to players), 'dim' (visible, distinct low-light rendering), 'dark'
-// (players see only what their tokens' vision reaches; masking is entirely
-// client-side, see VisionOverlay.tsx). Covers: the maps library's own
-// create/update default/round-trip, and setMapLighting's persistence
-// through the encounter's active_map_id resolution (same path
-// getEncounterMap/formatMapForWire use). Throwaway campaign/encounter/map
-// fixtures, same isolation convention as mapElements.integration.test.ts.
+// (players see only what their tokens' vision reaches; enforced server-side
+// by sockets/broadcast.ts's buildFullStateSyncPayload via domain/vision.ts —
+// see encounters.vision.integration.test.ts / broadcastVisibility.integration.test.ts
+// for that filter itself — with VisionOverlay.tsx only rendering the fog
+// shape over the already-filtered set the client received). Covers: the
+// maps library's own create/update default/round-trip, and
+// setMapLighting's persistence through the encounter's active_map_id
+// resolution (same path getEncounterMap/formatMapForWire use). Throwaway
+// campaign/encounter/map fixtures, same isolation convention as
+// mapElements.integration.test.ts.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';

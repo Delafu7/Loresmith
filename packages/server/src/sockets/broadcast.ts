@@ -28,6 +28,8 @@ import type { CampaignRole } from '../services/authz.js';
 import { isActionVisibleToPlayers, type CombatActionView } from '../services/combatActions.js';
 import { isRollVisibleToViewer } from '../services/diceRolls.js';
 import { resolveVisibilitySync } from '../services/visibility.js';
+import { computeBlocksVision } from '../domain/mapElementVisibility.js';
+import { computeVisibleParticipantIds, wallSegmentsFromElements, type VisionParticipant } from '../domain/vision.js';
 import { bandHp, type HpBand } from '../domain/hpBanding.js';
 
 export function getIo(app: Application): Server {
@@ -63,13 +65,20 @@ function envelope(encounter: EncounterLike) {
 // it does not trust any cached role on the socket, since a user's role is a
 // DB fact, not a connection-time fact.
 
+// playerSocketsByUser (userId -> that user's socket ids in the room) is the
+// darkness vision filter's plumbing (domain/vision.ts): computing a
+// per-character visible set means FULL_STATE_SYNC can no longer be one
+// payload shared by every player socket the way HP_CHANGED etc. still are —
+// each connected player user needs their OWN payload. Grouped here rather
+// than at each call site since this is already the one place that resolves
+// socket -> user -> role.
 async function splitSocketsByRole(
   io: Server,
   campaignId: string,
   room: string,
-): Promise<{ dmSocketIds: string[]; playerSocketIds: string[] }> {
+): Promise<{ dmSocketIds: string[]; playerSocketIds: string[]; playerSocketsByUser: Map<string, string[]> }> {
   const socketsInRoom = await io.in(room).fetchSockets();
-  if (socketsInRoom.length === 0) return { dmSocketIds: [], playerSocketIds: [] };
+  if (socketsInRoom.length === 0) return { dmSocketIds: [], playerSocketIds: [], playerSocketsByUser: new Map() };
 
   const userIds = [...new Set(socketsInRoom.map((s) => (s.data as SocketData).userId))];
   const roleRes = await pool.query<{ user_id: string; role: CampaignRole }>(
@@ -80,11 +89,42 @@ async function splitSocketsByRole(
 
   const dmSocketIds: string[] = [];
   const playerSocketIds: string[] = [];
+  const playerSocketsByUser = new Map<string, string[]>();
   for (const s of socketsInRoom) {
-    const role = roleByUser.get((s.data as SocketData).userId);
-    (role === 'dm' ? dmSocketIds : playerSocketIds).push(s.id);
+    const userId = (s.data as SocketData).userId;
+    const role = roleByUser.get(userId);
+    if (role === 'dm') {
+      dmSocketIds.push(s.id);
+    } else {
+      playerSocketIds.push(s.id);
+      const forUser = playerSocketsByUser.get(userId);
+      if (forUser) forUser.push(s.id);
+      else playerSocketsByUser.set(userId, [s.id]);
+    }
   }
-  return { dmSocketIds, playerSocketIds };
+  return { dmSocketIds, playerSocketIds, playerSocketsByUser };
+}
+
+// Darkness vision filter — every connected player user gets their OWN
+// freshly-computed FULL_STATE_SYNC (see buildFullStateSyncPayload's
+// per-viewer vision filter) rather than one shared payload. Used in place of
+// a lightweight partial event (TOKEN_MOVED, PARTICIPANT_JOINED, etc.)
+// whenever the change could affect who's currently in vision, since a
+// partial event can only patch an EXISTING row by id (useEncounterLive.ts's
+// handlers are all plain "map by participantId") — it has no way to add a
+// participant that just entered vision or drop one that just left it.
+async function broadcastVisionResyncToPlayers(
+  io: Server,
+  encounterId: string,
+  campaignId: string,
+  playerSocketsByUser: Map<string, string[]>,
+): Promise<void> {
+  await Promise.all(
+    [...playerSocketsByUser.entries()].map(async ([userId, socketIds]) => {
+      const payload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'player', userId);
+      io.to(socketIds).emit('FULL_STATE_SYNC', payload);
+    }),
+  );
 }
 
 // Security major M2 — buildFullStateSyncPayload/broadcastFullStateResync
@@ -343,26 +383,40 @@ export async function broadcastTokenMoved(
   participant: { id: string; pos_x: number | null; pos_y: number | null; movement_used_ft: number },
 ): Promise<void> {
   const visible = await isParticipantIdVisibleToPlayers(pool, participant.id);
-  await emitToEncounterRespectingVisibility(
+  const payload = {
+    ...envelope(encounter),
+    participantId: participant.id,
+    x: participant.pos_x,
+    y: participant.pos_y,
+    // The client's movementRemaining display (Token.tsx's drag-preview
+    // label, ActionEconomyPanel) would otherwise stay stale from before
+    // this move until the next ACTION_ECONOMY_CHANGED/FULL_STATE_SYNC —
+    // setParticipantPosition already charges this in the same
+    // transaction that produced pos_x/pos_y, so it costs nothing extra to
+    // carry it here too.
+    movementUsedFt: participant.movement_used_ft,
+  };
+
+  const { dmSocketIds, playerSocketIds, playerSocketsByUser } = await splitSocketsByRole(
     io,
     encounter.campaign_id,
-    encounter.id,
-    'TOKEN_MOVED',
-    {
-      ...envelope(encounter),
-      participantId: participant.id,
-      x: participant.pos_x,
-      y: participant.pos_y,
-      // The client's movementRemaining display (Token.tsx's drag-preview
-      // label, ActionEconomyPanel) would otherwise stay stale from before
-      // this move until the next ACTION_ECONOMY_CHANGED/FULL_STATE_SYNC —
-      // setParticipantPosition already charges this in the same
-      // transaction that produced pos_x/pos_y, so it costs nothing extra to
-      // carry it here too.
-      movementUsedFt: participant.movement_used_ft,
-    },
-    visible,
+    encounterRoom(encounter.id),
   );
+  if (dmSocketIds.length > 0) io.to(dmSocketIds).emit('TOKEN_MOVED', payload);
+  if (!visible || playerSocketIds.length === 0) return;
+
+  // Darkness vision filter — a move can change what ANY connected player
+  // can currently see (the mover itself entering/leaving someone's vision,
+  // or the mover being the viewer whose own vision origin just shifted), and
+  // a partial TOKEN_MOVED patch can only update a row a player's client
+  // already has (see broadcastVisionResyncToPlayers) — so under 'dark'
+  // lighting this sends every player a full per-user resync instead.
+  const map = await getEncounterMap(pool, encounter.id);
+  if (map?.lighting_state === 'dark') {
+    await broadcastVisionResyncToPlayers(io, encounter.id, encounter.campaign_id, playerSocketsByUser);
+  } else {
+    io.to(playerSocketIds).emit('TOKEN_MOVED', payload);
+  }
 }
 
 // ---- MAP_ELEMENTS_CHANGED (DM battle-map vision/elements feature) ----
@@ -394,28 +448,45 @@ export async function broadcastMapElementsChanged(
 ): Promise<void> {
   for (const encounter of affectedEncounters) {
     const base = { ...envelope(encounter), changeType };
+    const { dmSocketIds, playerSocketIds, playerSocketsByUser } = await splitSocketsByRole(
+      io,
+      encounter.campaign_id,
+      encounterRoom(encounter.id),
+    );
 
     if (changeType === 'deleted') {
       // Deleting something a player never knew existed reveals nothing —
       // safe to send the id-only stub to everyone unconditionally.
       io.to(encounterRoom(encounter.id)).emit('MAP_ELEMENTS_CHANGED', { ...base, element: elementRow });
-      continue;
+    } else {
+      const row = elementRow as MapElementRow;
+      if (dmSocketIds.length > 0) {
+        io.to(dmSocketIds).emit('MAP_ELEMENTS_CHANGED', { ...base, element: formatMapElementForWire(row) });
+      }
+      if (playerSocketIds.length > 0) {
+        const forPlayers = formatMapElementForViewer(row, null, 'player');
+        if (forPlayers != null) {
+          io.to(playerSocketIds).emit('MAP_ELEMENTS_CHANGED', { ...base, element: forPlayers });
+        }
+        // else: a gm_only/owner_only element that was never visible to
+        // players gets no player-side event at all — correct, matches the
+        // "no row at all for a hidden participant" precedent
+        // (buildFullStateSyncPayload's visibleParticipantsOut).
+      }
     }
 
-    const row = elementRow as MapElementRow;
-    const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, encounter.campaign_id, encounterRoom(encounter.id));
-    if (dmSocketIds.length > 0) {
-      io.to(dmSocketIds).emit('MAP_ELEMENTS_CHANGED', { ...base, element: formatMapElementForWire(row) });
-    }
+    // Darkness vision filter — a wall/door create/update/delete can change
+    // line-of-sight geometry for every player at once ("a wall drawn
+    // between two tokens blocks vision for the affected player immediately,
+    // on all clients"). The MAP_ELEMENTS_CHANGED event above only updates
+    // the element itself; under 'dark' lighting it's followed by a full
+    // per-user vision resync so buildFullStateSyncPayload recomputes who's
+    // actually still visible through/around the new geometry.
     if (playerSocketIds.length > 0) {
-      const forPlayers = formatMapElementForViewer(row, null, 'player');
-      if (forPlayers != null) {
-        io.to(playerSocketIds).emit('MAP_ELEMENTS_CHANGED', { ...base, element: forPlayers });
+      const map = await getEncounterMap(pool, encounter.id);
+      if (map?.lighting_state === 'dark') {
+        await broadcastVisionResyncToPlayers(io, encounter.id, encounter.campaign_id, playerSocketsByUser);
       }
-      // else: a gm_only/owner_only element that was never visible to
-      // players gets no player-side event at all — correct, matches the
-      // "no row at all for a hidden participant" precedent
-      // (buildFullStateSyncPayload's visibleParticipantsOut).
     }
   }
 }
@@ -1029,6 +1100,41 @@ export async function buildFullStateSyncPayload(
     .map((el) => formatMapElementForViewer(el, viewerId, viewerRole))
     .filter((el): el is NonNullable<typeof el> => el != null);
 
+  // Server-side darkness vision filter — the real security boundary for
+  // "a player client must not receive positions of creatures it cannot
+  // see." packages/web/src/encounters/vision/ (raycast.ts/fogUnion.ts) only
+  // ever painted a fog shape over whatever visibleParticipantsOut already
+  // contained; it never controlled what got SENT. This does. Scoped to a
+  // real player viewer (a specific connected user — not the legacy
+  // no-known-viewer shared bucket, which can't compute a per-character
+  // vision origin) under a 'dark' map; 'bright'/'dim' keep showing every
+  // visible_to_players participant, matching this app's existing "fog only
+  // masks under dark lighting" decision (VisionOverlay.tsx's `active` gate).
+  let visionFilteredParticipantsOut = visibleParticipantsOut;
+  if (viewerRole === 'player' && viewerId != null && map != null && map.lighting_state === 'dark' && map.feet_per_cell > 0) {
+    const wallSegments = wallSegmentsFromElements(
+      mapElements.map((el) => ({
+        x1: el.x1,
+        y1: el.y1,
+        x2: el.x2,
+        y2: el.y2,
+        blocksVision: 'redacted' in el ? (el.blocksVision ?? false) : computeBlocksVision({ type: el.type, props: el.props }),
+      })),
+    );
+    const visionParticipants: VisionParticipant[] = participants.map((p) => ({
+      participantId: p.participant_id,
+      ownerUserId: p.character_owner_user_id,
+      faction: p.faction,
+      posX: p.pos_x,
+      posY: p.pos_y,
+      visionEnabled: p.vision_enabled,
+      visionRadiusFt: p.vision_radius_ft,
+      darkvisionRadiusFt: p.darkvision_radius_ft,
+    }));
+    const visibleIds = computeVisibleParticipantIds(viewerId, visionParticipants, wallSegments, map.feet_per_cell);
+    visionFilteredParticipantsOut = visibleParticipantsOut.filter((p) => visibleIds.has(p.participantId));
+  }
+
   return {
     encounterId: encounter.id,
     campaignId: encounter.campaign_id,
@@ -1042,7 +1148,7 @@ export async function buildFullStateSyncPayload(
       currentTurnIndex: encounter.current_turn_index,
     },
     activeParticipantId: active?.participant_id ?? null,
-    participants: visibleParticipantsOut,
+    participants: visionFilteredParticipantsOut,
     map: formatMapForWire(map),
     mapElements,
   };
@@ -1057,7 +1163,7 @@ export async function buildFullStateSyncPayload(
 // client-side redaction flag" rule as splitSocketsByRole's own header.
 export async function broadcastFullStateResync(io: Server, encounterId: string, campaignId: string): Promise<void> {
   const room = encounterRoom(encounterId);
-  const { dmSocketIds, playerSocketIds } = await splitSocketsByRole(io, campaignId, room);
+  const { dmSocketIds, playerSocketIds, playerSocketsByUser } = await splitSocketsByRole(io, campaignId, room);
 
   if (dmSocketIds.length > 0) {
     // viewerId is irrelevant for the DM bucket — resolveVisibilitySync
@@ -1065,7 +1171,16 @@ export async function broadcastFullStateResync(io: Server, encounterId: string, 
     const dmPayload = await buildFullStateSyncPayload(pool, encounterId, campaignId, 'dm', null);
     io.to(dmSocketIds).emit('FULL_STATE_SYNC', dmPayload);
   }
-  if (playerSocketIds.length > 0) {
+  if (playerSocketIds.length === 0) return;
+
+  // Darkness vision filter — a shared no-viewerId payload can't resolve
+  // per-character vision, so a 'dark' map needs one query per connected
+  // player user (broadcastVisionResyncToPlayers); otherwise keep the
+  // cheaper single shared payload this always used, unchanged.
+  const map = await getEncounterMap(pool, encounterId);
+  if (map?.lighting_state === 'dark') {
+    await broadcastVisionResyncToPlayers(io, encounterId, campaignId, playerSocketsByUser);
+  } else {
     // viewerId: null — this is a single shared payload fanned out to every
     // player socket in the room, so no one player's 'owner_only' map
     // elements can be included here (see formatMapElementForViewer's doc

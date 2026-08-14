@@ -5,6 +5,14 @@
 // viewers is free: overlapping white/gray shapes in the mask just overlap,
 // no polygon-boolean library needed.
 //
+// Purely a RENDERING concern — under 'dark' lighting, the server has
+// already withheld any participant this viewer can't see from the payload
+// (sockets/broadcast.ts's buildFullStateSyncPayload, via domain/vision.ts);
+// this component never decides who's actually visible, it only shapes the
+// fog drawn over whichever tokens the client received. `participants` here
+// is therefore already the filtered set for a real player, same shape the
+// DM's unfiltered "preview player view" toggle reuses.
+//
 // Renders identically for a real player and for the DM's "preview player
 // view" toggle — both show the union of every `faction === 'player'`
 // token's vision (shared party vision, not per-character). The DM's own
