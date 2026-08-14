@@ -14,6 +14,8 @@ import {
   updateHomebrewCatalogRow,
   deleteHomebrewCatalogRow,
   duplicateCatalogRow,
+  promoteCatalogRowToLibrary,
+  assignCatalogRowToCampaign,
 } from './catalogHomebrew.js';
 import { listDamageTypes, listItems } from './catalog.js';
 
@@ -76,7 +78,7 @@ describe('generic homebrew catalog CRUD (integration, live DB, throwaway fixture
   const itemConfig = { table: 'items', keyColumn: 'slug' as const };
 
   it('a DM can create a homebrew damage type scoped to their campaign, with a suffixed index_key', async () => {
-    const row = await createHomebrewCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, {
+    const row = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, {
       index_key: 'necrotic-fire',
       name: 'Necrotic Fire',
       description: 'A homebrew damage type.',
@@ -89,59 +91,59 @@ describe('generic homebrew catalog CRUD (integration, live DB, throwaway fixture
 
   it('a player cannot create a homebrew row (DM-only)', async () => {
     await expect(
-      createHomebrewCatalogRow(pool, playerUserId, campaignId, damageTypeConfig, { index_key: 'x', name: 'X' }),
+      createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: playerUserId }, damageTypeConfig, { index_key: 'x', name: 'X' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN_ROLE' });
   });
 
   it('listDamageTypes unions the campaign homebrew row in only when campaignId is supplied', async () => {
-    const created = await createHomebrewCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, {
+    const created = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, {
       index_key: 'sonic-frost',
       name: 'Sonic Frost',
     });
 
-    const globalOnly = await listDamageTypes(pool, {});
+    const globalOnly = await listDamageTypes(pool, {}, dmUserId);
     expect(globalOnly.some((r: any) => r.id === created.id)).toBe(false);
 
-    const withCampaign = await listDamageTypes(pool, { campaignId });
+    const withCampaign = await listDamageTypes(pool, { campaignId }, dmUserId);
     expect(withCampaign.some((r: any) => r.id === created.id)).toBe(true);
 
-    const otherCampaign = await listDamageTypes(pool, { campaignId: otherCampaignId });
+    const otherCampaign = await listDamageTypes(pool, { campaignId: otherCampaignId }, dmUserId);
     expect(otherCampaign.some((r: any) => r.id === created.id)).toBe(false);
   });
 
   it('a DM can update and delete their own homebrew row, but not one owned by another campaign', async () => {
-    const row = await createHomebrewCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, {
+    const row = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, {
       index_key: 'acid-void',
       name: 'Acid Void',
     });
 
-    const updated = await updateHomebrewCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, row.id as string, {
+    const updated = await updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, row.id as string, {
       name: 'Acid Void (Revised)',
     });
     expect(updated.name).toBe('Acid Void (Revised)');
     expect(updated.updated_at).not.toBe(updated.created_at);
 
     await expect(
-      updateHomebrewCatalogRow(pool, dmUserId, otherCampaignId, damageTypeConfig, row.id as string, { name: 'Stolen' }),
+      updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId: otherCampaignId, actorId: dmUserId }, damageTypeConfig, row.id as string, { name: 'Stolen' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
-    await deleteHomebrewCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, row.id as string);
+    await deleteHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, row.id as string);
     const gone = await pool.query(`SELECT 1 FROM damage_types WHERE id = $1`, [row.id]);
     expect(gone.rowCount).toBe(0);
   });
 
   it('a global row cannot be edited or deleted through the homebrew path (404s, not 403s)', async () => {
     await expect(
-      updateHomebrewCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, globalDamageTypeId, { name: 'Hacked' }),
+      updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, globalDamageTypeId, { name: 'Hacked' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(
-      deleteHomebrewCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, globalDamageTypeId),
+      deleteHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, globalDamageTypeId),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('duplicating a global row forks it into a new homebrew row, leaving the original untouched', async () => {
     const before = await pool.query(`SELECT * FROM damage_types WHERE id = $1`, [globalDamageTypeId]);
-    const copy = await duplicateCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, globalDamageTypeId);
+    const copy = await duplicateCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, globalDamageTypeId);
 
     expect(copy.id).not.toBe(globalDamageTypeId);
     expect(copy.is_homebrew).toBe(true);
@@ -156,14 +158,14 @@ describe('generic homebrew catalog CRUD (integration, live DB, throwaway fixture
     expect(originalStillGlobal.rows[0].owning_campaign_id).toBeNull();
 
     // Now editable, since the DM owns the copy (fork-on-edit's whole point).
-    const edited = await updateHomebrewCatalogRow(pool, dmUserId, campaignId, damageTypeConfig, copy.id as string, {
+    const edited = await updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, copy.id as string, {
       name: 'My Custom Version',
     });
     expect(edited.name).toBe('My Custom Version');
   });
 
   it('handles a field-heavy table (items) the same way, including JSONB and array-ish columns', async () => {
-    const row = await createHomebrewCatalogRow(pool, dmUserId, campaignId, itemConfig, {
+    const row = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, itemConfig, {
       slug: 'flametongue-dagger',
       name: 'Flametongue Dagger',
       edition_scope: '2024',
@@ -179,9 +181,74 @@ describe('generic homebrew catalog CRUD (integration, live DB, throwaway fixture
     expect(row.properties).toEqual({ finesse: true, light: true });
     expect(row.slug).toMatch(/^flametongue-dagger-[a-z0-9]{6}$/);
 
-    const list = await listItems(pool, { campaignId });
+    const list = await listItems(pool, { campaignId }, dmUserId);
     expect(list.some((i: any) => i.id === row.id)).toBe(true);
 
-    await deleteHomebrewCatalogRow(pool, dmUserId, campaignId, itemConfig, row.id as string);
+    await deleteHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, itemConfig, row.id as string);
+  });
+
+  it('a user can create a personal-compendium row, independent of any campaign', async () => {
+    const row = await createHomebrewCatalogRow(pool, { kind: 'user', userId: dmUserId }, damageTypeConfig, {
+      index_key: 'radiant-void',
+      name: 'Radiant Void',
+    });
+    expect(row.is_homebrew).toBe(true);
+    expect(row.owning_user_id).toBe(dmUserId);
+    expect(row.owning_campaign_id).toBeNull();
+
+    const updated = await updateHomebrewCatalogRow(pool, { kind: 'user', userId: dmUserId }, damageTypeConfig, row.id as string, {
+      name: 'Radiant Void (Revised)',
+    });
+    expect(updated.name).toBe('Radiant Void (Revised)');
+
+    await expect(
+      updateHomebrewCatalogRow(pool, { kind: 'user', userId: playerUserId }, damageTypeConfig, row.id as string, { name: 'Stolen' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    await deleteHomebrewCatalogRow(pool, { kind: 'user', userId: dmUserId }, damageTypeConfig, row.id as string);
+  });
+
+  it('listDamageTypes unions in the caller\'s own personal-compendium row unconditionally, but never another user\'s', async () => {
+    const row = await createHomebrewCatalogRow(pool, { kind: 'user', userId: dmUserId }, damageTypeConfig, {
+      index_key: 'gloom-frost',
+      name: 'Gloom Frost',
+    });
+
+    const noCampaign = await listDamageTypes(pool, {}, dmUserId);
+    expect(noCampaign.some((r: any) => r.id === row.id)).toBe(true);
+
+    const withUnrelatedCampaign = await listDamageTypes(pool, { campaignId }, dmUserId);
+    expect(withUnrelatedCampaign.some((r: any) => r.id === row.id)).toBe(true);
+
+    const asOtherUser = await listDamageTypes(pool, {}, playerUserId);
+    expect(asOtherUser.some((r: any) => r.id === row.id)).toBe(false);
+
+    await deleteHomebrewCatalogRow(pool, { kind: 'user', userId: dmUserId }, damageTypeConfig, row.id as string);
+  });
+
+  it('promoteCatalogRowToLibrary moves a campaign row into the DM personal compendium, then assignCatalogRowToCampaign moves it back', async () => {
+    const row = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, {
+      index_key: 'umbral-static',
+      name: 'Umbral Static',
+    });
+
+    const promoted = await promoteCatalogRowToLibrary(pool, campaignId, dmUserId, damageTypeConfig, row.id as string);
+    expect(promoted.owning_campaign_id).toBeNull();
+    expect(promoted.owning_user_id).toBe(dmUserId);
+
+    // Now visible from the personal-compendium path, not the campaign path.
+    await expect(
+      updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, row.id as string, { name: 'Stolen' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const viaLibrary = await updateHomebrewCatalogRow(pool, { kind: 'user', userId: dmUserId }, damageTypeConfig, row.id as string, {
+      name: 'Umbral Static (Library)',
+    });
+    expect(viaLibrary.name).toBe('Umbral Static (Library)');
+
+    const assigned = await assignCatalogRowToCampaign(pool, campaignId, dmUserId, damageTypeConfig, row.id as string);
+    expect(assigned.owning_campaign_id).toBe(campaignId);
+    expect(assigned.owning_user_id).toBeNull();
+
+    await deleteHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, damageTypeConfig, row.id as string);
   });
 });

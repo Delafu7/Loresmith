@@ -75,7 +75,7 @@ describe('generic homebrew catalog CRUD for effect_definitions (keyColumn: null)
   const effectDefinitionConfig = { table: 'effect_definitions', keyColumn: null as const };
 
   it('a DM can create a homebrew effect definition, with `name` left completely unsuffixed', async () => {
-    const row = await createHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, {
+    const row = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, {
       name: 'Marked for Death',
       description: 'A homebrew effect.',
       default_duration_type: 'rounds',
@@ -92,7 +92,7 @@ describe('generic homebrew catalog CRUD for effect_definitions (keyColumn: null)
 
   it('a non-DM (player) cannot create a homebrew effect definition', async () => {
     await expect(
-      createHomebrewCatalogRow(pool, playerUserId, campaignId, effectDefinitionConfig, {
+      createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: playerUserId }, effectDefinitionConfig, {
         name: 'Not Allowed',
         default_duration_type: 'rounds',
         concentration: false,
@@ -102,7 +102,7 @@ describe('generic homebrew catalog CRUD for effect_definitions (keyColumn: null)
   });
 
   it('listEffectDefinitions unions the campaign homebrew row in only when campaignId is supplied', async () => {
-    const created = await createHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, {
+    const created = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, {
       name: 'Sundered Aura',
       default_duration_type: 'minutes',
       default_duration_value: 10,
@@ -110,18 +110,18 @@ describe('generic homebrew catalog CRUD for effect_definitions (keyColumn: null)
       stacking_rule: 'none',
     });
 
-    const globalOnly = await listEffectDefinitions(pool, {});
+    const globalOnly = await listEffectDefinitions(pool, {}, dmUserId);
     expect(globalOnly.some((r: any) => r.id === created.id)).toBe(false);
 
-    const withCampaign = await listEffectDefinitions(pool, { campaignId });
+    const withCampaign = await listEffectDefinitions(pool, { campaignId }, dmUserId);
     expect(withCampaign.some((r: any) => r.id === created.id)).toBe(true);
 
-    const otherCampaign = await listEffectDefinitions(pool, { campaignId: otherCampaignId });
+    const otherCampaign = await listEffectDefinitions(pool, { campaignId: otherCampaignId }, dmUserId);
     expect(otherCampaign.some((r: any) => r.id === created.id)).toBe(false);
   });
 
   it('a DM can update and delete their own homebrew row, but not one owned by another campaign', async () => {
-    const row = await createHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, {
+    const row = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, {
       name: 'Frostbitten',
       default_duration_type: 'hours',
       default_duration_value: 1,
@@ -129,33 +129,33 @@ describe('generic homebrew catalog CRUD for effect_definitions (keyColumn: null)
       stacking_rule: 'stack',
     });
 
-    const updated = await updateHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, row.id as string, {
+    const updated = await updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, row.id as string, {
       name: 'Frostbitten (Revised)',
     });
     expect(updated.name).toBe('Frostbitten (Revised)');
     expect(updated.updated_at).not.toBe(updated.created_at);
 
     await expect(
-      updateHomebrewCatalogRow(pool, dmUserId, otherCampaignId, effectDefinitionConfig, row.id as string, { name: 'Stolen' }),
+      updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId: otherCampaignId, actorId: dmUserId }, effectDefinitionConfig, row.id as string, { name: 'Stolen' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
-    await deleteHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, row.id as string);
+    await deleteHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, row.id as string);
     const gone = await pool.query(`SELECT 1 FROM effect_definitions WHERE id = $1`, [row.id]);
     expect(gone.rowCount).toBe(0);
   });
 
   it('a global row cannot be edited or deleted through the homebrew path (404s, not 403s)', async () => {
     await expect(
-      updateHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, globalEffectDefinitionId, { name: 'Hacked' }),
+      updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, globalEffectDefinitionId, { name: 'Hacked' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(
-      deleteHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, globalEffectDefinitionId),
+      deleteHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, globalEffectDefinitionId),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('duplicating a global row forks it into a new homebrew row, copying `name` VERBATIM (no -copy suffix), leaving the original untouched', async () => {
     const before = await pool.query(`SELECT * FROM effect_definitions WHERE id = $1`, [globalEffectDefinitionId]);
-    const copy = await duplicateCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, globalEffectDefinitionId);
+    const copy = await duplicateCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, globalEffectDefinitionId);
 
     expect(copy.id).not.toBe(globalEffectDefinitionId);
     expect(copy.is_homebrew).toBe(true);
@@ -174,11 +174,11 @@ describe('generic homebrew catalog CRUD for effect_definitions (keyColumn: null)
     expect(originalStillGlobal.rows[0].owning_campaign_id).toBeNull();
 
     // Now editable, since the DM owns the copy (fork-on-edit's whole point).
-    const edited = await updateHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, copy.id as string, {
+    const edited = await updateHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, copy.id as string, {
       name: 'My Custom Version',
     });
     expect(edited.name).toBe('My Custom Version');
 
-    await deleteHomebrewCatalogRow(pool, dmUserId, campaignId, effectDefinitionConfig, copy.id as string);
+    await deleteHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, effectDefinitionConfig, copy.id as string);
   });
 });

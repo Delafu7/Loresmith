@@ -18,14 +18,12 @@ export const campaignScopedQuerySchema = z.object({
 });
 export type CampaignScopedQuery = z.infer<typeof campaignScopedQuerySchema>;
 
-// For `conditions` (Phase 2 selector work): edition-varying like languages,
-// but never campaign-scoped — it has no owning_campaign_id column (PLAN.md
-// §3.1: it's flavor text only, not homebrew-forkable like effect_definitions
-// which wraps it).
-export const editionOnlyQuerySchema = z.object({
-  edition: z.enum(['2014', '2024', 'both']).optional(),
-});
-export type EditionOnlyQuery = z.infer<typeof editionOnlyQuerySchema>;
+// `conditions` (Phase 2 selector work) was originally edition-varying but
+// never campaign-scoped — it had no owning_campaign_id column. The
+// compendium feature's conditions-homebrew-scope migration gave it one
+// (proving the generic registry can onboard a genuinely new type), so it
+// now shares editionQuerySchema's shape with the rest of the homebrew-scoped
+// catalog rather than this narrower schema.
 
 export const monsterQuerySchema = editionQuerySchema.extend({
   creatureType: z.string().optional(),

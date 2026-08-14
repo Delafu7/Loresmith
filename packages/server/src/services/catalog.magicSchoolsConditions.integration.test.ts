@@ -5,9 +5,15 @@
 // web UI had no way to turn either id into a name for a dropdown. Read-only
 // against the live seeded DB, no fixtures needed.
 
+import crypto from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';
 import { listMagicSchools, listConditions, listWeaponMasteryProperties } from './catalog.js';
+
+// No personal-compendium rows are created in this file, so any actorUserId
+// works — a random uuid never matches a real owning_user_id, same as an
+// unauthenticated global-only read.
+const noopActorUserId = crypto.randomUUID();
 
 describe('listMagicSchools / listConditions (integration, live seeded DB)', () => {
   it('lists every seeded magic school, alphabetically, with no campaign scoping', async () => {
@@ -19,14 +25,14 @@ describe('listMagicSchools / listConditions (integration, live seeded DB)', () =
   });
 
   it('lists conditions unfiltered when no edition is given', async () => {
-    const conditions = await listConditions(pool, {});
+    const conditions = await listConditions(pool, {}, noopActorUserId);
     expect(conditions.length).toBeGreaterThan(0);
     expect(conditions.every((c) => typeof c.name === 'string' && typeof c.description === 'string')).toBe(true);
   });
 
   it('filters conditions by edition, still including edition-agnostic rows', async () => {
-    const all = await listConditions(pool, {});
-    const filtered = await listConditions(pool, { edition: '2024' });
+    const all = await listConditions(pool, {}, noopActorUserId);
+    const filtered = await listConditions(pool, { edition: '2024' }, noopActorUserId);
     expect(filtered.length).toBeLessThanOrEqual(all.length);
     expect(filtered.every((c) => c.edition_scope === '2024' || c.edition_scope === 'both')).toBe(true);
   });

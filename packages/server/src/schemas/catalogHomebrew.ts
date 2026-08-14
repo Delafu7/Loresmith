@@ -1,6 +1,7 @@
-// Write shapes for the 12 catalog tables plugged into the generic homebrew
+// Write shapes for the 13 catalog tables plugged into the generic homebrew
 // system (the 11 from the catalog-homebrew-scope migration, plus
-// effect_definitions). Mirrors each table's actual columns (see that
+// effect_definitions and conditions, each onboarded in their own later
+// migration). Mirrors each table's actual columns (see that
 // migration + the original CREATE TABLE migrations) — every field here maps
 // 1:1 to a snake_case column via services/catalog.ts's route layer. No field here
 // carries a Zod `.default()`, matching schemas/monsterCatalog.ts's own
@@ -141,6 +142,13 @@ export const effectDefinitionHomebrewShape = {
   stackingRule: z.enum(['none', 'stack', 'refresh']),
 };
 
+export const conditionHomebrewShape = {
+  indexKey: z.string().min(1).max(200),
+  name: z.string().min(1).max(200),
+  editionScope,
+  description: z.string().min(1).max(5000),
+};
+
 const shapes = {
   items: itemHomebrewShape,
   spells: spellHomebrewShape,
@@ -154,6 +162,7 @@ const shapes = {
   languages: languageHomebrewShape,
   damage_types: damageTypeHomebrewShape,
   effect_definitions: effectDefinitionHomebrewShape,
+  conditions: conditionHomebrewShape,
 } as const;
 
 export type HomebrewCatalogTable = keyof typeof shapes;

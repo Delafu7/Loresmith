@@ -9,7 +9,7 @@
 // surface those homebrew rows alongside the global catalog.
 
 import type { Pool } from 'pg';
-import type { EditionQuery, MonsterQuery, SpellQuery, ItemQuery, EffectDefinitionQuery, CampaignScopedQuery, EditionOnlyQuery } from '../schemas/catalog.js';
+import type { EditionQuery, MonsterQuery, SpellQuery, ItemQuery, EffectDefinitionQuery, CampaignScopedQuery } from '../schemas/catalog.js';
 
 // `edition=2014|2024` means "rows for that edition OR edition-agnostic
 // ('both') rows"; `edition=both` or omitted means "everything, no filter" —
@@ -23,15 +23,31 @@ function editionFilter(column: string, edition: EditionQuery['edition'], values:
   return '';
 }
 
-// Global (owning_campaign_id IS NULL) rows are always included; a
-// campaign's own homebrew rows are unioned in only when campaignId is
-// supplied — same additive-only pattern listMonsters/listEffectDefinitions
-// already established. With no campaignId this is exactly
-// `column IS NULL`, so the no-campaignId case never changes.
-function campaignScopeClause(column: string, campaignId: string | undefined, values: unknown[]): string {
-  if (campaignId === undefined) return `${column} IS NULL`;
+// Global rows are always included; a campaign's own homebrew rows are
+// unioned in only when campaignId is supplied — same additive-only pattern
+// listMonsters/listEffectDefinitions already established. Additionally, the
+// caller's OWN personal-compendium homebrew (owning_user_id = actorUserId)
+// is unioned in unconditionally — "my compendium, reusable across every
+// campaign I run" should show up whether or not the caller happens to be
+// browsing from inside a specific campaign right now, mirroring the
+// ownLibraryClause pattern listMonsters established first. With no
+// campaignId and no compendium rows of the caller's own, this reduces to
+// exactly `campaignColumn IS NULL`, so a user with no homebrew sees
+// unchanged results.
+function catalogScopeClause(
+  campaignColumn: string,
+  userColumn: string,
+  campaignId: string | undefined,
+  actorUserId: string,
+  values: unknown[],
+): string {
+  values.push(actorUserId);
+  const ownLibraryClause = `${userColumn} = $${values.length}`;
+  if (campaignId === undefined) {
+    return `(${campaignColumn} IS NULL AND (${userColumn} IS NULL OR ${ownLibraryClause}))`;
+  }
   values.push(campaignId);
-  return `(${column} IS NULL OR ${column} = $${values.length})`;
+  return `(${campaignColumn} IS NULL OR ${campaignColumn} = $${values.length} OR ${ownLibraryClause})`;
 }
 
 export async function listAbilityScores(pool: Pool) {
@@ -76,26 +92,29 @@ export async function listBastionFacilityCatalog(pool: Pool) {
   return result.rows;
 }
 
-export async function listConditions(pool: Pool, query: EditionOnlyQuery) {
-  const values: unknown[] = [];
-  const where = editionFilter('edition_scope', query.edition, values);
-  const result = await pool.query(`SELECT * FROM conditions ${where} ORDER BY name ASC`, values);
-  return result.rows;
-}
-
-export async function listLanguages(pool: Pool, query: EditionQuery) {
+export async function listConditions(pool: Pool, query: EditionQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
   const editionClause = editionFilter('edition_scope', query.edition, values).replace(/^WHERE /, '');
   if (editionClause) clauses.push(editionClause);
-  clauses.push(campaignScopeClause('owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values));
+  const result = await pool.query(`SELECT * FROM conditions WHERE ${clauses.join(' AND ')} ORDER BY name ASC`, values);
+  return result.rows;
+}
+
+export async function listLanguages(pool: Pool, query: EditionQuery, actorUserId: string) {
+  const values: unknown[] = [];
+  const clauses: string[] = [];
+  const editionClause = editionFilter('edition_scope', query.edition, values).replace(/^WHERE /, '');
+  if (editionClause) clauses.push(editionClause);
+  clauses.push(catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values));
   const result = await pool.query(`SELECT * FROM languages WHERE ${clauses.join(' AND ')} ORDER BY name ASC`, values);
   return result.rows;
 }
 
-export async function listAlignments(pool: Pool, query: CampaignScopedQuery) {
+export async function listAlignments(pool: Pool, query: CampaignScopedQuery, actorUserId: string) {
   const values: unknown[] = [];
-  const where = campaignScopeClause('owning_campaign_id', query.campaignId, values);
+  const where = catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values);
   const result = await pool.query(`SELECT * FROM alignments WHERE ${where} ORDER BY name ASC`, values);
   return result.rows;
 }
@@ -104,29 +123,29 @@ export async function listAlignments(pool: Pool, query: CampaignScopedQuery) {
 // action entries both reference this by id, but nothing served it to the
 // frontend before now — display code had no way to turn a damage_type_id
 // into "slashing"/"fire" etc.
-export async function listDamageTypes(pool: Pool, query: CampaignScopedQuery) {
+export async function listDamageTypes(pool: Pool, query: CampaignScopedQuery, actorUserId: string) {
   const values: unknown[] = [];
-  const where = campaignScopeClause('owning_campaign_id', query.campaignId, values);
+  const where = catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values);
   const result = await pool.query(`SELECT * FROM damage_types WHERE ${where} ORDER BY name ASC`, values);
   return result.rows;
 }
 
-export async function listRaces(pool: Pool, query: EditionQuery) {
+export async function listRaces(pool: Pool, query: EditionQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
   const editionClause = editionFilter('edition_scope', query.edition, values).replace(/^WHERE /, '');
   if (editionClause) clauses.push(editionClause);
-  clauses.push(campaignScopeClause('owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values));
   const result = await pool.query(`SELECT * FROM races WHERE ${clauses.join(' AND ')} ORDER BY name ASC`, values);
   return result.rows;
 }
 
-export async function listSubraces(pool: Pool, query: EditionQuery) {
+export async function listSubraces(pool: Pool, query: EditionQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
   const editionClause = editionFilter('r.edition_scope', query.edition, values).replace(/^WHERE /, '');
   if (editionClause) clauses.push(editionClause);
-  clauses.push(campaignScopeClause('s.owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('s.owning_campaign_id', 's.owning_user_id', query.campaignId, actorUserId, values));
   const result = await pool.query(
     `SELECT s.* FROM subraces s JOIN races r ON r.id = s.race_id WHERE ${clauses.join(' AND ')} ORDER BY s.name ASC`,
     values,
@@ -134,22 +153,22 @@ export async function listSubraces(pool: Pool, query: EditionQuery) {
   return result.rows;
 }
 
-export async function listClasses(pool: Pool, query: EditionQuery) {
+export async function listClasses(pool: Pool, query: EditionQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
   const editionClause = editionFilter('edition_scope', query.edition, values).replace(/^WHERE /, '');
   if (editionClause) clauses.push(editionClause);
-  clauses.push(campaignScopeClause('owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values));
   const result = await pool.query(`SELECT * FROM classes WHERE ${clauses.join(' AND ')} ORDER BY name ASC`, values);
   return result.rows;
 }
 
-export async function listSubclasses(pool: Pool, query: EditionQuery) {
+export async function listSubclasses(pool: Pool, query: EditionQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
   const editionClause = editionFilter('c.edition_scope', query.edition, values).replace(/^WHERE /, '');
   if (editionClause) clauses.push(editionClause);
-  clauses.push(campaignScopeClause('s.owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('s.owning_campaign_id', 's.owning_user_id', query.campaignId, actorUserId, values));
   const result = await pool.query(
     `SELECT s.* FROM subclasses s JOIN classes c ON c.id = s.class_id WHERE ${clauses.join(' AND ')} ORDER BY s.name ASC`,
     values,
@@ -179,22 +198,22 @@ export async function listClassFeatures(pool: Pool, query: EditionQuery) {
   return result.rows;
 }
 
-export async function listBackgrounds(pool: Pool, query: EditionQuery) {
+export async function listBackgrounds(pool: Pool, query: EditionQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
   const editionClause = editionFilter('edition_scope', query.edition, values).replace(/^WHERE /, '');
   if (editionClause) clauses.push(editionClause);
-  clauses.push(campaignScopeClause('owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values));
   const result = await pool.query(`SELECT * FROM backgrounds WHERE ${clauses.join(' AND ')} ORDER BY name ASC`, values);
   return result.rows;
 }
 
-export async function listFeats(pool: Pool, query: EditionQuery) {
+export async function listFeats(pool: Pool, query: EditionQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
   const editionClause = editionFilter('edition_scope', query.edition, values).replace(/^WHERE /, '');
   if (editionClause) clauses.push(editionClause);
-  clauses.push(campaignScopeClause('owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values));
   const result = await pool.query(`SELECT * FROM feats WHERE ${clauses.join(' AND ')} ORDER BY name ASC`, values);
   return result.rows;
 }
@@ -262,7 +281,7 @@ export async function getMonsterById(pool: Pool, id: string) {
 // (PLAN.md §4.1 lists these as part of the catalog family; no route/service
 // existed for them yet — see routes/catalog.ts for the mounted GETs.)
 
-export async function listSpells(pool: Pool, query: SpellQuery) {
+export async function listSpells(pool: Pool, query: SpellQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
 
@@ -274,7 +293,7 @@ export async function listSpells(pool: Pool, query: SpellQuery) {
     values.push(query.classId);
     clauses.push(`EXISTS (SELECT 1 FROM spell_classes sc WHERE sc.spell_id = s.id AND sc.class_id = $${values.length})`);
   }
-  clauses.push(campaignScopeClause('s.owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('s.owning_campaign_id', 's.owning_user_id', query.campaignId, actorUserId, values));
 
   const where = `WHERE ${clauses.join(' AND ')}`;
   const result = await pool.query(
@@ -284,7 +303,7 @@ export async function listSpells(pool: Pool, query: SpellQuery) {
   return result.rows;
 }
 
-export async function listItems(pool: Pool, query: ItemQuery) {
+export async function listItems(pool: Pool, query: ItemQuery, actorUserId: string) {
   const values: unknown[] = [];
   const clauses: string[] = [];
 
@@ -296,22 +315,16 @@ export async function listItems(pool: Pool, query: ItemQuery) {
     values.push(query.itemType);
     clauses.push(`item_type = $${values.length}`);
   }
-  clauses.push(campaignScopeClause('owning_campaign_id', query.campaignId, values));
+  clauses.push(catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values));
 
   const where = `WHERE ${clauses.join(' AND ')}`;
   const result = await pool.query(`SELECT * FROM items ${where} ORDER BY name ASC`, values);
   return result.rows;
 }
 
-export async function listEffectDefinitions(pool: Pool, query: EffectDefinitionQuery) {
+export async function listEffectDefinitions(pool: Pool, query: EffectDefinitionQuery, actorUserId: string) {
   const values: unknown[] = [];
-  // Global (owning_campaign_id IS NULL) rows are always included; a
-  // campaign's own homebrew rows are included only when campaignId is given.
-  let where = `WHERE owning_campaign_id IS NULL`;
-  if (query.campaignId !== undefined) {
-    values.push(query.campaignId);
-    where = `WHERE owning_campaign_id IS NULL OR owning_campaign_id = $${values.length}`;
-  }
-  const result = await pool.query(`SELECT * FROM effect_definitions ${where} ORDER BY name ASC`, values);
+  const where = catalogScopeClause('owning_campaign_id', 'owning_user_id', query.campaignId, actorUserId, values);
+  const result = await pool.query(`SELECT * FROM effect_definitions WHERE ${where} ORDER BY name ASC`, values);
   return result.rows;
 }

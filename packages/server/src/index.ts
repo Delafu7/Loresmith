@@ -18,6 +18,7 @@ import { campaignsRouter } from './routes/campaigns.js';
 import { campaignCharactersRouter, charactersRouter } from './routes/characters.js';
 import { catalogRouter } from './routes/catalog.js';
 import { campaignCatalogRouter } from './routes/catalogHomebrew.js';
+import { compendiumRouter } from './routes/compendium.js';
 import {
   campaignMonsterInstancesRouter,
   campaignMonstersRouter,
@@ -146,6 +147,13 @@ async function main(): Promise<void> {
   // Read-only catalog/reference data.
   app.use('/catalog/monsters', monsterCatalogRouter);
   app.use('/catalog', catalogRouter);
+
+  // Personal, campaign-independent compendium — write access for a user's
+  // own homebrew content, reusable across every campaign they run. Mirrors
+  // /campaigns/:id/catalog (campaignCatalogRouter) with the ownership axis
+  // swapped from campaign to user (see CatalogOwnerScope,
+  // services/catalogHomebrew.ts).
+  app.use('/compendium', compendiumRouter);
 
   // 404 for anything unmatched above.
   app.use((req, res) => {

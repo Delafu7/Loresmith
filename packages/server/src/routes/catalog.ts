@@ -7,7 +7,6 @@ import {
   itemQuerySchema,
   effectDefinitionQuerySchema,
   campaignScopedQuerySchema,
-  editionOnlyQuerySchema,
 } from '../schemas/catalog.js';
 import * as catalogService from '../services/catalog.js';
 import { requireMembership } from '../services/authz.js';
@@ -38,26 +37,27 @@ catalogRouter.get('/magic-schools', async (_req, res) => {
 });
 
 catalogRouter.get('/conditions', async (req, res) => {
-  const query = editionOnlyQuerySchema.parse(req.query);
-  res.json({ conditions: await catalogService.listConditions(pool, query) });
+  const query = editionQuerySchema.parse(req.query);
+  await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
+  res.json({ conditions: await catalogService.listConditions(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/languages', async (req, res) => {
   const query = editionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ languages: await catalogService.listLanguages(pool, query) });
+  res.json({ languages: await catalogService.listLanguages(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/alignments', async (req, res) => {
   const query = campaignScopedQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ alignments: await catalogService.listAlignments(pool, query) });
+  res.json({ alignments: await catalogService.listAlignments(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/damage-types', async (req, res) => {
   const query = campaignScopedQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ damageTypes: await catalogService.listDamageTypes(pool, query) });
+  res.json({ damageTypes: await catalogService.listDamageTypes(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/weapon-mastery-properties', async (_req, res) => {
@@ -73,25 +73,25 @@ catalogRouter.get('/bastion-facilities', async (_req, res) => {
 catalogRouter.get('/races', async (req, res) => {
   const query = editionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ races: await catalogService.listRaces(pool, query) });
+  res.json({ races: await catalogService.listRaces(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/subraces', async (req, res) => {
   const query = editionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ subraces: await catalogService.listSubraces(pool, query) });
+  res.json({ subraces: await catalogService.listSubraces(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/classes', async (req, res) => {
   const query = editionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ classes: await catalogService.listClasses(pool, query) });
+  res.json({ classes: await catalogService.listClasses(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/subclasses', async (req, res) => {
   const query = editionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ subclasses: await catalogService.listSubclasses(pool, query) });
+  res.json({ subclasses: await catalogService.listSubclasses(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/class-levels', async (req, res) => {
@@ -107,13 +107,13 @@ catalogRouter.get('/class-features', async (req, res) => {
 catalogRouter.get('/backgrounds', async (req, res) => {
   const query = editionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ backgrounds: await catalogService.listBackgrounds(pool, query) });
+  res.json({ backgrounds: await catalogService.listBackgrounds(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/feats', async (req, res) => {
   const query = editionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ feats: await catalogService.listFeats(pool, query) });
+  res.json({ feats: await catalogService.listFeats(pool, query, req.user!.id) });
 });
 
 // Added for Phase 2 (spell/item libraries, effect picker) — see
@@ -121,17 +121,17 @@ catalogRouter.get('/feats', async (req, res) => {
 catalogRouter.get('/spells', async (req, res) => {
   const query = spellQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ spells: await catalogService.listSpells(pool, query) });
+  res.json({ spells: await catalogService.listSpells(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/items', async (req, res) => {
   const query = itemQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ items: await catalogService.listItems(pool, query) });
+  res.json({ items: await catalogService.listItems(pool, query, req.user!.id) });
 });
 
 catalogRouter.get('/effect-definitions', async (req, res) => {
   const query = effectDefinitionQuerySchema.parse(req.query);
   await requireMembershipIfCampaignScoped(query.campaignId, req.user!.id);
-  res.json({ effectDefinitions: await catalogService.listEffectDefinitions(pool, query) });
+  res.json({ effectDefinitions: await catalogService.listEffectDefinitions(pool, query, req.user!.id) });
 });

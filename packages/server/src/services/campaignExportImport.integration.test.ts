@@ -76,7 +76,7 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
 
     const raceJsonbColumns = new Set(['ability_bonuses', 'traits']);
     const race = await createHomebrewCatalogRow(
-      pool, dmUserId, campaignId, { table: 'races', keyColumn: 'index_key', jsonbColumns: raceJsonbColumns },
+      pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'races', keyColumn: 'index_key', jsonbColumns: raceJsonbColumns },
       {
         index_key: 'export-test-race', name: 'Export Test Race', edition_scope: 'both', speed: 30, size: 'medium',
         ability_bonuses: { str: 1 }, traits: [{ name: 'Test Trait' }],
@@ -85,7 +85,7 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
     raceId = race.id as string;
 
     const subrace = await createHomebrewCatalogRow(
-      pool, dmUserId, campaignId, { table: 'subraces', keyColumn: 'index_key', jsonbColumns: raceJsonbColumns },
+      pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'subraces', keyColumn: 'index_key', jsonbColumns: raceJsonbColumns },
       {
         race_id: raceId, index_key: 'export-test-subrace', name: 'Export Test Subrace',
         ability_bonuses: { dex: 1 }, traits: [],
@@ -93,38 +93,38 @@ describe('exportCampaign + importCampaign (integration, live DB, throwaway fixtu
     );
     subraceId = subrace.id as string;
 
-    const cls = await createHomebrewCatalogRow(pool, dmUserId, campaignId, { table: 'classes', keyColumn: 'index_key' }, {
+    const cls = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'classes', keyColumn: 'index_key' }, {
       index_key: 'export-test-class', name: 'Export Test Class', edition_scope: 'both', hit_die: 8, spellcasting_type: 'none',
     });
     classId = cls.id as string;
 
-    const subclass = await createHomebrewCatalogRow(pool, dmUserId, campaignId, { table: 'subclasses', keyColumn: 'index_key' }, {
+    const subclass = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'subclasses', keyColumn: 'index_key' }, {
       class_id: classId, index_key: 'export-test-subclass', name: 'Export Test Subclass',
     });
     subclassId = subclass.id as string;
 
-    const language = await createHomebrewCatalogRow(pool, dmUserId, campaignId, { table: 'languages', keyColumn: 'index_key' }, {
+    const language = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'languages', keyColumn: 'index_key' }, {
       index_key: 'export-test-language', name: 'Export Test Language', edition_scope: 'both',
     });
     languageId = language.id as string;
 
-    const damageType = await createHomebrewCatalogRow(pool, dmUserId, campaignId, { table: 'damage_types', keyColumn: 'index_key' }, {
+    const damageType = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'damage_types', keyColumn: 'index_key' }, {
       index_key: 'export-test-damage', name: 'Export Test Damage',
     });
     damageTypeId = damageType.id as string;
 
-    const item = await createHomebrewCatalogRow(pool, dmUserId, campaignId, { table: 'items', keyColumn: 'slug' }, {
+    const item = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'items', keyColumn: 'slug' }, {
       slug: 'export-test-item', name: 'Export Test Item', edition_scope: 'both', item_type: 'weapon', rarity: 'common',
       requires_attunement: false, stealth_disadvantage: false, damage_type_id: damageTypeId,
     });
     itemId = item.id as string;
 
-    const feat = await createHomebrewCatalogRow(pool, dmUserId, campaignId, { table: 'feats', keyColumn: 'index_key' }, {
+    const feat = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'feats', keyColumn: 'index_key' }, {
       index_key: 'export-test-feat', name: 'Export Test Feat', edition_scope: 'both', description: 'A test feat.',
     });
     featId = feat.id as string;
 
-    const background = await createHomebrewCatalogRow(pool, dmUserId, campaignId, { table: 'backgrounds', keyColumn: 'index_key' }, {
+    const background = await createHomebrewCatalogRow(pool, { kind: 'campaign', campaignId, actorId: dmUserId }, { table: 'backgrounds', keyColumn: 'index_key' }, {
       index_key: 'export-test-background', name: 'Export Test Background', edition_scope: 'both', granted_feat_id: featId,
     });
     backgroundId = background.id as string;
