@@ -16,6 +16,7 @@ function emptyGrid(overrides: Partial<MovementGrid> = {}): MovementGrid {
     edition: '2024',
     overrides: new Map(),
     occupants: new Map(),
+    walls: [],
     ...overrides,
   };
 }
@@ -243,5 +244,56 @@ describe('computeReachableSet', () => {
     expect(reachable.has('8,0')).toBe(false);
     // Without the difficult cell in the way, 3 plain cells (15 ft) is exactly reachable.
     expect(reachable.has('3,0')).toBe(true);
+  });
+});
+
+describe('wall movement blocking', () => {
+  it('a wall segment crossing the straight line between two adjacent cells blocks that step', () => {
+    // Vertical wall at x=1.5 (between column 1 and column 2), spanning every row.
+    const grid = emptyGrid({ walls: [{ x1: 1.5, y1: -1, x2: 1.5, y2: 11 }] });
+    const result = computePathCost(grid, mover(), { x: 0, y: 0 }, { x: 2, y: 0 });
+    expect(result).toBeNull(); // the wall spans every row, so there's no detour around it
+  });
+
+  it('a mover can path around a wall that does not span the whole grid', () => {
+    // Same vertical wall, but only rows 0-1 — row 2 is open.
+    const grid = emptyGrid({ walls: [{ x1: 1.5, y1: -1, x2: 1.5, y2: 2 }] });
+    const result = computePathCost(grid, mover(), { x: 0, y: 0 }, { x: 2, y: 0 });
+    expect(result).not.toBeNull();
+    expect(result!.costFt).toBeGreaterThan(10); // longer than the unobstructed 2-cell (10ft) straight line
+  });
+
+  it('a wall also blocks a diagonal step that crosses it', () => {
+    // The OTHER diagonal of a 2x2 block, from (1,0) to (0,1) — crosses the
+    // (0,0)->(1,1) diagonal at its true midpoint without touching either
+    // orthogonal edge (it only meets them at shared endpoints, which the
+    // strict interior intersection test in domain/vision.ts never treats
+    // as blocking).
+    const grid = emptyGrid({ columns: 2, rows: 2, walls: [{ x1: 1, y1: 0, x2: 0, y2: 1 }] });
+    const result = computePathCost(grid, mover(), { x: 0, y: 0 }, { x: 1, y: 1 });
+    // Flat diagonal rule prices a direct diagonal at the same 5ft as an
+    // orthogonal step; with it blocked, the cheapest route is now the
+    // two-step orthogonal detour via (1,0) or (0,1): 5 + 5 = 10ft.
+    expect(result!.costFt).toBe(10);
+  });
+
+  it('a wall shrinks the reachable set exactly like difficult/impassable terrain', () => {
+    const grid = emptyGrid({ rows: 1, walls: [{ x1: 6.5, y1: -1, x2: 6.5, y2: 2 }] }); // wall between column 6 and 7
+    const reachable = computeReachableSet(grid, mover(), { x: 5, y: 0 }, 15);
+    expect(reachable.has('6,0')).toBe(true); // short of the wall
+    expect(reachable.has('7,0')).toBe(false); // wall blocks 6->7 entirely, no detour in a single row
+  });
+
+  it('a locked door blocks movement; a closed-but-unlocked door does not', () => {
+    const lockedGrid = emptyGrid({ walls: [{ x1: 1.5, y1: -1, x2: 1.5, y2: 11 }] });
+    expect(computePathCost(lockedGrid, mover(), { x: 0, y: 0 }, { x: 2, y: 0 })).toBeNull();
+
+    // A closed-but-unlocked door contributes no wall segment at all
+    // (loadMovementContext/computeBlocksMovement only includes locked
+    // doors) — modeled here simply as an empty walls list.
+    const openableGrid = emptyGrid({ walls: [] });
+    const result = computePathCost(openableGrid, mover(), { x: 0, y: 0 }, { x: 2, y: 0 });
+    expect(result).not.toBeNull();
+    expect(result!.costFt).toBe(10);
   });
 });

@@ -23,3 +23,21 @@ export function computeBlocksVision(el: BlocksVisionInput): boolean {
       return false; // light/area/note/image never block vision
   }
 }
+
+// Wall movement blocking (services/movement.ts's loadMovementContext) —
+// server-side mirror of the client registry's per-type `blocksMovement`
+// rule, same "keep in sync by inspection" caveat as computeBlocksVision
+// above. Deliberately a DIFFERENT predicate for a door: a closed-but-
+// unlocked door blocks LINE OF SIGHT (you can't see through it) but not
+// MOVEMENT (a mover can open it and walk through as part of the move) —
+// only a locked door actually blocks movement.
+export function computeBlocksMovement(el: BlocksVisionInput): boolean {
+  switch (el.type) {
+    case 'wall':
+      return true;
+    case 'door':
+      return (el.props as { state?: string }).state === 'locked';
+    default:
+      return false; // light/area/note/image never block movement
+  }
+}

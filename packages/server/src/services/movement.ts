@@ -21,6 +21,15 @@
 //     case (one relevant alternate speed for the terrain being crossed);
 //     imprecise for a mover switching between two different alternate
 //     speeds mid-path.
+//
+// Wall movement blocking reuses domain/vision.ts's segment-intersection
+// primitive rather than a second implementation: a wall/locked-door blocks
+// a step between two adjacent cells exactly when it crosses the straight
+// line between those two cells' positions — the same geometric test
+// hasLineOfSight already does for vision, just applied to one grid step at
+// a time instead of an arbitrary token-to-token sightline.
+
+import { hasLineOfSight, type Point, type Segment } from '../domain/vision.js';
 
 export type CostType = 'difficult' | 'impassable' | 'special';
 export type Medium = 'ground' | 'water' | 'air' | 'underground';
@@ -49,6 +58,8 @@ export interface MovementGrid {
   overrides: Map<string, CellOverride>;
   /** key `${x},${y}` — every OTHER participant's current cell; excludes the mover. */
   occupants: Map<string, Occupant>;
+  /** Wall/locked-door segments (map-cell coordinate space, same as PathStep) — a step whose straight line crosses one of these is blocked, regardless of terrain/occupancy. */
+  walls: Segment[];
 }
 
 export interface MoverProfile {
@@ -139,10 +150,15 @@ interface StepCost {
 function computeStepCost(
   grid: MovementGrid,
   mover: MoverProfile,
+  from: Point,
   toX: number,
   toY: number,
   baseStepCost: number,
 ): StepCost {
+  if (grid.walls.length > 0 && !hasLineOfSight(from, { x: toX, y: toY }, grid.walls)) {
+    return { costFt: 0, passable: false };
+  }
+
   const occupant = grid.occupants.get(key(toX, toY));
   if (occupant && !isOccupantPassable(mover, occupant, grid.edition)) {
     return { costFt: 0, passable: false };
@@ -235,7 +251,7 @@ function dijkstra(
         nextParity = current.parity === 1 ? 0 : 1;
       }
 
-      const step = computeStepCost(grid, mover, n.x, n.y, baseStepCost);
+      const step = computeStepCost(grid, mover, current, n.x, n.y, baseStepCost);
       if (!step.passable) continue;
 
       const nextState: SearchState = { x: n.x, y: n.y, parity: nextParity };

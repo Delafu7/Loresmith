@@ -11,6 +11,8 @@ import { requireMembership, requireControllerOrDm, type CampaignRole } from './a
 import { assertMonsterCuratedInBestiary } from './campaignBestiary.js';
 import { resolveVisibilitySync } from './visibility.js';
 import { assessEncounterXp, type MonsterXpInput, type XpBudgetResult } from '../domain/xpBudget.js';
+import { computeBlocksMovement } from '../domain/mapElementVisibility.js';
+import type { Segment } from '../domain/vision.js';
 import {
   computePathCost,
   computeReachableSet,
@@ -699,6 +701,23 @@ async function loadMovementContext(
     occupants.set(`${row.pos_x},${row.pos_y}`, { participantId: '', faction: row.faction, sizeRank: sizeRankFor(row.size) });
   }
 
+  // Wall movement blocking — same map_elements rows the darkness vision
+  // filter (domain/vision.ts) reads, queried raw here rather than through
+  // formatMapElementForViewer: movement validation is server-authoritative
+  // and runs for the DM too, so it always needs the true (unredacted)
+  // geometry regardless of a wall/door's player-visibility setting — a
+  // GM-only wall blocks movement exactly like a revealed one.
+  // computeBlocksMovement (not computeBlocksVision): a closed-but-unlocked
+  // door blocks sight but not movement, only a locked one does.
+  const wallElementsRes = await client.query<{ type: 'wall' | 'door'; x1: number; y1: number; x2: number | null; y2: number | null; props: Record<string, unknown> }>(
+    `SELECT type, x1, y1, x2, y2, props FROM map_elements
+     WHERE map_id = $1 AND type IN ('wall', 'door') AND x2 IS NOT NULL AND y2 IS NOT NULL`,
+    [map.id],
+  );
+  const walls: Segment[] = wallElementsRes.rows
+    .filter((el) => computeBlocksMovement(el))
+    .map((el) => ({ x1: el.x1, y1: el.y1, x2: el.x2 as number, y2: el.y2 as number }));
+
   const grid: MovementGrid = {
     columns: map.grid_columns,
     rows: map.grid_rows,
@@ -707,6 +726,7 @@ async function loadMovementContext(
     edition: campaign.srd_edition,
     overrides,
     occupants,
+    walls,
   };
   const mover: MoverProfile = {
     faction: participant.faction,
