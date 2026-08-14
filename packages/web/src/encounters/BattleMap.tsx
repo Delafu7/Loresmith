@@ -55,6 +55,11 @@ const ZOOM_STEP = 0.25;
 // wheel, much finer (~1-10) on a trackpad; this exponent gives a smooth
 // continuous feel across both without a separate trackpad-detection branch.
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+// Screen-pixel movement (regardless of zoom) a plain left-button pointer
+// must travel before it's treated as a grab-to-pan drag rather than a click
+// — keeps paint/move-target/placement cell clicks working (real clicks stay
+// well under this) while still letting a left-drag on empty canvas pan.
+const DRAG_PAN_THRESHOLD_PX = 4;
 
 function clampZoom(z: number): number {
   return Math.min(Math.max(z, ZOOM_MIN), ZOOM_MAX);
@@ -267,22 +272,31 @@ export function BattleMap({
     };
   }, []);
 
-  // Pinch-to-zoom + middle/space/touch-drag panning, unified over raw
-  // Pointer Events (same primitive Token.tsx's drag already uses) since the
-  // viewport is no longer a native-scrollable element (no more
-  // `overflow-auto` — see the container div below) — panning is now applied
-  // to `viewport.panX/panY` directly instead of relying on native scroll.
-  // Two concurrent pointers -> pinch-zoom, anchored at their midpoint. A
-  // single pointer starts a pan only for a middle-click, a space-held
-  // left-click, or any touch pointer (preserving this app's existing
-  // single-finger-pans-the-map mobile behavior now that native scroll can no
-  // longer provide it) — a plain left-click/tap is left alone so it still
-  // reaches cell/token click handlers underneath undisturbed. Token.tsx's
-  // own pointerDown stops propagation for its own draggable primary-button
-  // drags, so this never double-handles a token drag as a pan.
+  // Pinch-to-zoom + grab-to-pan, unified over raw Pointer Events (same
+  // primitive Token.tsx's drag already uses) since the viewport is no longer
+  // a native-scrollable element (no more `overflow-auto` — see the container
+  // div below) — panning is now applied to `viewport.panX/panY` directly
+  // instead of relying on native scroll. Two concurrent pointers ->
+  // pinch-zoom, anchored at their midpoint. Middle-click, a space-held
+  // left-click, or any touch pointer starts panning immediately (preserving
+  // this app's existing single-finger-pans-the-map mobile behavior now that
+  // native scroll can no longer provide it). A plain left-click is ambiguous
+  // up front — it might be a click on a paint/move-target/placement cell
+  // underneath, or the start of a grab-to-pan drag — so it's tracked as a
+  // `leftDragCandidate` and only promoted to a real pan once it moves past
+  // DRAG_PAN_THRESHOLD_PX (handleMapPointerMove); a real click stays well
+  // under that and reaches the cell/token handlers underneath untouched.
+  // Token.tsx's own pointerDown stops propagation for its own draggable
+  // primary-button drags, so this never double-handles a token drag as a pan.
   const activePointers = useRef(new Map<number, { x: number; y: number }>());
   const pinchStart = useRef<{ distance: number; midX: number; midY: number; zoom: number } | null>(null);
   const panState = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null);
+  const leftDragCandidate = useRef<{ pointerId: number; startX: number; startY: number } | null>(null);
+  // Set the instant a leftDragCandidate is promoted to a real pan; checked
+  // (and cleared) by handleCellClick so the click that follows pointerup
+  // after a real drag never also fires the cell's paint/move-target/
+  // placement action.
+  const justPannedRef = useRef(false);
 
   function pointerMidpointAndDistance(): { distance: number; midX: number; midY: number } | null {
     const pts = [...activePointers.current.values()];
@@ -301,6 +315,7 @@ export function BattleMap({
     const pinch = pointerMidpointAndDistance();
     if (pinch) {
       panState.current = null;
+      leftDragCandidate.current = null;
       pinchStart.current = { ...pinch, zoom: viewport.zoom };
       return;
     }
@@ -311,6 +326,10 @@ export function BattleMap({
       if (isMiddle) e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
       panState.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+      return;
+    }
+    if (e.button === 0) {
+      leftDragCandidate.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
     }
   }
 
@@ -322,6 +341,22 @@ export function BattleMap({
       const anchor = containerRelative(pinch.midX, pinch.midY);
       zoomAtScreenPoint(anchor.x, anchor.y, pinchStart.current.zoom * (pinch.distance / pinchStart.current.distance));
       return;
+    }
+    const candidate = leftDragCandidate.current;
+    if (candidate && candidate.pointerId === e.pointerId) {
+      const dx = e.clientX - candidate.startX;
+      const dy = e.clientY - candidate.startY;
+      if (Math.hypot(dx, dy) < DRAG_PAN_THRESHOLD_PX) return;
+      // Promote: this is a grab-to-pan drag, not a click. Capture now (not
+      // at pointerdown) so a real click's pointerup/click still lands
+      // untouched on whatever cell/token was under the pointer.
+      containerRef.current?.setPointerCapture(e.pointerId);
+      panState.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+      justPannedRef.current = true;
+      leftDragCandidate.current = null;
+      // Falls through to the pan branch below, applied from this same
+      // event (dx/dy against the freshly-set lastX/lastY is 0 for this
+      // tick — no jump — subsequent moves pan normally).
     }
     const pan = panState.current;
     if (pan && pan.pointerId === e.pointerId) {
@@ -336,6 +371,36 @@ export function BattleMap({
     activePointers.current.delete(e.pointerId);
     if (activePointers.current.size < 2) pinchStart.current = null;
     if (panState.current?.pointerId === e.pointerId) panState.current = null;
+    if (leftDragCandidate.current?.pointerId === e.pointerId) leftDragCandidate.current = null;
+    // Self-heals justPannedRef for a pan that ends somewhere with no click
+    // handler to consume the flag (e.g. paint/move-target mode is off) —
+    // without this, that pan would silently swallow the NEXT unrelated
+    // click instead of just this one. The native click event (if any) for
+    // this same pointerup fires synchronously before this timeout runs, so
+    // handleCellClick still sees the flag in time to suppress its own click.
+    if (justPannedRef.current) {
+      setTimeout(() => {
+        justPannedRef.current = false;
+      }, 0);
+    }
+  }
+
+  // Gate for every paint/move-target/element-placement cell click — a real
+  // drag-to-pan that started on that same cell (justPannedRef, set by
+  // handleMapPointerMove's promotion above) must not also trigger the
+  // cell's click action once the pointer lifts.
+  function handleCellClick(x: number, y: number) {
+    if (justPannedRef.current) {
+      justPannedRef.current = false;
+      return;
+    }
+    if (placingType) {
+      handleElementPlacementClick(x, y);
+    } else if (paintMode) {
+      handleCellPaint(x, y);
+    } else if (moveTargetMode) {
+      setPendingMove({ x, y });
+    }
   }
 
   // Cursor-anchored continuous wheel zoom. Attached as a native (non-passive)
@@ -1004,7 +1069,11 @@ export function BattleMap({
         // this canvas is never natively scrollable (no `overflow-auto`
         // anymore; it always fills 100% of this container, see Target
         // State - Viewport), so nothing native should intercept a touch here.
-        style={{ touchAction: 'none', cursor: spacePressed ? 'grab' : undefined }}
+        // 'grab' by default — the whole canvas is left-drag-pannable now;
+        // a nested cell's own `cursor-pointer` (paint/move-target/placement
+        // modes) still wins over this per normal CSS cascade since it's set
+        // on the more specific (child) element.
+        style={{ touchAction: 'none', cursor: 'grab' }}
         className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-stone-950 shadow-sm sm:rounded-md"
       >
             {/* Single transform is the whole viewport: translate (screen px,
@@ -1097,13 +1166,7 @@ export function BattleMap({
                             key={`${x},${y}`}
                             onMouseEnter={placingType ? () => setPlacementHoverCell({ x, y }) : undefined}
                             onClick={
-                              placingType
-                                ? () => handleElementPlacementClick(x, y)
-                                : paintMode
-                                  ? () => handleCellPaint(x, y)
-                                  : moveTargetMode
-                                    ? () => setPendingMove({ x, y })
-                                    : undefined
+                              placingType || paintMode || moveTargetMode ? () => handleCellClick(x, y) : undefined
                             }
                             title={
                               placingType
