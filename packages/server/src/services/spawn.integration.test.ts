@@ -36,6 +36,7 @@ describe('spawnParticipants (integration, live DB, throwaway fixtures)', () => {
   let campaignId: string;
   let goblinId: string;
   let uniqueBossId: string;
+  let uncuratedMonsterId: string; // never added to campaign_bestiary_entries
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -75,6 +76,25 @@ describe('spawnParticipants (integration, live DB, throwaway fixtures)', () => {
       [`spawn-test-boss-${suffix}`],
     );
     uniqueBossId = bossRes.rows[0]!.id;
+
+    const uncuratedRes = await pool.query<{ id: string }>(
+      `INSERT INTO monsters
+         (slug, name, edition_scope, size, creature_type, armor_class, hit_point_average, hit_dice, speed,
+          str, dex, con, int, wis, cha, challenge_rating, xp_value, actions)
+       VALUES ($1, 'Spawn Test Uncurated Monster', 'both', 'Small', 'humanoid', 15, 7, '2d6', '{"walk":30}',
+               8, 14, 10, 10, 8, 8, 0.25, 50, '[{"name":"Dagger","description":"Melee."}]')
+       RETURNING id`,
+      [`spawn-test-uncurated-${suffix}`],
+    );
+    uncuratedMonsterId = uncuratedRes.rows[0]!.id;
+
+    // spawnParticipants now requires campaign-bestiary curation — see
+    // assertMonsterCuratedInBestiary (services/campaignBestiary.ts).
+    // uncuratedMonsterId is deliberately NOT added here, to cover rejection.
+    await pool.query(
+      `INSERT INTO campaign_bestiary_entries (campaign_id, monster_id) VALUES ($1, $2), ($1, $3)`,
+      [campaignId, goblinId, uniqueBossId],
+    );
   });
 
   afterAll(async () => {
@@ -83,7 +103,7 @@ describe('spawnParticipants (integration, live DB, throwaway fixtures)', () => {
     // campaign-scoped — see services/monsters.ts's uniqueness check spanning
     // all campaigns) can be deleted afterward without an FK violation.
     if (campaignId) await pool.query(`DELETE FROM campaigns WHERE id = $1`, [campaignId]);
-    await pool.query(`DELETE FROM monsters WHERE id = ANY($1::uuid[])`, [[goblinId, uniqueBossId]]);
+    await pool.query(`DELETE FROM monsters WHERE id = ANY($1::uuid[])`, [[goblinId, uniqueBossId, uncuratedMonsterId]]);
     if (dmUserId) await pool.query(`DELETE FROM users WHERE id = $1`, [dmUserId]);
     await pool.end();
   });
@@ -108,6 +128,20 @@ describe('spawnParticipants (integration, live DB, throwaway fixtures)', () => {
     const instances = await fetchInstances(participants.map((p) => p.id));
     for (const instance of instances) expect(instance.hp_current).toBe(7);
     expect(new Set(instances.map((i) => i.custom_name)).size).toBe(3); // no name collisions
+  });
+
+  it('rejects spawning a monster that is not curated into this campaign\'s bestiary', async () => {
+    const encounter = await createEncounter(pool, campaignId, { name: 'Uncurated Monster Encounter' });
+
+    await expect(
+      spawnParticipants(pool, encounter.id, {
+        monsterId: uncuratedMonsterId,
+        quantity: 1,
+        hpStrategy: 'average',
+        groupInitiative: true,
+        namingScheme: 'numeric',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_IN_BESTIARY' });
   });
 
   it('hpStrategy "rolled" produces independently-rolled HP per instance', async () => {

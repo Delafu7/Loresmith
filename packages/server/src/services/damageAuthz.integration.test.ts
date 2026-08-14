@@ -25,6 +25,7 @@ describe('damage/attacks authorization (integration, live DB, throwaway fixtures
   let campaignId: string;
   let characterAId: string; // owned by playerA
   let monsterInstanceId: string;
+  let monsterCatalogId: string;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -66,8 +67,9 @@ describe('damage/attacks authorization (integration, live DB, throwaway fixtures
 
     const monsterCatalogRes = await pool.query<{ id: string }>(`SELECT id FROM monsters LIMIT 1`);
     if (!monsterCatalogRes.rows[0]) throw new Error('Expected at least one seeded monster catalog row for this test');
+    monsterCatalogId = monsterCatalogRes.rows[0].id;
     const instance = await createMonsterInstance(pool, campaignId, {
-      monsterId: monsterCatalogRes.rows[0].id,
+      monsterId: monsterCatalogId,
       customName: null,
       hpMaxOverride: null,
       armorClassOverride: null,
@@ -132,5 +134,21 @@ describe('damage/attacks authorization (integration, live DB, throwaway fixtures
     await expect(applyMonsterInstanceDamage(pool, dmUserId, monsterInstanceId, dmg)).resolves.toMatchObject({
       appliedDamage: expect.any(Number),
     });
+  });
+
+  // Catalog/instance separation (CLAUDE.md's rpg-data-model-architect rule):
+  // damaging an encounter instance must never mutate the shared bestiary
+  // template it was spawned from.
+  it('applying damage to a monster instance leaves the monsters catalog template unchanged', async () => {
+    const before = await pool.query<{ hit_point_average: number }>(`SELECT hit_point_average FROM monsters WHERE id = $1`, [
+      monsterCatalogId,
+    ]);
+
+    await applyMonsterInstanceDamage(pool, dmUserId, monsterInstanceId, dmg);
+
+    const after = await pool.query<{ hit_point_average: number }>(`SELECT hit_point_average FROM monsters WHERE id = $1`, [
+      monsterCatalogId,
+    ]);
+    expect(after.rows[0]!.hit_point_average).toBe(before.rows[0]!.hit_point_average);
   });
 });

@@ -61,6 +61,13 @@ describe('performShove turn-order enforcement (integration, live DB, throwaway f
     );
     const monsterInstanceId = monsterInstanceRes.rows[0]!.id;
 
+    // addParticipant now requires campaign-bestiary curation — see
+    // assertMonsterCuratedInBestiary (services/campaignBestiary.ts).
+    await pool.query(
+      `INSERT INTO campaign_bestiary_entries (campaign_id, monster_id) VALUES ($1, $2)`,
+      [campaignId, monsterCatalogRes.rows[0].id],
+    );
+
     const encounter = await createEncounter(pool, campaignId, { name: 'ShoveTurnOrder Test Encounter' });
     encounterId = encounter.id;
 

@@ -63,6 +63,13 @@ describe('performGrapple (integration, live DB, throwaway fixtures)', () => {
       [campaignId, gargantuanMonster.id],
     );
 
+    // addParticipant now requires campaign-bestiary curation — see
+    // assertMonsterCuratedInBestiary (services/campaignBestiary.ts).
+    await pool.query(
+      `INSERT INTO campaign_bestiary_entries (campaign_id, monster_id) VALUES ($1, $2), ($1, $3)`,
+      [campaignId, mediumMonster.id, gargantuanMonster.id],
+    );
+
     const encounter = await createEncounter(pool, campaignId, { name: 'Grapple Test Encounter' });
     encounterId = encounter.id;
 

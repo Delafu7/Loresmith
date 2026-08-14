@@ -63,6 +63,13 @@ describe('legendary + lair actions (integration, live DB, throwaway fixtures)', 
     );
     plainInstanceId = plainInstanceRes.rows[0]!.id;
 
+    // addParticipant now requires campaign-bestiary curation — see
+    // assertMonsterCuratedInBestiary (services/campaignBestiary.ts).
+    await pool.query(
+      `INSERT INTO campaign_bestiary_entries (campaign_id, monster_id) VALUES ($1, $2), ($1, $3)`,
+      [campaignId, legendaryMonsterId, plainMonsterId],
+    );
+
     const encounter = await createEncounter(pool, campaignId, { name: 'Legendary Test Encounter' });
     encounterId = encounter.id;
 
