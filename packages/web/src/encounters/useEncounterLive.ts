@@ -303,6 +303,7 @@ export function useEncounterLive(encounterId: string | undefined) {
             gridRows: payload.gridRows,
             cellSizePx: payload.cellSizePx,
             feetPerCell: payload.feetPerCell,
+            lightingState: payload.lightingState,
           },
         }));
       });
@@ -315,7 +316,9 @@ export function useEncounterLive(encounterId: string | undefined) {
           ...prev,
           seq: payload.seq,
           participants: prev.participants.map((p) =>
-            p.participantId === payload.participantId ? { ...p, posX: payload.x, posY: payload.y } : p,
+            p.participantId === payload.participantId
+              ? { ...p, posX: payload.x, posY: payload.y, movementUsedFt: payload.movementUsedFt }
+              : p,
           ),
         }));
       });

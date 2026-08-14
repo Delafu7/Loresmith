@@ -340,7 +340,7 @@ export function broadcastMapUpdated(io: Server, encounter: EncounterLike, map: E
 export async function broadcastTokenMoved(
   io: Server,
   encounter: EncounterLike,
-  participant: { id: string; pos_x: number | null; pos_y: number | null },
+  participant: { id: string; pos_x: number | null; pos_y: number | null; movement_used_ft: number },
 ): Promise<void> {
   const visible = await isParticipantIdVisibleToPlayers(pool, participant.id);
   await emitToEncounterRespectingVisibility(
@@ -348,7 +348,19 @@ export async function broadcastTokenMoved(
     encounter.campaign_id,
     encounter.id,
     'TOKEN_MOVED',
-    { ...envelope(encounter), participantId: participant.id, x: participant.pos_x, y: participant.pos_y },
+    {
+      ...envelope(encounter),
+      participantId: participant.id,
+      x: participant.pos_x,
+      y: participant.pos_y,
+      // The client's movementRemaining display (Token.tsx's drag-preview
+      // label, ActionEconomyPanel) would otherwise stay stale from before
+      // this move until the next ACTION_ECONOMY_CHANGED/FULL_STATE_SYNC —
+      // setParticipantPosition already charges this in the same
+      // transaction that produced pos_x/pos_y, so it costs nothing extra to
+      // carry it here too.
+      movementUsedFt: participant.movement_used_ft,
+    },
     visible,
   );
 }

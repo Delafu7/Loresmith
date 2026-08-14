@@ -806,6 +806,8 @@ export interface Encumbrance {
   heavilyEncumbered: boolean;
 }
 
+export type MapLightingState = 'bright' | 'dim' | 'dark';
+
 export interface CampaignMap {
   id: string;
   campaign_id: string;
@@ -817,6 +819,7 @@ export interface CampaignMap {
   cell_size_px: number;
   feet_per_cell: number;
   notes: string | null;
+  lighting_state: MapLightingState;
   created_at: string;
   updated_at: string;
 }

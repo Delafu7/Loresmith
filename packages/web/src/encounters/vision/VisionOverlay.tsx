@@ -10,7 +10,9 @@
 // token's vision (shared party vision, not per-character). The DM's own
 // default (non-preview) view never mounts this component at all, so
 // `active` gates the whole thing rather than being threaded through as a
-// zero-opacity no-op.
+// zero-opacity no-op. Per-map lighting (nav point 4) — this component is
+// only ever mounted `active` under a 'dark' map lighting state (see
+// BattleMap.tsx's `active` prop); 'bright'/'dim' never mask anything.
 //
 // Persisted "explored" memory (dimly-remembered previously-seen areas) is
 // deliberately NOT implemented here — out of scope for this pass per the
@@ -25,6 +27,21 @@ import type { Segment } from './raycast';
 
 interface CacheEntry {
   participant: SnapshotParticipant;
+  wallSegments: Segment[];
+  polygons: FogPolygon[];
+}
+
+// Per-map lighting (nav point 4) — a `light`-type map element (existing,
+// unrelated per-torch feature: brightRadiusFt/dimRadiusFt) composes with a
+// 'dark' map state by feeding into the SAME union-of-visibility-polygons
+// machinery a token's vision already uses: a light source is modeled as a
+// stationary, always-on "viewer" whose vision radius is its own light
+// radii. A gm_only light still contributes via its redacted stub's
+// `lightRadii` — its effect (revealing an area) is present for players even
+// though the light itself is never drawn, exactly like a hidden wall still
+// blocks vision without being drawn.
+interface LightCacheEntry {
+  element: MapElementOrRedacted;
   wallSegments: Segment[];
   polygons: FogPolygon[];
 }
@@ -96,13 +113,55 @@ export function VisionOverlay({
     return all;
   }, [viewers, wallSegments, cellSizePx, feetPerCell]);
 
+  const lightSources = useMemo(() => mapElements.filter((el) => el.type === 'light'), [mapElements]);
+
+  const lightCacheRef = useRef(new Map<string, LightCacheEntry>());
+
+  const lightPolygons = useMemo(() => {
+    const previous = lightCacheRef.current;
+    const next = new Map<string, LightCacheEntry>();
+    const all: FogPolygon[] = [];
+    for (const el of lightSources) {
+      const radii =
+        'redacted' in el && el.redacted
+          ? el.lightRadii
+          : (el as Extract<MapElementOrRedacted, { type: 'light' }>).props;
+      if (!radii) continue;
+      const cached = previous.get(el.id);
+      const entry: LightCacheEntry =
+        cached && cached.element === el && cached.wallSegments === wallSegments
+          ? cached
+          : {
+              element: el,
+              wallSegments,
+              polygons: buildFogPolygons(
+                [
+                  {
+                    id: `light:${el.id}`,
+                    origin: { x: cellToPx(el.x1, cellSizePx), y: cellToPx(el.y1, cellSizePx) },
+                    visionRadiusPx: feetToCells(radii.brightRadiusFt, feetPerCell) * cellSizePx,
+                    darkvisionRadiusPx: feetToCells(radii.dimRadiusFt, feetPerCell) * cellSizePx,
+                    enabled: true,
+                  },
+                ],
+                wallSegments,
+              ),
+            };
+      next.set(el.id, entry);
+      all.push(...entry.polygons);
+    }
+    lightCacheRef.current = next;
+    return all;
+  }, [lightSources, wallSegments, cellSizePx, feetPerCell]);
+
   const rawId = useId();
   const maskId = `battle-map-vision-mask-${rawId.replace(/[^a-zA-Z0-9]/g, '')}`;
 
   if (!active) return null;
 
-  const brightPolygons = polygons.filter((p) => p.band === 'bright');
-  const darkvisionPolygons = polygons.filter((p) => p.band === 'darkvision');
+  const allPolygons = polygons.concat(lightPolygons);
+  const brightPolygons = allPolygons.filter((p) => p.band === 'bright');
+  const darkvisionPolygons = allPolygons.filter((p) => p.band === 'darkvision');
 
   return (
     <svg className="absolute inset-0 pointer-events-none" width={mapWidthPx} height={mapHeightPx}>

@@ -50,10 +50,15 @@ export interface ElementDefaults<T extends MapElementType> {
   visibility?: 'gm_only' | 'revealed_to_players' | 'owner_only';
 }
 
+/** Palette grouping only — purely presentational, no behavioral branch reads
+ * this (ElementPalette.tsx groups by it; nothing else does). */
+export type ElementCategory = 'structure' | 'lighting' | 'area' | 'annotation';
+
 export interface ElementRegistryEntry<T extends MapElementType> {
   type: T;
   labelKey: string;
   icon: (props: { size?: number; className?: string }) => ReactNode;
+  category: ElementCategory;
   /** 'point' = one click places x1/y1. 'segment' = two clicks place x1/y1 then x2/y2. 'polygon' = clicks accumulate into `points` until the placer finishes (min 3). */
   placement: ElementPlacement;
   blocksVision: (el: Extract<MapElement, { type: T }>) => boolean;
@@ -71,6 +76,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     type: 'wall',
     labelKey: 'encounters.mapElements.types.wall',
     icon: WallIcon,
+    category: 'structure',
     placement: 'segment',
     blocksVision: () => true,
     blocksMovement: () => true,
@@ -96,6 +102,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     type: 'door',
     labelKey: 'encounters.mapElements.types.door',
     icon: DoorIcon,
+    category: 'structure',
     placement: 'segment',
     blocksVision: (el) => el.props.state !== 'open',
     blocksMovement: (el) => el.props.state === 'locked',
@@ -133,6 +140,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     type: 'light',
     labelKey: 'encounters.mapElements.types.light',
     icon: LightIcon,
+    category: 'lighting',
     placement: 'point',
     blocksVision: () => false,
     blocksMovement: () => false,
@@ -173,6 +181,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     type: 'area',
     labelKey: 'encounters.mapElements.types.area',
     icon: AreaIcon,
+    category: 'area',
     placement: 'polygon',
     blocksVision: () => false,
     blocksMovement: () => false,
@@ -211,6 +220,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     type: 'note',
     labelKey: 'encounters.mapElements.types.note',
     icon: NoteIcon,
+    category: 'annotation',
     placement: 'point',
     blocksVision: () => false,
     blocksMovement: () => false,
@@ -235,6 +245,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     type: 'image',
     labelKey: 'encounters.mapElements.types.image',
     icon: ImageIcon,
+    category: 'annotation',
     placement: 'point',
     blocksVision: () => false,
     blocksMovement: () => false,
@@ -282,9 +293,53 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
 /** Ordered for palette rendering — Object.values would work too but this pins a stable, deliberate order. */
 export const ELEMENT_TYPES: MapElementType[] = ['wall', 'door', 'light', 'area', 'note', 'image'];
 
+/** Category display order + label, for ElementPalette.tsx's grouping. */
+export const ELEMENT_CATEGORIES: { key: ElementCategory; labelKey: string }[] = [
+  { key: 'structure', labelKey: 'encounters.mapElements.categories.structure' },
+  { key: 'lighting', labelKey: 'encounters.mapElements.categories.lighting' },
+  { key: 'area', labelKey: 'encounters.mapElements.categories.area' },
+  { key: 'annotation', labelKey: 'encounters.mapElements.categories.annotation' },
+];
+
 export function renderMapElement(el: MapElement, ctx: ElementRenderCtx): ReactNode {
   const entry = ELEMENT_REGISTRY[el.type];
   return (entry.render as (el: MapElement, ctx: ElementRenderCtx) => ReactNode)(el, ctx);
+}
+
+// Synthetic, unsaved MapElement for the live placement-preview ghost
+// (BattleMap.tsx) — always built from the type's own `defaults()`, so the
+// preview always matches exactly what create-on-commit would actually
+// produce, with zero per-type logic at the call site. Same controlled-cast
+// pattern as the helpers above: TypeScript can't correlate a general
+// MapElementType back to its specific props/points shape from outside the
+// registry, so the one unavoidable cast lives here instead of in
+// BattleMap.tsx.
+export function buildPreviewElement(
+  type: MapElementType,
+  x1: number,
+  y1: number,
+  x2: number | null,
+  y2: number | null,
+  points: { x: number; y: number }[] | null,
+): MapElement {
+  const entry = ELEMENT_REGISTRY[type];
+  const d = entry.defaults();
+  return {
+    id: '__placement-preview__',
+    mapId: '',
+    x1,
+    y1,
+    x2,
+    y2,
+    points,
+    label: d.label ?? null,
+    visibility: d.visibility ?? 'revealed_to_players',
+    ownerUserId: null,
+    locked: false,
+    zIndex: 0,
+    type,
+    props: d.props,
+  } as MapElement;
 }
 
 // GM-only visibility layer — a hidden wall/door arrives from the server as

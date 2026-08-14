@@ -17,8 +17,11 @@ import { footprintCellsFor } from './creatureSize';
 import { CONTROL_BADGE_DOT_COLOR, controlBadgeLabel, type ControlBadgeKind } from './controlBadge';
 import { useLocale } from '../i18n/LocaleContext';
 import { HP_BAND_COLOR, bandFor } from '../components/HPBar';
-import { snapToCell } from './geometry';
+import { snapToCell, screenDeltaToWorld } from './geometry';
+import { segmentStyle } from './elements/geometry';
 import { estimateDragDistanceFt, type DiagonalRule } from './dragPreview';
+
+const PATH_STROKE_WIDTH_PX = 3;
 
 function portraitSizeFor(spanPx: number): PortraitSize {
   if (spanPx <= 36) return 'sm';
@@ -207,6 +210,13 @@ function TokenComponent({
   const dragStart = useRef<{ pointerX: number; pointerY: number } | null>(null);
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    // Primary button (or a touch contact) only — a middle-click or a
+    // space-held click must fall through to BattleMap's own pan/pinch
+    // handler untouched, not get hijacked into a token drag. stopPropagation
+    // is the other half of that contract: a drag we DO start here must not
+    // also register as a map pan-start (BattleMap's handler runs on bubble).
+    if (e.button !== 0) return;
+    e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragStart.current = { pointerX: e.clientX, pointerY: e.clientY };
     setDragOffset({ dx: 0, dy: 0 });
@@ -214,7 +224,13 @@ function TokenComponent({
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!dragStart.current) return;
-    setDragOffset({ dx: e.clientX - dragStart.current.pointerX, dy: e.clientY - dragStart.current.pointerY });
+    // Screen-space pointer movement -> world-space offset: the parent's CSS
+    // `scale(zoom)` transform means one screen pixel of pointer movement is
+    // only 1/zoom world pixels of actual map movement — omitting this
+    // division (the pre-existing bug) desynced the token from the cursor at
+    // any zoom other than 100%.
+    const { dx, dy } = screenDeltaToWorld(e.clientX - dragStart.current.pointerX, e.clientY - dragStart.current.pointerY, zoom);
+    setDragOffset({ dx, dy });
   }
 
   // Snap a raw pixel delta to the nearest cell, clamped so a footprint > 1
@@ -229,6 +245,7 @@ function TokenComponent({
 
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
     if (!dragStart.current) return;
+    e.stopPropagation();
     e.currentTarget.releasePointerCapture(e.pointerId);
     const { dx, dy } = dragOffset ?? { dx: 0, dy: 0 };
     dragStart.current = null;
@@ -252,23 +269,48 @@ function TokenComponent({
   let top = posY * cellSizePx;
   let dragPreview: { distanceFt: number; remainingFt: number } | null = null;
   if (dragOffset) {
+    const remainingFt = Math.max(0, (participant.speedFt ?? 0) * (participant.dashUsed ? 2 : 1) - participant.movementUsedFt);
     if (snapToGrid) {
       const target = snappedTargetCell(dragOffset.dx, dragOffset.dy);
       left = target.x * cellSizePx;
       top = target.y * cellSizePx;
-      dragPreview = {
-        distanceFt: estimateDragDistanceFt({ x: posX, y: posY }, target, feetPerCell, diagonalRule),
-        remainingFt: Math.max(0, (participant.speedFt ?? 0) * (participant.dashUsed ? 2 : 1) - participant.movementUsedFt),
-      };
+      dragPreview = { distanceFt: estimateDragDistanceFt({ x: posX, y: posY }, target, feetPerCell, diagonalRule), remainingFt };
     } else {
       left += dragOffset.dx;
       top += dragOffset.dy;
       const target = { x: snapToCell(posX * cellSizePx + dragOffset.dx, cellSizePx), y: snapToCell(posY * cellSizePx + dragOffset.dy, cellSizePx) };
-      dragPreview = {
-        distanceFt: estimateDragDistanceFt({ x: posX, y: posY }, target, feetPerCell, diagonalRule),
-        remainingFt: Math.max(0, (participant.speedFt ?? 0) * (participant.dashUsed ? 2 : 1) - participant.movementUsedFt),
-      };
+      dragPreview = { distanceFt: estimateDragDistanceFt({ x: posX, y: posY }, target, feetPerCell, diagonalRule), remainingFt };
     }
+  }
+
+  // Live path line (token-local coordinates — Token's own root div is
+  // `position: absolute`, establishing the positioning context segmentStyle
+  // needs, so no separate parent-relative math is required). Split into an
+  // in-budget segment and a distinctly-styled over-budget remainder at the
+  // straight-line point where cumulative distance would exceed
+  // dragPreview.remainingFt — a linear interpolation along the pixel line,
+  // not a re-derivation of the alternating 5-10-5 diagonal cost curve
+  // (overkill for a preview-only indicator per dragPreview.ts's own
+  // contract). Endpoint 2 always tracks the CURRENT visual left/top (so it
+  // matches whichever of the snap/no-snap branches above ran), not a fixed
+  // cell — continuous in free-drag mode, stepped in snap mode.
+  let dragPath: { x1: number; y1: number; splitX: number; splitY: number; x2: number; y2: number; overBudget: boolean } | null = null;
+  if (dragOffset && dragPreview) {
+    const originX = posX * cellSizePx + spanPx / 2 - left;
+    const originY = posY * cellSizePx + spanPx / 2 - top;
+    const endX = spanPx / 2;
+    const endY = spanPx / 2;
+    const overBudget = dragPreview.distanceFt > dragPreview.remainingFt;
+    const t = overBudget && dragPreview.distanceFt > 0 ? Math.max(0, Math.min(1, dragPreview.remainingFt / dragPreview.distanceFt)) : 1;
+    dragPath = {
+      x1: originX,
+      y1: originY,
+      splitX: originX + (endX - originX) * t,
+      splitY: originY + (endY - originY) * t,
+      x2: endX,
+      y2: endY,
+      overBudget,
+    };
   }
 
   return (
@@ -290,6 +332,17 @@ function TokenComponent({
         >
           {Math.round(dragPreview.distanceFt)} ft
         </div>
+      )}
+      {dragPath && (
+        <>
+          <div style={segmentStyle(dragPath.x1, dragPath.y1, dragPath.splitX, dragPath.splitY, PATH_STROKE_WIDTH_PX)} className="pointer-events-none rounded-full bg-amber-400/80" />
+          {dragPath.overBudget && (
+            <div
+              style={segmentStyle(dragPath.splitX, dragPath.splitY, dragPath.x2, dragPath.y2, PATH_STROKE_WIDTH_PX)}
+              className="pointer-events-none rounded-full bg-red-500/80"
+            />
+          )}
+        </>
       )}
       {simplified ? (
         // Below SIMPLIFIED_BELOW_PX on screen, a full portrait + HP bar +

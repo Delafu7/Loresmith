@@ -17,6 +17,7 @@ import type {
   EncounterMode,
   EncounterStatus,
   MapElementOrRedacted,
+  MapLightingState,
   ParticipantHp,
   ResourcePool,
 } from './types';
@@ -96,6 +97,10 @@ export interface MapConfig {
   // REFACTOR-PLAN.md §4 — movement-math ratio, distinct from cellSizePx
   // (pixel rendering size). See docs/rules/movement.md §2.1.
   feetPerCell: number;
+  // Per-map lighting state (nav point 4) — not secret (never DM/player
+  // split); only its rendering consequences differ by role, computed
+  // client-side (VisionOverlay.tsx's masking gate + dim tint).
+  lightingState: MapLightingState;
 }
 
 export interface FullStateSyncEvent extends Envelope {
@@ -183,6 +188,11 @@ export interface TokenMovedEvent extends Envelope {
   participantId: string;
   x: number | null;
   y: number | null;
+  // Same value setParticipantPosition charges atomically alongside pos_x/
+  // pos_y server-side — carried here so a client's movementRemaining display
+  // (Token.tsx's drag-preview label, ActionEconomyPanel) doesn't go stale
+  // between this move and the next ACTION_ECONOMY_CHANGED/FULL_STATE_SYNC.
+  movementUsedFt: number;
 }
 
 // Elements are scoped to CampaignMap.id, not one encounter (see

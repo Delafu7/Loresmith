@@ -35,7 +35,8 @@ import { formatDistance } from '../lib/units';
 import { canMoveToken } from './canMoveToken';
 import { Token } from './Token';
 import { controlBadgeFor } from './controlBadge';
-import { ELEMENT_REGISTRY } from './elements/registry';
+import { zoomAtPoint, type Viewport } from './geometry';
+import { ELEMENT_REGISTRY, buildPreviewElement, renderMapElement } from './elements/registry';
 import { ElementPalette } from './elements/ElementPalette';
 import { MapCanvasElements } from './elements/MapCanvasElements';
 import { ElementPropertyPanel } from './elements/ElementPropertyPanel';
@@ -47,9 +48,17 @@ const GRID_MIN = 5;
 const GRID_MAX = 50;
 const CELL_SIZE_MIN = 20;
 const CELL_SIZE_MAX = 150;
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 2;
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.25;
+// Wheel zoom sensitivity — deltaY is typically ~100-120 per notch on a mouse
+// wheel, much finer (~1-10) on a trackpad; this exponent gives a smooth
+// continuous feel across both without a separate trackpad-detection branch.
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+
+function clampZoom(z: number): number {
+  return Math.min(Math.max(z, ZOOM_MIN), ZOOM_MAX);
+}
 
 type CostType = 'difficult' | 'impassable' | 'special';
 interface CellOverride {
@@ -172,7 +181,6 @@ export function BattleMap({
   // doc comment on why); this local timestamp drives the "snapshot as of…"
   // caption so a DM isn't misled into thinking it's tracking live moves.
   const [previewRequestedAt, setPreviewRequestedAt] = useState<Date | null>(null);
-  const [zoom, setZoom] = useState(1);
   const [paintMode, setPaintMode] = useState(false);
   // Generic map elements (walls/doors/lights/areas/notes/images) — mirrors
   // paintMode's own shape. `elementEditMode` shows the palette + lets
@@ -182,6 +190,11 @@ export function BattleMap({
   const [elementEditMode, setElementEditMode] = useState(false);
   const [placingType, setPlacingType] = useState<MapElementType | null>(null);
   const [placingPoints, setPlacingPoints] = useState<{ x: number; y: number }[]>([]);
+  // Live placement preview (Target State - Element placement: "live preview
+  // under cursor before commit") — which grid cell the pointer is currently
+  // over while a placement tool is active. Cell-granularity, matching the
+  // grid-snapped precision every placement type already commits at.
+  const [placementHoverCell, setPlacementHoverCell] = useState<{ x: number; y: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   // GM-only visibility layer — multi-select for the bulk reveal/hide
   // toolbar, mirroring the token multi-select shift-click pattern
@@ -195,48 +208,159 @@ export function BattleMap({
   // second path to the same positionMutation below, for when a finger is in
   // the way of precise dragging.
   const [pendingMove, setPendingMove] = useState<{ x: number; y: number } | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // Client-side, session-only move undo (approved scope: no server/schema
+  // changes, lost on refresh). Tracks the PRE-move cell(s) of whatever move
+  // was just committed — group moves record every member so undo restores
+  // the whole formation, not just the token that was actually dragged.
+  // Restoring via a second position PATCH is a genuine move through the same
+  // validated-cost pipeline as any other drag: free where the original move
+  // was free (DM control, non-active-turn, exploration mode — see
+  // computeValidatedMoveCost), but a real costed backtrack during an active
+  // turn spends movement again, same as walking back anywhere else would —
+  // there is no server refund mechanism for this (addMovementFt is
+  // strictly positive), so this deliberately does NOT claim to restore
+  // movementRemaining for that case; the undo button's title says so.
+  const [lastMove, setLastMove] = useState<Array<{ participantId: string; x: number; y: number }> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
-  // Pinch-to-zoom (docs/design-tokens.md mobile pass: "pinch to zoom and
-  // drag to pan must feel native"). Tracked with raw Pointer Events (same
-  // primitive Token.tsx's drag already uses) rather than a gesture library —
-  // two concurrent pointers on the map area scale `zoom` from the distance
-  // between them; a single pointer is left alone so native one-finger
-  // scroll-panning (the container's own `overflow-auto`) keeps working
-  // untouched. `touch-action: pan-x pan-y` on the container (below) hands
-  // pinch gestures to this handler instead of the browser's page zoom,
-  // without disabling native single-finger panning.
-  const activePointers = useRef(new Map<number, { x: number; y: number }>());
-  const pinchStart = useRef<{ distance: number; zoom: number } | null>(null);
+  // Single source of truth for the infinite-canvas viewport — completely
+  // independent of grid/map config (see the effect below, which only ever
+  // fits it once on initial map load, never on a grid dimension/cell-size
+  // change). Content renders via `transform: translate(panX,panY)
+  // scale(zoom)`; per CSS's transform-composition order scale applies first
+  // (in world space) and translate second (in screen space), so panX/panY
+  // are always plain screen pixels regardless of zoom — see geometry.ts's
+  // Viewport doc comment.
+  const [viewport, setViewport] = useState<Viewport>({ panX: 0, panY: 0, zoom: 1 });
 
-  function pointerDistance(): number | null {
+  function zoomAtScreenPoint(screenX: number, screenY: number, targetZoom: number) {
+    setViewport((prev) => zoomAtPoint(screenX, screenY, clampZoom(targetZoom), prev));
+  }
+
+  function zoomAtContainerCenter(targetZoom: number) {
+    const el = containerRef.current;
+    if (!el) {
+      setViewport((prev) => ({ ...prev, zoom: clampZoom(targetZoom) }));
+      return;
+    }
+    zoomAtScreenPoint(el.clientWidth / 2, el.clientHeight / 2, targetZoom);
+  }
+
+  // Space-drag panning (docs brief: "pan via middle-drag and space-drag").
+  // Scoped to window so the key registers regardless of which element has
+  // focus; token draggability is gated off while held (isDraggable prop
+  // below) so a space-drag never gets hijacked into a token move.
+  const [spacePressed, setSpacePressed] = useState(false);
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.code === 'Space' && !e.repeat) setSpacePressed(true);
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === 'Space') setSpacePressed(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
+
+  // Pinch-to-zoom + middle/space/touch-drag panning, unified over raw
+  // Pointer Events (same primitive Token.tsx's drag already uses) since the
+  // viewport is no longer a native-scrollable element (no more
+  // `overflow-auto` — see the container div below) — panning is now applied
+  // to `viewport.panX/panY` directly instead of relying on native scroll.
+  // Two concurrent pointers -> pinch-zoom, anchored at their midpoint. A
+  // single pointer starts a pan only for a middle-click, a space-held
+  // left-click, or any touch pointer (preserving this app's existing
+  // single-finger-pans-the-map mobile behavior now that native scroll can no
+  // longer provide it) — a plain left-click/tap is left alone so it still
+  // reaches cell/token click handlers underneath undisturbed. Token.tsx's
+  // own pointerDown stops propagation for its own draggable primary-button
+  // drags, so this never double-handles a token drag as a pan.
+  const activePointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchStart = useRef<{ distance: number; midX: number; midY: number; zoom: number } | null>(null);
+  const panState = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null);
+
+  function pointerMidpointAndDistance(): { distance: number; midX: number; midY: number } | null {
     const pts = [...activePointers.current.values()];
     if (pts.length < 2) return null;
     const [a, b] = pts;
-    return Math.hypot(a!.x - b!.x, a!.y - b!.y);
+    return { distance: Math.hypot(a!.x - b!.x, a!.y - b!.y), midX: (a!.x + b!.x) / 2, midY: (a!.y + b!.y) / 2 };
+  }
+
+  function containerRelative(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = containerRef.current?.getBoundingClientRect();
+    return { x: clientX - (rect?.left ?? 0), y: clientY - (rect?.top ?? 0) };
   }
 
   function handleMapPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const distance = pointerDistance();
-    if (distance != null) pinchStart.current = { distance, zoom };
+    const pinch = pointerMidpointAndDistance();
+    if (pinch) {
+      panState.current = null;
+      pinchStart.current = { ...pinch, zoom: viewport.zoom };
+      return;
+    }
+    const isMiddle = e.button === 1;
+    const isSpacePan = e.button === 0 && spacePressed;
+    const isTouchPan = e.pointerType === 'touch';
+    if (isMiddle || isSpacePan || isTouchPan) {
+      if (isMiddle) e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      panState.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+    }
   }
 
   function handleMapPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!activePointers.current.has(e.pointerId)) return;
-    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (!pinchStart.current) return;
-    const distance = pointerDistance();
-    if (distance == null || pinchStart.current.distance === 0) return;
-    userZoomedRef.current = true;
-    setZoom(clamp10(pinchStart.current.zoom * (distance / pinchStart.current.distance)));
+    if (activePointers.current.has(e.pointerId)) activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinchStart.current) {
+      const pinch = pointerMidpointAndDistance();
+      if (!pinch || pinchStart.current.distance === 0) return;
+      const anchor = containerRelative(pinch.midX, pinch.midY);
+      zoomAtScreenPoint(anchor.x, anchor.y, pinchStart.current.zoom * (pinch.distance / pinchStart.current.distance));
+      return;
+    }
+    const pan = panState.current;
+    if (pan && pan.pointerId === e.pointerId) {
+      const dx = e.clientX - pan.lastX;
+      const dy = e.clientY - pan.lastY;
+      panState.current = { ...pan, lastX: e.clientX, lastY: e.clientY };
+      setViewport((prev) => ({ ...prev, panX: prev.panX + dx, panY: prev.panY + dy }));
+    }
   }
 
   function handleMapPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
     activePointers.current.delete(e.pointerId);
     if (activePointers.current.size < 2) pinchStart.current = null;
+    if (panState.current?.pointerId === e.pointerId) panState.current = null;
   }
+
+  // Cursor-anchored continuous wheel zoom. Attached as a native (non-passive)
+  // listener rather than React's synthetic onWheel — React 17+ attaches
+  // onWheel at the root as a passive listener by default, which silently
+  // drops preventDefault() and lets the page itself scroll/zoom underneath.
+  // Reads/writes viewport only through the functional setViewport updater
+  // above, so this never closes over a stale zoom/pan and can be attached
+  // once on mount.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const rect = el!.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      setViewport((prev) => {
+        const targetZoom = clampZoom(prev.zoom * Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY));
+        return zoomAtPoint(screenX, screenY, targetZoom, prev);
+      });
+    }
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   const positionMutation = useMutation({
     mutationFn: ({ participantId, x, y }: { participantId: string; x: number | null; y: number | null }) =>
@@ -291,6 +415,12 @@ export function BattleMap({
 
   const createElementMutation = useCreateMapElement(encounterId);
   const setElementsVisibilityBatchMutation = useSetMapElementsVisibilityBatch(encounterId);
+  // Per-map lighting state (nav point 4) — MAP_UPDATED (broadcast by the
+  // route) is the live-sync path; no local cache write needed here.
+  const setLightingMutation = useMutation({
+    mutationFn: (lightingState: 'bright' | 'dim' | 'dark') =>
+      api.patch(`/encounters/${encounterId}/map/lighting`, { lightingState }),
+  });
   // Only the DM can select an element for editing (elementEditMode is
   // isDm-gated below), and the DM's own payload is always the full,
   // unredacted shape — this filter is a type-narrowing formality, not a
@@ -326,7 +456,21 @@ export function BattleMap({
   function cancelPlacement() {
     setPlacingType(null);
     setPlacingPoints([]);
+    setPlacementHoverCell(null);
   }
+
+  // Target State - Element placement: "Escape cancels in-progress
+  // placement." Scoped to window (same pattern as the space-drag key
+  // tracking above) so it fires regardless of which element has focus.
+  useEffect(() => {
+    if (!placingType) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') cancelPlacement();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placingType]);
 
   // Generic over ELEMENT_REGISTRY's `placement` field — a 'point' type
   // creates on the first click, a 'segment' type needs two clicks (start,
@@ -466,83 +610,122 @@ export function BattleMap({
     if (!map) return;
     const group = multiSelectedIds.has(participant.participantId) && multiSelectedIds.size > 1 ? multiSelectedIds : null;
     if (!group) {
+      if (participant.posX != null && participant.posY != null) {
+        setLastMove([{ participantId: participant.participantId, x: participant.posX, y: participant.posY }]);
+      }
       positionMutation.mutate({ participantId: participant.participantId, x, y });
       return;
     }
     const dx = x - (participant.posX ?? x);
     const dy = y - (participant.posY ?? y);
+    const priorPositions: Array<{ participantId: string; x: number; y: number }> = [];
     for (const id of group) {
       const member = placed.find((p) => p.participantId === id);
       if (!member || member.posX == null || member.posY == null) continue;
+      priorPositions.push({ participantId: id, x: member.posX, y: member.posY });
       const nx = Math.min(Math.max(member.posX + dx, 0), map.gridColumns - 1);
       const ny = Math.min(Math.max(member.posY + dy, 0), map.gridRows - 1);
       positionMutation.mutate({ participantId: id, x: nx, y: ny });
     }
+    if (priorPositions.length > 0) setLastMove(priorPositions);
   }
 
+  function undoLastMove() {
+    if (!lastMove) return;
+    for (const { participantId, x, y } of lastMove) {
+      positionMutation.mutate({ participantId, x, y });
+    }
+    setLastMove(null);
+  }
+
+  // Pans (no zoom change) so the active participant's token centers in the
+  // viewport — an instant pan-set on the single viewport state, not a
+  // native scrollTo (there's no scrollable element anymore).
   function centerOnActive() {
-    const container = scrollRef.current;
-    if (!container || !map || activeParticipantId == null) return;
+    const el = containerRef.current;
+    if (!el || !map || activeParticipantId == null) return;
     const active = placed.find((p) => p.participantId === activeParticipantId);
     if (!active || active.posX == null || active.posY == null) return;
-    const centerX = (active.posX + 0.5) * map.cellSizePx * zoom;
-    const centerY = (active.posY + 0.5) * map.cellSizePx * zoom;
-    container.scrollTo({
-      left: centerX - container.clientWidth / 2,
-      top: centerY - container.clientHeight / 2,
-      behavior: 'smooth',
-    });
+    const worldX = (active.posX + 0.5) * map.cellSizePx;
+    const worldY = (active.posY + 0.5) * map.cellSizePx;
+    setViewport((prev) => ({
+      ...prev,
+      panX: el.clientWidth / 2 - worldX * prev.zoom,
+      panY: el.clientHeight / 2 - worldY * prev.zoom,
+    }));
   }
 
   const mapWidthPx = map ? map.gridColumns * map.cellSizePx : 0;
   const mapHeightPx = map ? map.gridRows * map.cellSizePx : 0;
 
-  // Fit-to-container zoom: the grid otherwise renders at its literal
-  // gridColumns*cellSizePx pixel size regardless of how much room the
-  // surrounding page gives it, leaving a large dead/empty strip in the
-  // scrollable container whenever the map is smaller than the viewport
-  // (reported directly against both the fullscreen live map and the new Map
-  // section). `userZoomedRef` stops this from fighting a zoom the user set
-  // on purpose — the zoom +/- buttons and pinch handler below all set it,
-  // and Reset clears it so the map goes back to auto-fitting on the next
-  // resize instead of pinning a fixed percentage.
-  //
-  // Applied directly from the ResizeObserver callback rather than via a
-  // second effect keyed on a `containerSize` state value — that two-step
-  // version lost its very first fit under React StrictMode's dev-only
-  // mount→cleanup→mount cycle (the first observer's initial notification
-  // landed after its own disconnect(), so only a later resize would have
-  // ever triggered it — confirmed live: the map sat at 100% until a manual
-  // Reset click, which computes the same formula synchronously and worked
-  // immediately). One callback, no intermediate render needed to apply it.
-  const userZoomedRef = useRef(false);
-
-  function fitZoomFor(width: number, height: number): number {
-    if (mapWidthPx <= 0 || mapHeightPx <= 0) return 1;
-    // max, not min: a "contain" fit (min of both ratios) shrinks a
-    // roughly-square map down to whichever dimension is more restrictive —
-    // for a square grid inside a short-and-wide viewport that's the height,
-    // which left the exact large dead strip on the sides this was meant to
-    // remove. max fills the container on at least one axis (usually width,
-    // for the common short-and-wide case), scrolling for whatever overflows
-    // the other axis — panning a map that's bigger than the viewport is
-    // already a normal, supported interaction here (drag-to-pan, zoom
-    // controls, center-on-active), unlike leaving most of the screen empty.
-    return clamp10(Math.max(width / mapWidthPx, height / mapHeightPx));
+  // "Contain" fit (min of both axis ratios) + centering — frames the WHOLE
+  // map with no letterboxing distortion, leaving empty canvas on one axis
+  // for a non-matching aspect ratio rather than cropping. Unlike the old
+  // scroll-container model, empty canvas here costs nothing and looks
+  // intentional (this is an infinite canvas, not a document that "should"
+  // fill edge-to-edge) — so contain/min replaces the old max-based "fill at
+  // least one axis" fit, which existed only to avoid dead space inside a
+  // native-scrollbar container that no longer exists.
+  function computeFitViewport(width: number, height: number): Viewport {
+    if (mapWidthPx <= 0 || mapHeightPx <= 0) return { panX: 0, panY: 0, zoom: 1 };
+    const fitZoom = clampZoom(Math.min(width / mapWidthPx, height / mapHeightPx));
+    return { zoom: fitZoom, panX: (width - mapWidthPx * fitZoom) / 2, panY: (height - mapHeightPx * fitZoom) / 2 };
   }
 
-  useEffect(() => {
-    const el = scrollRef.current;
+  function fitToScreen() {
+    const el = containerRef.current;
     if (!el) return;
+    setViewport(computeFitViewport(el.clientWidth, el.clientHeight));
+  }
+
+  function resetTo100() {
+    zoomAtContainerCenter(1);
+  }
+
+  // Auto-fits exactly ONCE per map (keyed on map.id, not on
+  // gridColumns/gridRows/cellSizePx) — the core viewport/grid decoupling
+  // this rewrite exists for: reconfiguring the grid must never move pan/zoom
+  // out from under the DM. A ResizeObserver (not a plain mount effect) is
+  // still needed for the very first fit specifically because the container
+  // may not have its final flex-computed size yet on first paint/under
+  // StrictMode's dev-only mount->cleanup->mount cycle — the observer's first
+  // callback is the first point a real contentRect is guaranteed.
+  const fittedMapIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !map) return;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (!entry || userZoomedRef.current) return;
-      setZoom(fitZoomFor(entry.contentRect.width, entry.contentRect.height));
+      if (!entry || fittedMapIdRef.current === map.id) return;
+      fittedMapIdRef.current = map.id;
+      setViewport(computeFitViewport(entry.contentRect.width, entry.contentRect.height));
     });
     observer.observe(el);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapWidthPx, mapHeightPx]);
+  }, [map?.id]);
+
+  // Live placement preview ghost — generic over ELEMENT_REGISTRY via
+  // buildPreviewElement (registry.tsx), so this never branches on
+  // `placingType` beyond the same `placement` field BattleMap already
+  // switches on elsewhere for placement hints. 'point': previews at the
+  // hovered cell directly. 'segment': nothing until the start point is
+  // placed, then previews live from there to the hovered cell. 'polygon':
+  // nothing until the first point, then previews the accumulated points
+  // plus a live edge out to the hovered cell.
+  let placementPreviewElement: MapElement | null = null;
+  if (placingType && placementHoverCell) {
+    const entry = ELEMENT_REGISTRY[placingType];
+    if (entry.placement === 'point') {
+      placementPreviewElement = buildPreviewElement(placingType, placementHoverCell.x, placementHoverCell.y, null, null, null);
+    } else if (entry.placement === 'segment' && placingPoints.length === 1) {
+      const start = placingPoints[0]!;
+      placementPreviewElement = buildPreviewElement(placingType, start.x, start.y, placementHoverCell.x, placementHoverCell.y, null);
+    } else if (entry.placement === 'polygon' && placingPoints.length >= 1) {
+      const anchor = placingPoints[0]!;
+      placementPreviewElement = buildPreviewElement(placingType, anchor.x, anchor.y, null, null, [...placingPoints, placementHoverCell]);
+    }
+  }
 
   if (!map) {
     return (
@@ -568,24 +751,18 @@ export function BattleMap({
         <div className="flex items-center gap-1 flex-wrap">
           <button
             type="button"
-            onClick={() => {
-              userZoomedRef.current = true;
-              setZoom((z) => clamp10(z - ZOOM_STEP));
-            }}
-            disabled={zoom <= ZOOM_MIN}
+            onClick={() => zoomAtContainerCenter(viewport.zoom - ZOOM_STEP)}
+            disabled={viewport.zoom <= ZOOM_MIN}
             aria-label={t('encounters.battleMap.zoomOut')}
             className="min-h-11 min-w-11 rounded-md bg-stone-900 shadow-sm text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
           >
             −
           </button>
-          <span className="text-xs text-stone-400 w-12 text-center">{Math.round(zoom * 100)}%</span>
+          <span className="text-xs text-stone-400 w-12 text-center">{Math.round(viewport.zoom * 100)}%</span>
           <button
             type="button"
-            onClick={() => {
-              userZoomedRef.current = true;
-              setZoom((z) => clamp10(z + ZOOM_STEP));
-            }}
-            disabled={zoom >= ZOOM_MAX}
+            onClick={() => zoomAtContainerCenter(viewport.zoom + ZOOM_STEP)}
+            disabled={viewport.zoom >= ZOOM_MAX}
             aria-label={t('encounters.battleMap.zoomIn')}
             className="min-h-11 min-w-11 rounded-md bg-stone-900 shadow-sm text-sm text-stone-300 hover:bg-stone-800 disabled:opacity-40"
           >
@@ -593,18 +770,17 @@ export function BattleMap({
           </button>
           <button
             type="button"
-            onClick={() => {
-              // "Reset" means "fit the map to the screen" now, not a literal
-              // 100% — clearing the ref lets the effect above keep it fitted
-              // through future container resizes too, instead of pinning a
-              // manual zoom the user didn't ask to keep.
-              userZoomedRef.current = false;
-              const el = scrollRef.current;
-              setZoom(el ? fitZoomFor(el.clientWidth, el.clientHeight) : 1);
-            }}
+            onClick={resetTo100}
             className="min-h-11 rounded-md bg-stone-900 shadow-sm px-3 text-xs text-stone-400 hover:bg-stone-800"
           >
             {t('encounters.battleMap.reset')}
+          </button>
+          <button
+            type="button"
+            onClick={fitToScreen}
+            className="min-h-11 rounded-md bg-stone-900 shadow-sm px-3 text-xs text-stone-400 hover:bg-stone-800"
+          >
+            {t('encounters.battleMap.fitToScreen')}
           </button>
           <button
             type="button"
@@ -614,6 +790,9 @@ export function BattleMap({
           >
             {t('encounters.battleMap.centerOnActive')}
           </button>
+          <span className="hidden text-[10px] text-stone-600 sm:inline" title={t('encounters.battleMap.panHint')}>
+            {t('encounters.battleMap.panHint')}
+          </span>
           <button
             type="button"
             onClick={() => setSnapToGrid((s) => !s)}
@@ -625,6 +804,17 @@ export function BattleMap({
           >
             {t('encounters.battleMap.snapToGrid')}
           </button>
+          {lastMove && (
+            <button
+              type="button"
+              onClick={undoLastMove}
+              disabled={positionMutation.isPending}
+              title={t('encounters.battleMap.undoMoveTitle')}
+              className="min-h-11 rounded-md bg-stone-900 shadow-sm px-3 text-xs text-stone-400 hover:bg-stone-800 disabled:opacity-40"
+            >
+              {t('encounters.battleMap.undoMove')}
+            </button>
+          )}
           {!isDm && (
             <span className="text-xs text-stone-500 ml-1">{t('encounters.battleMap.fogActiveHint')}</span>
           )}
@@ -714,6 +904,21 @@ export function BattleMap({
               {elementEditMode ? t('encounters.mapElements.editingElements') : t('encounters.mapElements.editElements')}
             </button>
           )}
+          {isDm && map && (
+            <label className="flex items-center gap-1.5 text-xs text-stone-400">
+              {t('encounters.battleMap.lightingLabel')}
+              <select
+                value={map.lightingState}
+                onChange={(e) => setLightingMutation.mutate(e.target.value as 'bright' | 'dim' | 'dark')}
+                disabled={setLightingMutation.isPending}
+                className="rounded-md bg-stone-800 border border-stone-700 px-1.5 py-1 text-xs text-stone-100"
+              >
+                <option value="bright">{t('encounters.battleMap.lightingBright')}</option>
+                <option value="dim">{t('encounters.battleMap.lightingDim')}</option>
+                <option value="dark">{t('encounters.battleMap.lightingDark')}</option>
+              </select>
+            </label>
+          )}
           {isDm && (
             <button
               type="button"
@@ -730,7 +935,15 @@ export function BattleMap({
       )}
       {isDm && elementEditMode && (
         <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
-          <ElementPalette placingType={placingType} onSelectType={(type) => { setPlacingPoints([]); setPlacingType(type); setSelectedElementId(null); }} />
+          <ElementPalette
+            placingType={placingType}
+            onSelectType={(type) => {
+              setPlacingPoints([]);
+              setPlacementHoverCell(null);
+              setPlacingType(type);
+              setSelectedElementId(null);
+            }}
+          />
           {placingType && (
             <span className="text-xs text-stone-400">
               {ELEMENT_REGISTRY[placingType].placement === 'point' &&
@@ -740,6 +953,8 @@ export function BattleMap({
                   ? t('encounters.mapElements.placeSegmentHintFirst', { type: t(ELEMENT_REGISTRY[placingType].labelKey as TranslationKey) })
                   : t('encounters.mapElements.placeSegmentHintSecond', { type: t(ELEMENT_REGISTRY[placingType].labelKey as TranslationKey) }))}
               {ELEMENT_REGISTRY[placingType].placement === 'polygon' && t('encounters.mapElements.placePolygonHint')}
+              {' — '}
+              {t('encounters.mapElements.escapeCancelHint')}
             </span>
           )}
           {placingType && ELEMENT_REGISTRY[placingType].placement === 'polygon' && placingPoints.length >= 3 && (
@@ -779,16 +994,29 @@ export function BattleMap({
       )}
 
       <div
-        ref={scrollRef}
+        ref={containerRef}
         onPointerDown={handleMapPointerDown}
         onPointerMove={handleMapPointerMove}
         onPointerUp={handleMapPointerUp}
         onPointerCancel={handleMapPointerUp}
-        style={{ touchAction: 'pan-x pan-y' }}
-        className="min-h-0 min-w-0 flex-1 overflow-auto bg-stone-950 shadow-sm p-1.5 sm:rounded-md sm:p-3 overscroll-contain"
+        // touchAction 'none': the browser's own native touch scroll/pinch
+        // would otherwise fight the pointer-event pan/pinch handlers above —
+        // this canvas is never natively scrollable (no `overflow-auto`
+        // anymore; it always fills 100% of this container, see Target
+        // State - Viewport), so nothing native should intercept a touch here.
+        style={{ touchAction: 'none', cursor: spacePressed ? 'grab' : undefined }}
+        className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-stone-950 shadow-sm sm:rounded-md"
       >
-          <div style={{ width: mapWidthPx * zoom, height: mapHeightPx * zoom }}>
-            <div className="flex" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
+            {/* Single transform is the whole viewport: translate (screen px,
+                pan) then scale (zoom) — see geometry.ts's Viewport doc
+                comment for why that composition order keeps panX/panY
+                zoom-independent. Positioned absolute at the container's
+                origin so it's never constrained/sized by mapWidthPx*zoom
+                the way the old native-scroll spacer div was. */}
+            <div
+              className="absolute left-0 top-0 flex"
+              style={{ transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`, transformOrigin: 'top left' }}
+            >
               {/* Row-number column */}
               <div className="flex flex-col flex-shrink-0" style={{ marginTop: 18 }}>
                 {Array.from({ length: map.gridRows }, (_, y) => (
@@ -856,6 +1084,7 @@ export function BattleMap({
                       gridTemplateColumns: `repeat(${map.gridColumns}, 1fr)`,
                       gridTemplateRows: `repeat(${map.gridRows}, 1fr)`,
                     }}
+                    onMouseLeave={() => placingType && setPlacementHoverCell(null)}
                   >
                     {Array.from({ length: map.gridRows }, (_, y) =>
                       Array.from({ length: map.gridColumns }, (_, x) => {
@@ -866,6 +1095,7 @@ export function BattleMap({
                         return (
                           <div
                             key={`${x},${y}`}
+                            onMouseEnter={placingType ? () => setPlacementHoverCell({ x, y }) : undefined}
                             onClick={
                               placingType
                                 ? () => handleElementPlacementClick(x, y)
@@ -904,6 +1134,17 @@ export function BattleMap({
                     resolveAssetUrl={resolveAssetUrl}
                   />
 
+                  {placementPreviewElement && (
+                    <div className="pointer-events-none opacity-60 outline-dashed">
+                      {renderMapElement(placementPreviewElement, {
+                        cellSizePx: map.cellSizePx,
+                        isSelected: false,
+                        onSelect: () => {},
+                        resolveAssetUrl,
+                      })}
+                    </div>
+                  )}
+
                   {previewPlaced.map((p) => (
                     <Token
                       key={p.participantId}
@@ -911,9 +1152,9 @@ export function BattleMap({
                       cellSizePx={map.cellSizePx}
                       gridColumns={map.gridColumns}
                       gridRows={map.gridRows}
-                      zoom={zoom}
+                      zoom={viewport.zoom}
                       isActive={p.participantId === activeParticipantId}
-                      isDraggable={!previewActive && canControl(p)}
+                      isDraggable={!previewActive && canControl(p) && !spacePressed}
                       isSelected={p.participantId === selectedId}
                       isMultiSelected={multiSelectedIds.has(p.participantId)}
                       controlBadge={controlBadgeFor(p.characterId, characters, user?.id)}
@@ -937,12 +1178,28 @@ export function BattleMap({
                     feetPerCell={map.feetPerCell}
                     mapWidthPx={mapWidthPx}
                     mapHeightPx={mapHeightPx}
-                    active={!isDm || previewPlayerView}
+                    active={(!isDm || previewPlayerView) && map.lightingState === 'dark'}
                   />
+
+                  {/* Per-map lighting (nav point 4) — a flat, non-blocking
+                      tint distinct from VisionOverlay's opaque fog mask
+                      above (dim never masks, only tints). Applied for every
+                      viewer including the DM's own default view — "GM
+                      always sees the unmasked map" is read here as
+                      specifically about the opaque fog mask (bright/dark),
+                      not this cosmetic mood tint, which a DM would
+                      plausibly want to preview too; flip this condition to
+                      also require `!isDm || previewPlayerView` if a fully
+                      neutral DM screen was actually intended. */}
+                  {map.lightingState === 'dim' && (
+                    <div
+                      className="absolute inset-0 pointer-events-none bg-slate-950/25"
+                      style={{ width: mapWidthPx, height: mapHeightPx }}
+                    />
+                  )}
                 </div>
               </div>
             </div>
-          </div>
         </div>
 
       {/* Tap-to-move confirm bar (docs/design-tokens.md mobile pass) — a
@@ -1008,11 +1265,6 @@ export function BattleMap({
       )}
     </div>
   );
-}
-
-function clamp10(n: number): number {
-  // Avoids float drift (0.1 + 0.2 !== 0.3) from repeated +/- ZOOM_STEP clicks.
-  return Math.round(clamp(Math.round(n * 100), ZOOM_MIN * 100, ZOOM_MAX * 100)) / 100;
 }
 
 // DM-only grid/background configuration. Inline panel (not a modal/route) so
