@@ -53,6 +53,9 @@ export function validateDerivedStats(draft: WizardDraft): StepValidation {
 export function validateSkills(_draft: WizardDraft): StepValidation {
   return result({});
 }
+export function validateFeats(_draft: WizardDraft): StepValidation {
+  return result({});
+}
 export function validateEquipment(_draft: WizardDraft): StepValidation {
   return result({});
 }

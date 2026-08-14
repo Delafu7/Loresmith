@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react';
 import type { WizardDraft, SkillProficiencyLevel } from './types';
 import type { AbilityKey } from '../abilityScoreGeneration';
+import type { ClassCatalog } from '../../lib/types';
 import { useSkillsCatalog, useAbilityScoresCatalog } from '../../lib/useCatalog';
 import { formatModifier, proficiencyBonusForLevel, skillModifier } from '../../lib/dnd-math';
 import { Loading } from '../../components/Feedback';
@@ -10,15 +12,34 @@ const LEVEL_CYCLE: (SkillProficiencyLevel | 'none')[] = ['none', 'proficient', '
 export function SkillsStep({
   draft,
   onChange,
+  selectedClass,
   readOnly,
 }: {
   draft: WizardDraft;
   onChange: (patch: Partial<WizardDraft>) => void;
+  selectedClass: ClassCatalog | null;
   readOnly: boolean;
 }) {
   const { t } = useLocale();
   const skillsQuery = useSkillsCatalog();
   const abilityScoresQuery = useAbilityScoresCatalog();
+
+  // Subclasses carry zero mechanical data columns today (compendium feature
+  // decision — substitute class-level effects instead), so "selecting a
+  // subclass applies mechanical effects" is satisfied by auto-populating
+  // saving-throw proficiencies from the selected CLASS's own
+  // saving_throw_proficiency_ids. Applied once per distinct class selection,
+  // and only while the list is still untouched, so it prefills a sensible
+  // default without fighting a save the player already customized.
+  const appliedClassId = useRef<string | null>(null);
+  useEffect(() => {
+    if (readOnly || !selectedClass || appliedClassId.current === selectedClass.id) return;
+    appliedClassId.current = selectedClass.id;
+    if (draft.savingThrowAbilityScoreIds.length === 0 && selectedClass.saving_throw_proficiency_ids) {
+      onChange({ savingThrowAbilityScoreIds: selectedClass.saving_throw_proficiency_ids });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClass?.id, readOnly]);
 
   if (skillsQuery.isLoading || abilityScoresQuery.isLoading) return <Loading />;
 

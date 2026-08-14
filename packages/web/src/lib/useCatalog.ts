@@ -6,6 +6,7 @@ import type {
   ClassCatalog,
   DamageTypeCatalog,
   EffectDefinitionCatalog,
+  FeatCatalog,
   ItemCatalogEntry,
   RaceCatalog,
   SkillCatalog,
@@ -81,6 +82,19 @@ export function useClassesCatalog(edition: '2014' | '2024' | 'both') {
   return useQuery({
     queryKey: ['catalog', 'classes', edition],
     queryFn: () => api.get<{ classes: ClassCatalog[] }>(`/catalog/classes?edition=${edition}`),
+    staleTime: Infinity,
+  });
+}
+
+// Compendium feature: feat selection step in character creation
+// (wizard/FeatsStep.tsx). No campaignId passed, same as
+// useRacesCatalog/useClassesCatalog above — the server-side owning_user_id
+// union (services/catalog.ts) means this already includes the caller's own
+// personal-compendium feats alongside the global catalog with no extra param.
+export function useFeatsCatalog(edition: '2014' | '2024' | 'both') {
+  return useQuery({
+    queryKey: ['catalog', 'feats', edition],
+    queryFn: () => api.get<{ feats: FeatCatalog[] }>(`/catalog/feats?edition=${edition}`),
     staleTime: Infinity,
   });
 }

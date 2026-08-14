@@ -1,5 +1,5 @@
 // Multi-step character creation (identity -> ability scores -> derived
-// stats -> skills -> equipment/notes -> portrait). Sits alongside
+// stats -> skills -> feats -> equipment/notes -> portrait). Sits alongside
 // CharactersListPage.tsx's existing inline quick-create form (kept as-is,
 // the fast NPC path) rather than replacing it.
 //
@@ -30,21 +30,23 @@ import type { Character, CampaignAsset, CampaignMember } from '../../lib/types';
 import { useAuth } from '../../auth/AuthContext';
 import { useCampaignShell } from '../../campaigns/CampaignShell';
 import { useLocale } from '../../i18n/LocaleContext';
-import { useRacesCatalog, useBackgroundsCatalog, useClassesCatalog } from '../../lib/useCatalog';
+import { useRacesCatalog, useSubracesCatalog, useBackgroundsCatalog, useClassesCatalog } from '../../lib/useCatalog';
+import { applyAbilityBonuses } from '../deriveAbilityBonuses';
 import { Loading, ErrorBanner, errorMessage } from '../../components/Feedback';
 import { Button, ButtonLink } from '../../components/ui/Button';
 import { emptyWizardDraft, WIZARD_STEP_IDS, type WizardDraft } from './types';
-import { validateIdentity, validateAbilityScores, validateDerivedStats, validateSkills, validateEquipment, validatePortrait, type StepValidation } from './validation';
+import { validateIdentity, validateAbilityScores, validateDerivedStats, validateSkills, validateFeats, validateEquipment, validatePortrait, type StepValidation } from './validation';
 import { WizardStepNav } from './WizardStepNav';
 import { LivePreviewPanel } from './LivePreviewPanel';
 import { IdentityStep } from './IdentityStep';
 import { AbilityScoresStep } from './AbilityScoresStep';
 import { DerivedStatsStep } from './DerivedStatsStep';
 import { SkillsStep } from './SkillsStep';
+import { FeatsStep } from './FeatsStep';
 import { EquipmentStep } from './EquipmentStep';
 import { PortraitStep } from './PortraitStep';
 
-const VALIDATORS = [validateIdentity, validateAbilityScores, validateDerivedStats, validateSkills, validateEquipment, validatePortrait];
+const VALIDATORS = [validateIdentity, validateAbilityScores, validateDerivedStats, validateSkills, validateFeats, validateEquipment, validatePortrait];
 const EQUIPMENT_STEP_INDEX = WIZARD_STEP_IDS.indexOf('equipment');
 const PORTRAIT_STEP_INDEX = WIZARD_STEP_IDS.indexOf('portrait');
 
@@ -73,6 +75,7 @@ export function CharacterCreationWizard() {
     queryFn: () => api.get<{ members: CampaignMember[] }>(`/campaigns/${campaignId}/members`),
   });
   const racesQuery = useRacesCatalog(edition);
+  const subracesQuery = useSubracesCatalog(edition);
   const backgroundsQuery = useBackgroundsCatalog(edition);
   const classesQuery = useClassesCatalog(edition);
 
@@ -82,6 +85,13 @@ export function CharacterCreationWizard() {
 
   const submitMutation = useMutation({
     mutationFn: async (): Promise<SubmitResult> => {
+      // characters.str/dex/... stores one final value with no separate base
+      // column — race/subrace ability bonuses are applied here, once, at
+      // submission time, not just previewed in DerivedStatsStep.
+      const selectedRace = racesQuery.data?.races.find((r) => r.id === draft.raceId) ?? null;
+      const selectedSubrace = subracesQuery.data?.subraces.find((s) => s.id === draft.subraceId) ?? null;
+      const finalScores = applyAbilityBonuses(draft.scores, selectedRace, selectedSubrace);
+
       const created = await api.post<{ character: Character }>(`/campaigns/${campaignId}/characters`, {
         name: draft.name,
         isPc: draft.isPc,
@@ -90,12 +100,12 @@ export function CharacterCreationWizard() {
         subraceId: draft.subraceId || undefined,
         backgroundId: draft.backgroundId || undefined,
         alignment: draft.alignment || undefined,
-        str: draft.scores.str,
-        dex: draft.scores.dex,
-        con: draft.scores.con,
-        int: draft.scores.int,
-        wis: draft.scores.wis,
-        cha: draft.scores.cha,
+        str: finalScores.str,
+        dex: finalScores.dex,
+        con: finalScores.con,
+        int: finalScores.int,
+        wis: finalScores.wis,
+        cha: finalScores.cha,
         armorClass: draft.armorClass,
         hpMax: draft.hpMax,
         notes: draft.notes || undefined,
@@ -133,6 +143,14 @@ export function CharacterCreationWizard() {
           );
         } catch (err) {
           stepWarnings.push(t('characters.wizard.submit.savesFailed', { message: errorMessage(err) }));
+        }
+      }
+
+      for (const featId of draft.featIds) {
+        try {
+          await api.post(`/characters/${characterId}/feats`, { featId });
+        } catch (err) {
+          stepWarnings.push(t('characters.wizard.submit.featFailed', { message: errorMessage(err) }));
         }
       }
 
@@ -177,7 +195,9 @@ export function CharacterCreationWizard() {
     goToStep(Math.max(stepIndex - 1, 0));
   }
 
-  if (membersQuery.isLoading || racesQuery.isLoading || backgroundsQuery.isLoading || classesQuery.isLoading) return <Loading />;
+  if (membersQuery.isLoading || racesQuery.isLoading || subracesQuery.isLoading || backgroundsQuery.isLoading || classesQuery.isLoading) {
+    return <Loading />;
+  }
 
   const validations: StepValidation[] = VALIDATORS.map((fn) => fn(draft));
   const currentValidation = validations[stepIndex]!;
@@ -186,7 +206,9 @@ export function CharacterCreationWizard() {
   const isLastStep = stepIndex === WIZARD_STEP_IDS.length - 1;
 
   const players = (membersQuery.data?.members ?? []).filter((m) => m.role === 'player');
-  const raceName = racesQuery.data?.races.find((r) => r.id === draft.raceId)?.name ?? null;
+  const selectedRace = racesQuery.data?.races.find((r) => r.id === draft.raceId) ?? null;
+  const selectedSubrace = subracesQuery.data?.subraces.find((s) => s.id === draft.subraceId) ?? null;
+  const raceName = selectedRace?.name ?? null;
   const backgroundName = backgroundsQuery.data?.backgrounds.find((b) => b.id === draft.backgroundId)?.name ?? null;
   const selectedClass = classesQuery.data?.classes.find((c) => c.id === draft.classId) ?? null;
 
@@ -195,6 +217,7 @@ export function CharacterCreationWizard() {
     t('characters.wizard.steps.abilityScores'),
     t('characters.wizard.steps.derivedStats'),
     t('characters.wizard.steps.skills'),
+    t('characters.wizard.steps.feats'),
     t('characters.wizard.steps.equipment'),
     t('characters.wizard.steps.portrait'),
   ];
@@ -249,10 +272,22 @@ export function CharacterCreationWizard() {
               readOnly={readOnly}
             />
           )}
-          {stepIndex === 2 && <DerivedStatsStep draft={draft} onChange={updateDraft} selectedClass={selectedClass} readOnly={readOnly} />}
-          {stepIndex === 3 && <SkillsStep draft={draft} onChange={updateDraft} readOnly={readOnly} />}
-          {stepIndex === 4 && <EquipmentStep draft={draft} onChange={updateDraft} edition={edition} readOnly={readOnly} />}
-          {stepIndex === 5 &&
+          {stepIndex === 2 && (
+            <DerivedStatsStep
+              draft={draft}
+              onChange={updateDraft}
+              selectedClass={selectedClass}
+              selectedRace={selectedRace}
+              selectedSubrace={selectedSubrace}
+              readOnly={readOnly}
+            />
+          )}
+          {stepIndex === 3 && (
+            <SkillsStep draft={draft} onChange={updateDraft} selectedClass={selectedClass} readOnly={readOnly} />
+          )}
+          {stepIndex === 4 && <FeatsStep draft={draft} onChange={updateDraft} edition={edition} readOnly={readOnly} />}
+          {stepIndex === 5 && <EquipmentStep draft={draft} onChange={updateDraft} edition={edition} readOnly={readOnly} />}
+          {stepIndex === 6 &&
             (draft.createdCharacterId ? (
               <PortraitStep
                 campaignId={campaignId}

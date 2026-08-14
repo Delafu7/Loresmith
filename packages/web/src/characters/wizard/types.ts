@@ -42,6 +42,10 @@ export interface WizardDraft {
   skillLevels: Record<string, SkillProficiencyLevel>;
   savingThrowAbilityScoreIds: string[];
 
+  // Feats — catalog ids, persisted via POST /characters/:id/feats after
+  // creation (character_feats join table, compendium feature Phase 5).
+  featIds: string[];
+
   // Equipment — resolved against the item catalog in EquipmentStep.
   equipment: WizardEquipmentPick[];
   notes: string;
@@ -56,7 +60,7 @@ export interface WizardDraft {
   createdCharacterId: string | null;
 }
 
-export const WIZARD_STEP_IDS = ['identity', 'abilityScores', 'derivedStats', 'skills', 'equipment', 'portrait'] as const;
+export const WIZARD_STEP_IDS = ['identity', 'abilityScores', 'derivedStats', 'skills', 'feats', 'equipment', 'portrait'] as const;
 export type WizardStepId = (typeof WIZARD_STEP_IDS)[number];
 
 export function emptyWizardDraft(defaults: { isPc: boolean; ownerUserId: string }): WizardDraft {
@@ -77,6 +81,7 @@ export function emptyWizardDraft(defaults: { isPc: boolean; ownerUserId: string 
     hpMax: 10,
     skillLevels: {},
     savingThrowAbilityScoreIds: [],
+    featIds: [],
     equipment: [],
     notes: '',
     portraitAssetId: null,

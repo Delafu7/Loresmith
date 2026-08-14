@@ -42,6 +42,7 @@ export const characters = {
       abilityScores: 'Caractéristiques',
       derivedStats: 'Statistiques dérivées',
       skills: 'Compétences',
+      feats: 'Dons',
       equipment: 'Équipement et notes',
       portrait: 'Portrait',
     },
@@ -71,6 +72,7 @@ export const characters = {
       passivePerception: 'Perception passive',
       initiative: 'Initiative',
       acHint: 'CA de départ sans armure (10 + DEX). Passez en CA automatique et équipez une armure depuis la fiche du personnage après la création pour obtenir la valeur réellement calculée.',
+      racialBonus: '{bonus} racial',
     },
     skills: {
       savingThrows: 'Maîtrises de jets de sauvegarde',
@@ -78,6 +80,12 @@ export const characters = {
       none: 'Aucune',
       proficient: 'Maîtrisée',
       expertise: 'Expertise',
+    },
+    feats: {
+      featLabel: 'Don',
+      add: 'Ajouter',
+      none: 'Aucun don sélectionné pour l’instant.',
+      prerequisite: 'Prérequis : {prerequisite}',
     },
     equipment: {
       itemLabel: 'Objet',
@@ -95,6 +103,7 @@ export const characters = {
       classesFailed: 'Échec de l’attribution de la classe : {message}',
       skillsFailed: 'Échec des maîtrises de compétences : {message}',
       savesFailed: 'Échec des maîtrises de jets de sauvegarde : {message}',
+      featFailed: 'Échec de l’ajout du don : {message}',
       itemFailed: 'Échec de l’ajout de « {name} » : {message}',
       partialFailureTitle: 'Le personnage a été créé, mais certaines étapes suivantes ont échoué — terminez-les depuis la fiche du personnage :',
     },

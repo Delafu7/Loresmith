@@ -42,6 +42,7 @@ export const characters = {
       abilityScores: 'Puntuaciones de característica',
       derivedStats: 'Estadísticas derivadas',
       skills: 'Habilidades',
+      feats: 'Dotes',
       equipment: 'Equipo y notas',
       portrait: 'Retrato',
     },
@@ -71,6 +72,7 @@ export const characters = {
       passivePerception: 'Percepción pasiva',
       initiative: 'Iniciativa',
       acHint: 'CA inicial sin armadura (10 + DES). Cambia a CA automática y equipa armadura desde la ficha del personaje tras crearlo para obtener el valor calculado real.',
+      racialBonus: '{bonus} racial',
     },
     skills: {
       savingThrows: 'Competencias en salvaciones',
@@ -78,6 +80,12 @@ export const characters = {
       none: 'Ninguna',
       proficient: 'Competente',
       expertise: 'Experticia',
+    },
+    feats: {
+      featLabel: 'Dote',
+      add: 'Añadir',
+      none: 'Aún no se han seleccionado dotes.',
+      prerequisite: 'Requisito: {prerequisite}',
     },
     equipment: {
       itemLabel: 'Objeto',
@@ -95,6 +103,7 @@ export const characters = {
       classesFailed: 'Error al asignar la clase: {message}',
       skillsFailed: 'Error en las competencias de habilidades: {message}',
       savesFailed: 'Error en las competencias de salvación: {message}',
+      featFailed: 'No se pudo añadir la dote: {message}',
       itemFailed: 'No se pudo añadir "{name}": {message}',
       partialFailureTitle: 'El personaje se creó, pero algunos pasos posteriores fallaron — complétalos desde la ficha del personaje:',
     },

@@ -207,11 +207,21 @@ export interface SkillCatalog {
   ability_score_id: string;
 }
 
+// ability_bonuses' shape is NOT uniform: official/seeded rows carry the raw
+// SRD JSON array shape (`[{ ability_score: { index }, bonus }]`), while
+// homebrew rows authored through the catalog editor carry the Zod schema's
+// flat-map shape (`Record<string, number>`, schemas/catalogHomebrew.ts's
+// raceHomebrewShape). `unknown` here on purpose — see
+// characters/deriveAbilityBonuses.ts for the normalizer that reconciles both
+// shapes into one; nothing else should read this field directly.
 export interface RaceCatalog {
   id: string;
   index_key: string;
   name: string;
   edition_scope: '2014' | '2024' | 'both';
+  speed: number;
+  size: string;
+  ability_bonuses: unknown;
 }
 
 export interface SubraceCatalog {
@@ -219,6 +229,7 @@ export interface SubraceCatalog {
   race_id: string;
   index_key: string;
   name: string;
+  ability_bonuses: unknown;
 }
 
 export interface ClassCatalog {
@@ -227,6 +238,12 @@ export interface ClassCatalog {
   name: string;
   edition_scope: '2014' | '2024' | 'both';
   hit_die: number;
+  // Substitutes for subclasses having zero mechanical data columns today
+  // (compendium feature decision — see the plan's "Substitute class-level
+  // effects" note): character creation auto-populates saving-throw
+  // proficiency toggles from the selected CLASS's own proficiencies, since
+  // subclasses have none of their own to read.
+  saving_throw_proficiency_ids: string[] | null;
 }
 
 export interface SubclassCatalog {
@@ -241,6 +258,16 @@ export interface BackgroundCatalog {
   index_key: string;
   name: string;
   edition_scope: '2014' | '2024' | 'both';
+}
+
+export interface FeatCatalog {
+  id: string;
+  index_key: string;
+  name: string;
+  edition_scope: '2014' | '2024' | 'both';
+  prerequisite: string | null;
+  description: string;
+  is_homebrew: boolean;
 }
 
 export interface MonsterCatalogEntry {

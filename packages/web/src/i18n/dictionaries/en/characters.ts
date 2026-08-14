@@ -56,6 +56,7 @@ export const characters = {
       abilityScores: 'Ability scores',
       derivedStats: 'Derived stats',
       skills: 'Skills',
+      feats: 'Feats',
       equipment: 'Equipment & notes',
       portrait: 'Portrait',
     },
@@ -85,6 +86,7 @@ export const characters = {
       passivePerception: 'Passive Perception',
       initiative: 'Initiative',
       acHint: 'Starting unarmored AC (10 + DEX). Switch to auto-AC and equip armor from the character sheet after creation for the real computed value.',
+      racialBonus: '{bonus} racial',
     },
     skills: {
       savingThrows: 'Saving throw proficiencies',
@@ -92,6 +94,12 @@ export const characters = {
       none: 'None',
       proficient: 'Proficient',
       expertise: 'Expertise',
+    },
+    feats: {
+      featLabel: 'Feat',
+      add: 'Add',
+      none: 'No feats selected yet.',
+      prerequisite: 'Prerequisite: {prerequisite}',
     },
     equipment: {
       itemLabel: 'Item',
@@ -109,6 +117,7 @@ export const characters = {
       classesFailed: 'Class assignment failed: {message}',
       skillsFailed: 'Skill proficiencies failed: {message}',
       savesFailed: 'Saving throw proficiencies failed: {message}',
+      featFailed: 'Feat failed to add: {message}',
       itemFailed: '"{name}" failed to add: {message}',
       partialFailureTitle: "The character was created, but a few follow-up steps failed — finish these from the character sheet:",
     },
