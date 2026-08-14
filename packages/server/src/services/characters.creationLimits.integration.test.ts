@@ -103,7 +103,7 @@ describe('per-player character-creation limits (integration, live DB, throwaway 
 
     await expect(
       createCharacter(pool, limitedPlayerUserId, campaignId, 'player', baseInput('Limited PC Two')),
-    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    ).rejects.toMatchObject({ code: 'CHARACTER_LIMIT_REACHED' });
   });
 
   it('concurrent creates at the max_characters boundary: exactly one succeeds', async () => {
@@ -130,7 +130,7 @@ describe('per-player character-creation limits (integration, live DB, throwaway 
       const rejected = results.filter((r) => r.status === 'rejected');
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ code: 'CONFLICT' });
+      expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ code: 'CHARACTER_LIMIT_REACHED' });
 
       const countRes = await pool.query<{ count: string }>(
         `SELECT COUNT(*)::int AS count FROM characters WHERE campaign_id = $1 AND owner_user_id = $2`,

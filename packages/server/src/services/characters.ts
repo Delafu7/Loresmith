@@ -201,7 +201,10 @@ export async function createCharacter(
           [campaignId, actorId],
         );
         if (Number(countRes.rows[0]!.count) >= member.max_characters) {
-          throw new AppError('CONFLICT', `You have reached your character limit (${member.max_characters}) for this campaign`);
+          throw new AppError(
+            'CHARACTER_LIMIT_REACHED',
+            `You have reached your character limit (${member.max_characters}) for this campaign`,
+          );
         }
       }
       const character = await insertCharacterRow(client, campaignId, isPc, ownerUserId, actorId, input);
