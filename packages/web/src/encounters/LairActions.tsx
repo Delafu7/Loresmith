@@ -24,7 +24,7 @@ export function LairActionsEditor({ campaignId, encounter }: { campaignId: strin
     mutationFn: (lairActions: Array<{ name: string; description: string }> | null) =>
       api.patch<{ encounter: Encounter }>(`/campaigns/${campaignId}/encounters/${encounter.id}`, { lairActions }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['encounter', encounter.id] });
+      void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounter.id] });
     },
   });
 
@@ -116,7 +116,7 @@ export function TerrainNotesPanel({ campaignId, encounter, isDm }: { campaignId:
     mutationFn: (terrainNotes: string) =>
       api.patch<{ encounter: Encounter }>(`/campaigns/${campaignId}/encounters/${encounter.id}`, { terrainNotes: terrainNotes || null }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['encounter', encounter.id] });
+      void queryClient.invalidateQueries({ queryKey: ['encounterDetail', encounter.id] });
     },
   });
 
