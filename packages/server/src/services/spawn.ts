@@ -12,6 +12,7 @@ import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { rollDie, rollHitDice } from './diceRolls.js';
 import { dexModifier, reorderTurnOrderByInitiative, syncActiveParticipantTurnIndex } from './encounters.js';
+import { assertMonsterCuratedInBestiary } from './campaignBestiary.js';
 import type { SpawnParticipantsInput } from '../schemas/encounters.js';
 
 const ALPHA_NAMES = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -91,6 +92,8 @@ export async function spawnParticipants(
     );
     const monster = monsterRes.rows[0];
     if (!monster) throw notFound('Monster');
+
+    await assertMonsterCuratedInBestiary(client, campaignId, input.monsterId);
 
     if (monster.is_unique && input.quantity > 1) {
       throw new AppError('VALIDATION_ERROR', `${monster.name} is unique and cannot be spawned more than once in a single batch`);

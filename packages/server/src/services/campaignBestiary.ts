@@ -9,8 +9,8 @@
 // enforces resource scoping (a row must belong to the campaign it's read/
 // written through) and the player-visibility filter.
 
-import type { Pool } from 'pg';
-import { notFound } from '../middleware/errors.js';
+import type { Pool, PoolClient } from 'pg';
+import { AppError, notFound } from '../middleware/errors.js';
 import type { CampaignRole } from './authz.js';
 import type { UpdateBestiaryEntryInput } from '../schemas/campaignBestiary.js';
 import * as campaignCategoriesService from './campaignCategories.js';
@@ -185,6 +185,27 @@ export async function getCampaignBestiaryEntry(pool: Pool, campaignId: string, e
 export interface AddToCampaignBestiaryResult {
   added: unknown[];
   alreadyAdded: string[];
+}
+
+// Encounter-instantiation gate (spawnParticipants/addParticipant). Note this
+// REVERSES this file's own header comment and the campaign_bestiary_entries
+// migration's stated intent ("spawning a combat instance must never require
+// a bestiary entry to exist first") — done deliberately, per explicit
+// product decision, not an oversight. A monster must now be curated into a
+// campaign's bestiary before it can be instantiated into that campaign's
+// encounters.
+export async function assertMonsterCuratedInBestiary(
+  client: Pool | PoolClient,
+  campaignId: string,
+  monsterId: string,
+): Promise<void> {
+  const res = await client.query(
+    `SELECT 1 FROM campaign_bestiary_entries WHERE campaign_id = $1 AND monster_id = $2`,
+    [campaignId, monsterId],
+  );
+  if (res.rowCount === 0) {
+    throw new AppError('NOT_IN_BESTIARY', 'This creature is not in the campaign bestiary and cannot be added to an encounter');
+  }
 }
 
 export async function addToCampaignBestiary(

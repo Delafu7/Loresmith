@@ -8,6 +8,7 @@ import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isUniqueViolation } from './dbErrors.js';
 import { requireMembership, requireControllerOrDm, type CampaignRole } from './authz.js';
+import { assertMonsterCuratedInBestiary } from './campaignBestiary.js';
 import { resolveVisibilitySync } from './visibility.js';
 import { assessEncounterXp, type MonsterXpInput, type XpBudgetResult } from '../domain/xpBudget.js';
 import {
@@ -1588,13 +1589,36 @@ export async function addParticipant(
 
     // Default faction: player for PCs, enemy otherwise — looked up rather
     // than assumed from "is this a character row at all", since the
-    // characters table holds NPCs too.
+    // characters table holds NPCs too. Same query also enforces that the
+    // character actually belongs to this encounter's own campaign — nothing
+    // upstream (route middleware only checks the caller's own role in this
+    // campaign) previously verified that, so a character id from any other
+    // campaign could otherwise be seated here.
     let defaultFaction: 'player' | 'enemy' = 'enemy';
     if (input.characterId != null) {
-      const pcRes = await client.query<{ is_pc: boolean }>(`SELECT is_pc FROM characters WHERE id = $1`, [input.characterId]);
-      if (pcRes.rows[0]?.is_pc) {
+      const pcRes = await client.query<{ is_pc: boolean; campaign_id: string }>(
+        `SELECT is_pc, campaign_id FROM characters WHERE id = $1`,
+        [input.characterId],
+      );
+      const character = pcRes.rows[0];
+      if (!character || character.campaign_id !== encounter.campaign_id) throw notFound('Character');
+      if (character.is_pc) {
         defaultFaction = 'player';
       }
+    }
+
+    // Same cross-campaign scoping for an existing monster instance, plus the
+    // campaign-bestiary curation gate (see assertMonsterCuratedInBestiary) —
+    // a monster instance from another campaign, or one whose monster isn't
+    // curated into this campaign's bestiary, must never be seatable here.
+    if (input.monsterInstanceId != null) {
+      const instanceRes = await client.query<{ campaign_id: string; monster_id: string }>(
+        `SELECT campaign_id, monster_id FROM monster_instances WHERE id = $1`,
+        [input.monsterInstanceId],
+      );
+      const instance = instanceRes.rows[0];
+      if (!instance || instance.campaign_id !== encounter.campaign_id) throw notFound('Monster instance');
+      await assertMonsterCuratedInBestiary(client, encounter.campaign_id, instance.monster_id);
     }
 
     let participant: ParticipantRow;
