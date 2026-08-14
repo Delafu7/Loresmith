@@ -17,6 +17,7 @@ import {
 import { createCharacterItemSchema, updateCharacterItemSchema } from '../schemas/characterItems.js';
 import { createCharacterAttackSchema, updateCharacterAttackSchema } from '../schemas/characterAttacks.js';
 import { createCharacterSpellSchema, spellRowQuerySchema, updateCharacterSpellSchema } from '../schemas/characterSpells.js';
+import { createCharacterFeatSchema } from '../schemas/characterFeats.js';
 import { applyTargetEffectSchema } from '../schemas/effects.js';
 import { resourceAmountSchema } from '../schemas/resources.js';
 import { updateCharacterCurrencySchema } from '../schemas/characterCurrency.js';
@@ -26,6 +27,7 @@ import * as characterControlService from '../services/characterControl.js';
 import * as characterItemsService from '../services/characterItems.js';
 import * as characterAttacksService from '../services/characterAttacks.js';
 import * as characterSpellsService from '../services/characterSpells.js';
+import * as characterFeatsService from '../services/characterFeats.js';
 import * as effectsService from '../services/effects.js';
 import * as resourcePoolsService from '../services/resourcePools.js';
 import * as characterCurrencyService from '../services/characterCurrency.js';
@@ -325,6 +327,24 @@ charactersRouter.patch('/:id/spells/:spellId', async (req, res) => {
 charactersRouter.delete('/:id/spells/:spellId', async (req, res) => {
   const { classId } = spellRowQuerySchema.parse(req.query);
   await characterSpellsService.unlearnCharacterSpell(pool, req.user!.id, (req.params.id as string), (req.params.spellId as string), classId);
+  res.status(204).send();
+});
+
+// ---- Feats (character_feats) ----
+
+charactersRouter.get('/:id/feats', async (req, res) => {
+  const feats = await characterFeatsService.listCharacterFeats(pool, req.user!.id, (req.params.id as string));
+  res.json({ feats });
+});
+
+charactersRouter.post('/:id/feats', async (req, res) => {
+  const input = createCharacterFeatSchema.parse(req.body);
+  const feat = await characterFeatsService.grantCharacterFeat(pool, req.user!.id, (req.params.id as string), input);
+  res.status(201).json({ feat });
+});
+
+charactersRouter.delete('/:id/feats/:featId', async (req, res) => {
+  await characterFeatsService.revokeCharacterFeat(pool, req.user!.id, (req.params.id as string), (req.params.featId as string));
   res.status(204).send();
 });
 
