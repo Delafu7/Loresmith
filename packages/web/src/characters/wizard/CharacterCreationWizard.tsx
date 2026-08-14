@@ -68,6 +68,7 @@ export function CharacterCreationWizard() {
   const [stepIndex, setStepIndex] = useState(0);
   const [furthestIndexReached, setFurthestIndexReached] = useState(0);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [portraitFileUrl, setPortraitFileUrl] = useState<string | null>(null);
 
   const edition = campaign.srd_edition;
   const membersQuery = useQuery({
@@ -195,6 +196,26 @@ export function CharacterCreationWizard() {
     goToStep(Math.max(stepIndex - 1, 0));
   }
 
+  // Mirrors CharacterSheetPage.handlePortraitUploaded: POST /assets's
+  // response doesn't echo the portrait_asset_id write-back that
+  // services/assets.ts's createAsset performs server-side, and the shared
+  // ['campaign', campaignId, 'assets'] cache key can still be "fresh" (10s
+  // staleTime) from another page in the same campaign, so without this patch
+  // the character sheet the user lands on after Finish can render the
+  // placeholder instead of the just-uploaded portrait.
+  function handlePortraitUploaded(asset: CampaignAsset) {
+    updateDraft({ portraitAssetId: asset.id });
+    setPortraitFileUrl(asset.file_url);
+    queryClient.setQueryData<{ assets: CampaignAsset[] }>(['campaign', campaignId, 'assets'], (prev) =>
+      prev ? { assets: [asset, ...prev.assets.filter((a) => a.id !== asset.id)] } : { assets: [asset] },
+    );
+    if (draft.createdCharacterId) {
+      queryClient.setQueryData<{ character: Character }>(['character', draft.createdCharacterId], (prev) =>
+        prev ? { character: { ...prev.character, portrait_asset_id: asset.id } } : prev,
+      );
+    }
+  }
+
   if (membersQuery.isLoading || racesQuery.isLoading || subracesQuery.isLoading || backgroundsQuery.isLoading || classesQuery.isLoading) {
     return <Loading />;
   }
@@ -292,8 +313,8 @@ export function CharacterCreationWizard() {
               <PortraitStep
                 campaignId={campaignId}
                 characterId={draft.createdCharacterId}
-                portraitFileUrl={null}
-                onUploaded={(asset: CampaignAsset) => updateDraft({ portraitAssetId: asset.id })}
+                portraitFileUrl={portraitFileUrl}
+                onUploaded={handlePortraitUploaded}
               />
             ) : (
               <Loading />
