@@ -33,7 +33,7 @@ export interface SpawnParticipantsBody {
 }
 
 export function useEncounterSessionData(encounter: Encounter) {
-  const { campaignId, campaign, role } = useCampaignShell();
+  const { campaignId, role } = useCampaignShell();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -74,12 +74,22 @@ export function useEncounterSessionData(encounter: Encounter) {
     enabled: isDm,
   });
 
+  // Sourced from the campaign's curated bestiary (not the global catalog) —
+  // only creatures a DM has explicitly added to this campaign's bestiary can
+  // be spawned into its encounters (services/campaignBestiary.ts's
+  // assertMonsterCuratedInBestiary enforces this server-side; this query
+  // keeps the picker consistent with that gate). `effective` is a
+  // monsters-row-shaped object (catalog row shallow-merged with this
+  // campaign's stat_overrides), so it satisfies MonsterCatalogEntry without
+  // any further mapping.
   const bestiaryQuery = useQuery({
-    queryKey: ['catalog', 'monsters', campaign.srd_edition, campaignId],
-    queryFn: () =>
-      api.get<{ monsters: MonsterCatalogEntry[] }>(
-        `/catalog/monsters?edition=${campaign.srd_edition}&campaignId=${campaignId}`,
-      ),
+    queryKey: ['campaignBestiary', campaignId],
+    queryFn: async () => {
+      const { entries } = await api.get<{ entries: Array<{ effective: MonsterCatalogEntry }> }>(
+        `/campaigns/${campaignId}/bestiary`,
+      );
+      return { monsters: entries.map((e) => e.effective) };
+    },
     enabled: isDm,
   });
 

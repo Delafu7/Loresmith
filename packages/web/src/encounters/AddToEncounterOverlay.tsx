@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale } from '../i18n/LocaleContext';
 import { useToast } from '../components/ui/Toast';
+import { errorMessage } from '../components/Feedback';
 import type { Character, MonsterCatalogEntry, MonsterInstance } from '../lib/types';
 import type { MutationLike } from './BattleModeDmPanel';
 import type { SpawnParticipantsBody } from './useEncounterSessionData';
@@ -210,6 +211,8 @@ export function AddToEncounterOverlay({
       setQuery('');
       setQuantityOverride(null);
       inputRef.current?.focus();
+    } catch (err) {
+      showToast(errorMessage(err));
     } finally {
       setBusy(false);
     }
