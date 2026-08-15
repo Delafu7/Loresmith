@@ -15,6 +15,8 @@ import { Portrait, type PortraitSize } from '../components/Portrait';
 import type { ParticipantHp, SnapshotParticipant } from '../lib/types';
 import { footprintCellsFor } from './creatureSize';
 import { CONTROL_BADGE_DOT_COLOR, controlBadgeLabel, type ControlBadgeKind } from './controlBadge';
+import { FACTION_STYLES } from './factionStyle';
+import { EffectDots } from './EffectDots';
 import { useLocale } from '../i18n/LocaleContext';
 import { HP_BAND_COLOR, bandFor } from '../components/HPBar';
 import { snapToCell, screenDeltaToWorld } from './geometry';
@@ -34,16 +36,6 @@ function portraitSizeFor(spanPx: number): PortraitSize {
 // wrapper below sizes to precisely what Portrait renders instead of an
 // arbitrary cellSizePx fraction that could crop or float inside it.
 const PORTRAIT_SIZE_PX: Record<PortraitSize, number> = { sm: 40, md: 64, lg: 96, xl: 144 };
-
-// REFACTOR-PLAN.md §3: "a colored border for faction." Player/ally read as
-// "friendly" (cool colors), enemy/neutral as "not" — matching this app's
-// existing verdigris-for-good / blood-for-bad palette conventions elsewhere.
-const FACTION_BORDER: Record<SnapshotParticipant['faction'], string> = {
-  player: 'border-sky-500',
-  ally: 'border-emerald-500',
-  enemy: 'border-red-600',
-  neutral: 'border-stone-500',
-};
 
 // Phase 2 "restore hp_visibility + banding" — a token whose participant hp
 // is 'hidden' shows no bar at all (nothing rendered); 'banded' shows a
@@ -92,13 +84,6 @@ function initials(name: string): string {
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
-
-const FACTION_DOT: Record<SnapshotParticipant['faction'], string> = {
-  player: 'bg-sky-600',
-  ally: 'bg-emerald-600',
-  enemy: 'bg-red-700',
-  neutral: 'bg-stone-600',
-};
 
 export interface TokenProps {
   participant: SnapshotParticipant;
@@ -350,7 +335,7 @@ function TokenComponent({
         // colored dot with initials reads better at a glance than shrinking
         // every layer proportionally (docs/design-tokens.md mobile pass).
         <div
-          className={`relative flex items-center justify-center rounded-full text-white font-semibold ${FACTION_DOT[participant.faction]} ${
+          className={`relative flex items-center justify-center rounded-full text-white font-semibold ${FACTION_STYLES[participant.faction].bg} ${
             isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
           } ${isSelected ? 'outline outline-2 outline-offset-1 outline-amber-300' : ''} ${
             isMultiSelected ? 'outline outline-2 outline-offset-1 outline-sky-400' : ''
@@ -369,22 +354,12 @@ function TokenComponent({
       ) : (
         <>
           {participant.effects.length > 0 && (
-            <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex gap-0.5 z-10">
-              {participant.effects.slice(0, 4).map((e) => (
-                <span
-                  key={e.effectId}
-                  title={e.name}
-                  aria-label={e.name}
-                  className="h-2 w-2 rounded-full bg-violet-500 ring-1 ring-stone-950"
-                />
-              ))}
-              {participant.effects.length > 4 && (
-                <span className="text-[8px] leading-none text-violet-300 self-center">+{participant.effects.length - 4}</span>
-              )}
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10">
+              <EffectDots effects={participant.effects} />
             </div>
           )}
           <div
-            className={`relative rounded-full border-2 ${FACTION_BORDER[participant.faction]} ${
+            className={`relative rounded-full border-2 ${FACTION_STYLES[participant.faction].border} ${
               isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
             } ${isSelected ? 'outline outline-2 outline-offset-2 outline-amber-300' : ''} ${
               isMultiSelected ? 'outline outline-2 outline-offset-2 outline-sky-400' : ''

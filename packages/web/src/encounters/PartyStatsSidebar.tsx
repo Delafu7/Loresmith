@@ -12,13 +12,8 @@ import { ParticipantHpDisplay } from '../components/ParticipantHpDisplay';
 import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/LocaleContext';
 import { CONTROL_BADGE_DOT_COLOR, controlBadgeFor, controlBadgeLabel } from './controlBadge';
-
-const FACTION_RING: Record<SnapshotParticipant['faction'], string> = {
-  player: 'ring-sky-500',
-  ally: 'ring-emerald-500',
-  enemy: 'ring-red-600',
-  neutral: 'ring-stone-500',
-};
+import { FACTION_STYLES } from './factionStyle';
+import { EffectDots } from './EffectDots';
 
 export function PartyStatsSidebar({
   participants,
@@ -53,7 +48,7 @@ export function PartyStatsSidebar({
               p.participantId === activeParticipantId ? 'outline outline-1 outline-amber-500' : ''
             }`}
           >
-            <div className={`relative flex-shrink-0 rounded-full ring-2 ${FACTION_RING[p.faction]}`}>
+            <div className={`relative flex-shrink-0 rounded-full ring-2 ${FACTION_STYLES[p.faction].ring}`}>
               <Portrait fileUrl={p.imageUrl} alt={p.name} shape="circle" size="sm" placeholderLabel={p.name} />
               {badge && (
                 <span
@@ -68,7 +63,10 @@ export function PartyStatsSidebar({
                 <span className="truncate text-sm font-medium text-stone-100">{p.name}</span>
                 <span className="flex-shrink-0 text-[11px] text-stone-500">{t('encounters.tracker.armorClass')} {p.armorClass}</span>
               </div>
-              <ParticipantHpDisplay hp={p.hp} />
+              <div className="flex items-center justify-between gap-2">
+                <ParticipantHpDisplay hp={p.hp} />
+                <EffectDots effects={p.effects} />
+              </div>
             </div>
           </button>
         </li>

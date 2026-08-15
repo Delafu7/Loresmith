@@ -4,9 +4,9 @@
 // "temporarily mine" (delegated to me), "another player's," and "GM-run,"
 // per the plan's explicit call for consistent visual language across all
 // three surfaces rather than three independently-invented ones. Deliberately
-// NOT a full token recolor — see Token.tsx's FACTION_BORDER, which already
-// owns the friend/foe color language and shouldn't be fought with a second
-// one.
+// NOT a full token recolor — see factionStyle.ts's FACTION_STYLES, which
+// already owns the friend/foe color language and shouldn't be fought with a
+// second one.
 import type { Character } from '../lib/types';
 import type { TranslationKey } from '../i18n/LocaleContext';
 
