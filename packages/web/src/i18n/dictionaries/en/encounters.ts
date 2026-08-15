@@ -418,6 +418,11 @@ export const encounters = {
   overlay: {
     manageTitle: 'Manage encounter',
   },
+  sidebar: {
+    collapse: 'Collapse roster',
+    collapseLabel: 'Roster',
+    expand: 'Expand roster',
+  },
   live: {
     minimize: 'Minimize',
     forceFullscreen: 'Bring everyone to fullscreen',

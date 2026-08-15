@@ -413,6 +413,11 @@ export const encounters = {
   overlay: {
     manageTitle: 'Gérer la rencontre',
   },
+  sidebar: {
+    collapse: 'Réduire la liste',
+    collapseLabel: 'Liste',
+    expand: 'Développer la liste',
+  },
   live: {
     minimize: 'Réduire',
     forceFullscreen: 'Ramener tout le monde en plein écran',

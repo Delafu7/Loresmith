@@ -16,6 +16,7 @@ import { useEncounterSessionData } from '../encounters/useEncounterSessionData';
 import { BattleMap } from '../encounters/BattleMap';
 import { MapLibraryPanel } from './MapLibraryPanel';
 import { PartyStatsSidebar } from '../encounters/PartyStatsSidebar';
+import { SidebarShell } from '../encounters/SidebarShell';
 import { SessionOverlayPanel } from '../encounters/SessionOverlayPanel';
 import { ParticipantSheetPanel } from '../encounters/ParticipantSheetPanel';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
@@ -86,8 +87,8 @@ function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
     : null;
 
   return (
-    <div className="grid h-[calc(100dvh-9rem)] grid-cols-1 gap-2 p-2 md:grid-cols-[1fr_280px]">
-      <div className="min-h-0">
+    <div className="flex h-[calc(100dvh-9rem)] gap-2 p-2">
+      <div className="min-h-0 flex-1">
         <BattleMap
           encounterId={encounter.id}
           campaignId={campaignId}
@@ -104,7 +105,7 @@ function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
           onOpenSheet={setSelectedParticipantId}
         />
       </div>
-      <div className="min-h-0 flex flex-col gap-2 overflow-y-auto">
+      <SidebarShell>
         {isDm && <MapLibraryPanel campaignId={campaignId} encounterId={encounter.id} activeMapId={live.map?.id} />}
         <div className="min-h-0 flex-1 rounded-md bg-stone-950 shadow-sm">
           <PartyStatsSidebar
@@ -114,7 +115,7 @@ function MapSectionForEncounter({ encounter }: { encounter: Encounter }) {
             onSelect={setSelectedParticipantId}
           />
         </div>
-      </div>
+      </SidebarShell>
       <SessionOverlayPanel open={selectedParticipant != null} onClose={() => setSelectedParticipantId(null)} title={selectedParticipant?.name ?? ''}>
         {selectedParticipant && (
           <ParticipantSheetPanel

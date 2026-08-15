@@ -9,6 +9,33 @@
 
 const STORAGE_PREFIX = 'live-map-minimized:';
 
+// VTT roster sidebar (PartyStatsSidebar) collapse state — a global per-user
+// preference (not per-encounter, unlike minimized above), same
+// fail-open-on-storage-error shape. Defaults to visible (no stored key) per
+// the product requirement that the sidebar is present by default and only
+// hides on an explicit user action.
+const SIDEBAR_COLLAPSED_KEY = 'vtt-sidebar-collapsed';
+
+export function isSidebarCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setSidebarCollapsed(collapsed: boolean): void {
+  try {
+    if (collapsed) {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1');
+    } else {
+      window.localStorage.removeItem(SIDEBAR_COLLAPSED_KEY);
+    }
+  } catch {
+    // Ignore — worst case the choice doesn't persist this session.
+  }
+}
+
 export function isEncounterMinimized(encounterId: string): boolean {
   try {
     return window.localStorage.getItem(STORAGE_PREFIX + encounterId) === '1';

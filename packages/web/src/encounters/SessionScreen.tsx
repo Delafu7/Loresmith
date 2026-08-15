@@ -2,13 +2,17 @@
 // at EVERY encounter status, replacing both the old separate "prep-mode
 // roster" (CombatTracker.tsx used to render its own plain list before an
 // encounter went active) and BattleMode.tsx (which only existed once
-// status === 'active'). The map is the ONLY permanent element — it always
-// fills the full available area. A slim top bar (initiative strip + three
-// toggle buttons) is the persistent minimal overlay; everything else
-// (participant sheet, DM/player controls, combat log, chat) floats over the
-// map in SessionOverlayPanel rather than living in a resizable side column,
-// per user feedback that the earlier resizable-split version made the map
-// feel cramped and buried per-participant detail in a permanent tab strip.
+// status === 'active'). The map is the dominant element — it always fills
+// the full available area alongside the collapsible roster sidebar
+// (SidebarShell/PartyStatsSidebar, same component MapSectionPage.tsx uses —
+// this was the one map screen missing it, since the DM/player CONTROL
+// surface (participant sheet, DM/player action panels, combat log, chat)
+// still floats over the map in SessionOverlayPanel rather than living in a
+// permanent tab strip, per user feedback that the earlier resizable-split
+// version made the map feel cramped. The roster sidebar is read-mostly
+// (HP/AC/effects at a glance, click to open the sheet) and collapses to a
+// thin strip on demand, so it doesn't reintroduce that cramped feeling
+// while still being visible by default.
 //
 // Clicking a token (BattleMap's onOpenSheet) or an initiative-strip chip
 // opens the overlay showing that participant's ParticipantSheetPanel.
@@ -28,6 +32,8 @@ import { LairActionBanner, LairActionsEditor, TerrainNotesPanel } from './LairAc
 import { XpBudgetPanel } from './XpBudgetPanel';
 import { DispositionBadge, DispositionHistoryPanel } from './DispositionPanel';
 import { ParticipantSheetPanel } from './ParticipantSheetPanel';
+import { PartyStatsSidebar } from './PartyStatsSidebar';
+import { SidebarShell } from './SidebarShell';
 import { SessionOverlayPanel } from './SessionOverlayPanel';
 import { AddToEncounterOverlay, type AsyncMutationLike } from './AddToEncounterOverlay';
 import type { EncounterLiveState } from './useEncounterLive';
@@ -272,22 +278,34 @@ export function SessionScreen({
       </div>
 
       {showMap ? (
-        <div className="min-h-0 flex-1">
-          <BattleMap
-            encounterId={encounter.id}
-            campaignId={campaignId}
-            map={live.map}
-            participants={live.participants}
-            mapElements={live.mapElements}
-            activeParticipantId={live.activeParticipantId}
-            encounter={live.encounter}
-            isDm={isDm}
-            preview={preview}
-            requestPreviewSync={requestPreviewSync}
-            myCharacterIds={myCharacterIds}
-            characters={characters}
-            onOpenSheet={openSheet}
-          />
+        <div className="flex min-h-0 flex-1 gap-2">
+          <div className="min-h-0 flex-1">
+            <BattleMap
+              encounterId={encounter.id}
+              campaignId={campaignId}
+              map={live.map}
+              participants={live.participants}
+              mapElements={live.mapElements}
+              activeParticipantId={live.activeParticipantId}
+              encounter={live.encounter}
+              isDm={isDm}
+              preview={preview}
+              requestPreviewSync={requestPreviewSync}
+              myCharacterIds={myCharacterIds}
+              characters={characters}
+              onOpenSheet={openSheet}
+            />
+          </div>
+          <SidebarShell>
+            <div className="min-h-0 flex-1 rounded-md bg-stone-950 shadow-sm">
+              <PartyStatsSidebar
+                participants={live.participants}
+                activeParticipantId={live.activeParticipantId}
+                characters={characters}
+                onSelect={openSheet}
+              />
+            </div>
+          </SidebarShell>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">{managePanel}</div>
