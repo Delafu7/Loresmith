@@ -34,7 +34,7 @@ const doorElementSchema = z.object({
   y1: z.number(),
   x2: z.number(),
   y2: z.number(),
-  props: z.object({ state: z.enum(['open', 'closed', 'locked']) }),
+  props: z.object({ state: z.enum(['open', 'closed', 'locked', 'stuck', 'broken']), forceDC: z.number().int().min(1).max(30).optional() }),
   ...baseFields,
 });
 

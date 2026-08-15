@@ -384,15 +384,26 @@ export const encounters = {
       rotationDeg: 'Rotation (°)',
       opacity: 'Opacité',
       image: 'Image',
+      forceDC: 'DD pour forcer',
     },
     doorStates: {
       open: 'Ouverte',
       closed: 'Fermée',
       locked: 'Verrouillée',
+      stuck: 'Coincée',
+      broken: 'Brisée',
     },
     costTypes: {
       difficult: 'Terrain difficile',
       noteOnly: 'Note seulement (sans coût de mouvement)',
+    },
+    doorAction: {
+      title: 'Porte',
+      open: 'Ouvrir',
+      close: 'Fermer',
+      force: 'Forcer',
+      noParticipant: "Vous n'avez aucun personnage ici pour agir.",
+      pickCharacter: 'Agir en tant que',
     },
   },
   initiativeStrip: {

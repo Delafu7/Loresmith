@@ -295,6 +295,130 @@ Server-side `*.integration.test.ts`, extending the existing `services/encounters
 - **Study is rejected/hidden for a 2014 campaign, accepted for a 2024 campaign**: if server-side enforcement is added at all (recommended as client-registry-only per §2.6, matching `search`'s existing precedent — no server concept of named actions), assert instead that the **UI-level `ACTION_REGISTRY` filter** correctly excludes `study` when `campaign.srd_edition === '2014'` and includes it for `'2024'` — a component-level test (`ActionEconomyPanel`), not a server integration test, since the server has no `study` concept to reject.
 - **Help produces no `active_effects` row and no schema mutation beyond the action slot**: spend `help` via `applyActionEconomy({ spend: 'action' })`; assert zero rows exist in `active_effects` attributable to that call, proving §2.4's "no persistent state" recommendation is actually followed rather than silently regressing into an `active_effects` row later.
 
+## Doors — object interaction (open/close) vs. forcing open (Strength check / object-breaking rules)
+
+Consulted for: interactive door states (`closed`, `open`, `locked`, `stuck`, `broken`) for the battle-map `map_elements` door type (today `props.state ∈ {'open','closed','locked'}` only — `packages/server/src/schemas/mapElements.ts`) and the two player actions that touch a door: (1) open/close an unlocked, non-stuck door, (2) force open a locked or stuck door. Edition: **both**, differences called out explicitly.
+
+Grounded against: `.opencode/skills/dnd5e-srd/references/2014/combat.md` lines 53–57 (object interaction), 147–171 (interaction examples list, explicitly names "open or close a door"), 175–179 (improvised-action fallback); `.../2014/adventuring.md` lines 149–157 ("Interacting with Objects," Strength-check-to-break-an-object); `.../2014/equipment-items.md` "Objects" section (Object AC/HP tables); `.../2014/ability-checks.md` (Strength/Athletics description, Typical DC table); `.../2024/combat.md` lines 17–21; `.../2024/adventuring.md` lines 21–35 ("Interacting with Objects," "Breaking objects"); `.../2024/ability-checks.md` (Athletics row, Typical DC table). Cross-referenced against this doc's own already-validated §1.6/§2.3 object-interaction findings above (not re-derived) and its Grapple/Dodge/Hide "player rolls, DM applies the consequence" authorization pattern (§2.2 above, cross-referenced) — plus this app's actual implementation: `packages/server/src/db/migrations/1784269816666_create-map-elements.ts`, `packages/server/src/schemas/mapElements.ts`, `packages/server/src/domain/mapElementVisibility.ts` (`computeBlocksVision`/`computeBlocksMovement`), `packages/web/src/encounters/elements/registry.tsx` (door element config), `packages/server/src/services/encounters.ts` (movement-context wall/door query, lines ~704–719), `packages/server/src/routes/encounters.ts` (map-element write routes, DM-only), `packages/server/src/db/migrations/1784269755666_create-dice-rolls.ts` (existing roll-logging table).
+
+### 1. Official rule
+
+#### 1.1 Opening/closing an unlocked, non-stuck door — object interaction, confirmed both editions
+
+**2014**, `combat.md` lines 53–57 (already quoted in full above, §1.6): one free object interaction per turn during move or action; a second costs the action. The "Interacting with Objects Around You" example list (`combat.md` line 151) names it explicitly: "open or close a door." **2024**, `combat.md` lines 18–21 and `adventuring.md` lines 21–26 (also quoted above, §1.6): the same one-free-interaction-per-turn mechanic; 2024's grounding text doesn't repeat 2014's example list by name, but nothing changes the category — a door that operates normally (not locked, not stuck) is exactly the kind of "discrete, inanimate item" interaction (`adventuring.md` line 23) this mechanic covers in both editions.
+
+**Verdict: confirmed correct.** Opening/closing an already-operable door is the free per-turn object interaction in both editions — same conclusion this doc's own §1.6 already reached, door is just one of 2014's own named examples of it.
+
+#### 1.2 A "stuck" door — the SRD's own worked example elevates the *interaction*, not automatically a roll
+
+**2014**, `combat.md` line 57 (quoted in full, the SRD's own worked example): "The GM might require you to use an action for any of these activities when it needs special care or when it presents an unusual obstacle. For instance, the GM could reasonably expect you to use an action to open a stuck door or turn a crank to lower a drawbridge." This is the literal SRD text about a "stuck door," and **it names no ability check at all** — only that the GM may promote the same single interaction from free to action-slot-costing. **2024's grounding text has no equivalent named example** (grepped "stuck" across every 2024 reference file in this skill's dataset — zero hits); the general "further interactions require the Utilize action" framing (`adventuring.md` line 26) is the same mechanic in general terms, but the specific "stuck door, no roll, just costs the action" illustration is 2014-only in this skill's data — flagged as unconfirmed-for-2024, not contradicted.
+
+This is a **distinct, lighter mechanic** from forcing/breaking a door open (§1.3 below) — the SRD's "stuck door" example describes something you can still open unassisted, it just isn't free. Neither edition's grounding text draws a bright line between "stuck (needs the action, no check)" and "stuck/locked (needs a Strength check or an attack against its AC/HP)" — both are folded into one GM judgment call about how much of an obstacle a given door presents. This app's `stuck` vs `locked` state split is a reasonable elaboration of that judgment call, but is a **modeling decision this app is making explicit, not something the SRD itself separates into named tiers.**
+
+#### 1.3 Forcing open a locked or (truly jammed) stuck door
+
+**Check type**: Strength check, Athletics skill applies, both editions. 2014 `adventuring.md` line 157: "A character can also attempt a Strength check to break an object. The GM sets the DC for any such check." 2014 `ability-checks.md` line 175: "A Strength check can model any attempt to lift, push, pull, or break something... The Athletics skill reflects aptitude in certain kinds of Strength checks." 2024 `ability-checks.md` line 114 (Skills table): "Athletics — Strength — Jump farther, stay afloat, **or break something**." Both editions: it's a **Strength (Athletics) check** if the character is proficient in Athletics, otherwise a plain Strength check (the general proficiency-application rule, 2014 `ability-checks.md` line 128, applies identically in both editions — not a door-specific citation, but the general mechanism both use).
+
+**Action cost**: Yes — the **Action**, not the free (or even the paid) object interaction. Nothing in either edition's "simple interaction" example list (2014 `combat.md` 147–171) resembles forcing something open; this falls under the GM-adjudicated improvised-action fallback instead (2014 `combat.md` line 179: "When you describe an action not detailed elsewhere in the rules, the GM tells you whether that action is possible and what kind of roll you need to make"). 2024's `adventuring.md` line 34 makes the action-cost explicit even for the *easy* case: "a fragile nonmagical object can be destroyed automatically **as an action**; tougher objects use the object-breaking rules." Neither edition offers a path to force/break something open via only the free object interaction.
+
+**DC guidance**: **No fixed SRD number exists for "break down a door" in either edition** — checked `adventuring.md`, `equipment-items.md`, `ability-checks.md`, `combat.md` in full for both editions; no door-breaking-specific DC anywhere in this skill's dataset. The only anchor either edition supplies is the fully generic Typical Difficulty Classes table (2014 `ability-checks.md` 69–79 / 2024 `ability-checks.md` 40–50): Very easy 5, Easy 10, Medium 15, Hard 20, Very hard 25, Nearly impossible 30 — a GM tool for *any* check, not door-specific. **This must be DM-configurable per door — do not hardcode a single "the" door-breaking DC as if it were an SRD rule; it isn't one.**
+
+**Legitimate SRD-supported alternative**: attacking the door as an **object** (AC + HP, take it to 0). 2014 `adventuring.md` line 155: objects "can be affected by physical and magical attacks... Objects always fail Strength and Dexterity saving throws... When an object drops to 0 hit points, it breaks." 2014 `equipment-items.md`'s Object AC table gives Wood/bone = AC 15; the Object HP table gives fragile/resilient HP by size band (e.g. Medium: 4 (1d8) fragile / 18 (4d8) resilient). 2024 `adventuring.md` lines 33–35 confirms the **same concept** exists in 2024 ("tougher objects use the object-breaking rules (AC/HP set by the GM)") but **this skill's 2024 dataset does not carry the actual suggested AC/HP numbers** (2024 has no `equipment-items.md`-equivalent file in this skill's reference set) — confirmed-concept, unconfirmed-numbers for 2024; do not silently reuse the 2014 numeric tables as independently confirmed 2024 values. **Both the flat Strength(Athletics) check and the attack-vs-AC/HP model are presented in 2014's SRD text as parallel, equally legitimate options** (`adventuring.md` 153–157, two consecutive paragraphs, one method each) — the SRD does not prefer one over the other; which one this app implements is a design choice, not an RAW mandate.
+
+**Failure consequence**: none beyond the generic ability-check failure framework in either edition's grounding text — checked explicitly, no "door takes damage on a failed check," no "weapon breaks on a failed check" rule connected to door-forcing anywhere in this skill's dataset. (`equipment-items.md`'s "the sword is likely to break before the wall does" line is flavor text about material mismatch/GM common sense on *what an object is effective against*, not a failure-consequence mechanic.) 2014 `ability-checks.md` line 80: failure "means the character or monster makes no progress toward the objective **or** makes progress combined with a setback determined by the GM." Leaving the door in its prior state and logging the attempt is consistent with RAW; there is no better-supported SRD alternative to hardcode instead.
+
+**Size/Strength restrictions**: **none found.** Neither edition's grounding text gates a Strength check (Athletics or otherwise) by creature size — this is unlike Grapple, which does have an explicit 2014 "no more than one size larger" rule (§1.1 above), but that is a Grapple-specific restriction, not a general-Strength-check one, and it does not extend to forcing a door. A Small creature may attempt the check; its (already size-reflective) Strength modifier is the only mechanical factor — confirmed absence, not silence, checked both editions' Strength/Athletics sections specifically for a size clause.
+
+#### 1.4 A "broken" door behaves like "open" for movement/vision — reasonable inference, not a literal door-specific SRD sentence
+
+Neither edition's grounding text has the sentence "a broken door behaves like an open door" verbatim. The supporting general rule is 2014 `adventuring.md` line 155: "When an object drops to 0 hit points, it breaks" — i.e. it has lost the structural integrity that let it function as a barrier at all (closed or locked). Your modeling assumption (broken == fully passable + fully transparent, same as open) is a sound, low-risk inference from that general object-destruction rule, but it's an **inference**, not an independently-quoted door-specific SRD line — flagged so it isn't presented as more directly sourced than it is. Confirmed reasonable; no contrary text found in either edition.
+
+### 2. Data model translation
+
+#### 2.1 Schema — widen the door `props.state` enum, add a per-door DC field
+
+Current (`packages/server/src/schemas/mapElements.ts`):
+```ts
+const doorElementSchema = z.object({
+  type: z.literal('door'),
+  x1: z.number(), y1: z.number(), x2: z.number(), y2: z.number(),
+  props: z.object({ state: z.enum(['open', 'closed', 'locked']) }),
+  ...baseFields,
+});
+```
+Needs to become:
+```ts
+props: z.object({
+  state: z.enum(['open', 'closed', 'locked', 'stuck', 'broken']),
+  // GM-configurable per door; null/absent = client displays the app's own
+  // suggested default (NOT an SRD number — see §2.4/DM-configurable below).
+  forceOpenDc: z.number().int().min(1).max(30).nullable().optional(),
+}),
+```
+No new migration/column needed for `forceOpenDc` — `map_elements.props` is already an unvalidated JSONB catch-all at the DB layer (`1784269816666_create-map-elements.ts`'s own header comment: "adding a new element type in the future is a registry-only change... never a new migration"); only the Zod branch changes. Client-side, `packages/web/src/encounters/elements/registry.tsx`'s door `fields[0].options` (currently `open`/`closed`/`locked`) needs `stuck`/`broken` entries added, plus corresponding i18n keys (`encounters.mapElements.doorStates.stuck`/`.broken`) in `packages/web/src/i18n/dictionaries/{en,fr,es}/encounters.ts`.
+
+#### 2.2 Movement/vision blocking predicates — extend the existing table, don't replace it
+
+`packages/server/src/domain/mapElementVisibility.ts` (`computeBlocksVision`/`computeBlocksMovement`, server-authoritative) and its client mirror in `registry.tsx` (`door.blocksVision`/`door.blocksMovement`) must be updated **together** (no shared module enforces this between packages today — same "keep in sync by inspection" caveat the server file's own header comment already names) per §1.1–1.4:
+
+| `state`  | `blocksVision` | `blocksMovement` (pathfinder) | Why |
+|----------|-----------------|-------------------------------|-----|
+| `open`   | false | false | unchanged |
+| `closed` | true  | false | unchanged — opened via the free object interaction as part of the move (§1.1) |
+| `locked` | true  | true  | unchanged |
+| `stuck`  | true  | **true** (new) | §1.2/§1.3 — passing through needs an out-of-band action-slot spend or a Strength check the pathfinder can't auto-resolve, same reasoning as `locked` |
+| `broken` | **false** (new) | **false** (new) | §1.4 — destroyed, no longer a barrier |
+
+```ts
+// computeBlocksVision (mapElementVisibility.ts) and registry.tsx's door.blocksVision, kept in sync
+case 'door': return !['open', 'broken'].includes((el.props as { state?: string }).state ?? '');
+// computeBlocksMovement (mapElementVisibility.ts) and registry.tsx's door.blocksMovement, kept in sync
+case 'door': return ['locked', 'stuck'].includes((el.props as { state?: string }).state ?? '');
+```
+
+#### 2.3 Forcing a door: action-slot spend (client registry) + DM-only state write (existing endpoint) — same handoff pattern as Grapple/Dodge/Hide
+
+Map-element writes (`PATCH /encounters/:id/map/elements/:elementId`, `routes/encounters.ts` lines 536–543) are **`requireEncounterDm`-gated today, with no player-facing exception** — confirmed there is currently **no endpoint a player can call to change a door's state at all**, for either the free-interaction open/close case or the forced case. This is exactly the same authorization shape already flagged above for Grapple (§2.2): the fix is the same one — **do not add a second, player-reachable endpoint that mutates `map_elements` on a client-reported "I forced it" claim**; that would let a malicious/buggy client force open (or destroy) a door without DM review, which this app's own server-side-validation standard forbids.
+
+Recommended shape:
+- New `ACTION_REGISTRY` entry, same file/shape as every other entry:
+```ts
+{
+  key: 'force_door',
+  label: 'Force Open Door',
+  slot: 'action',
+  rollTrigger: { rollContext: 'Force Open Door (Athletics)', ability: 'str' },
+  description:
+    'Strength (Athletics) check to force open a locked or stuck door/object. DC is GM-set per door (no fixed SRD value — see docs/rules/actions.md "Doors" §2.4). Spends the action, not the free object interaction.',
+},
+```
+This spends the **action** slot via the existing `applyActionEconomy({ spend: 'action' })` endpoint (zero schema change) and rolls through the existing `dice_rolls` table (`roll_type: 'skill_check'`, `roll_context: 'Force Open Door (Athletics)'`), exactly like every other registry `rollTrigger` today — **this is the "log the attempt" mechanism** your plan already assumes; no new logging table is needed.
+- The **door-state mutation** (the actual consequence of the roll) stays on the existing DM-only `PATCH .../map/elements/:elementId` — `props: { state: 'open' }` (or `'broken'`, if the attack-vs-object-HP alternative is built and it hits 0 HP) on success, or no mutation on failure. Same "player rolls, DM applies the consequence" handoff already established for Grapple/Dodge/Hide (§2.2 above), not a new pattern.
+- If the attack-vs-AC/HP alternative (§1.3) is ever built instead of/alongside the flat check, it needs its own new numeric `props` fields (`objectAc`, `objectHpMax`, `objectHpCurrent`) and a damage-application path — materially bigger than the flat-check model. **Recommend the flat Strength(Athletics)-check model as v1** (matches this file's own "smallest mechanism" precedent, e.g. §2.4's undo-snapshot recommendation above), leaving the object-HP model as a documented, not-yet-built alternative.
+
+#### 2.4 DM-configurable default DC — an app default, explicitly not an SRD number
+
+Per §1.3, the SRD gives no fixed door-breaking DC in either edition. Store `forceOpenDc` on the door element itself (§2.1, nullable), and if the client wants to display a suggested value when the field is empty, that suggested value (e.g. 15, "Medium" on the generic Typical DC table) must be presented in the UI as **an app convenience default, not an SRD rule** — and must remain overridable per door. See the "DM-configurable" section addition below.
+
+### 3. Edge cases
+
+- **The SRD's own "stuck door" example (§1.2) has no roll in it at all** — this app's design (tying `stuck` to a Strength check, §1.3) goes further than the literal 2014 text, which only promotes the interaction from free to action-costing. That's a defensible elaboration, but should not be presented in UI copy as "the SRD requires a check for a stuck door" — it doesn't. Consider whether a third, lighter door-difficulty tier (stuck-but-not-locked: costs the action, no roll, no DC) is worth modeling separately from "stuck: needs a forced Strength check" — not required, but truer to 2014's literal example; flagged as an open design question, not resolved here.
+- **`force_door` is independent of `object_interaction_used`** — a participant who already spent their free interaction this turn can still attempt `force_door` (it was never eligible for the free-interaction budget in the first place, §1.3), and a participant who has *not* used their free interaction yet doesn't get to apply it toward `force_door`'s action-slot cost either. Don't gate one on the other.
+- **The object-HP alternative, if built, needs a partial-damage state the five-value `state` enum can't represent alone** (a door at 3/18 HP is still mechanically `locked`/`stuck` for `blocksMovement` purposes but narratively "battered") — out of scope unless that model is actually built; flagged so `objectHpCurrent` isn't bolted onto the flat-check model by accident.
+- **`broken` should probably be treated as a one-way/terminal state in the UI**, even though nothing in `props`' free-form JSONB stops a GM from editing it back to `closed` — not an SRD rule (the SRD doesn't discuss un-breaking objects), but a destroyed door narratively shouldn't un-destroy; recommend a UI confirmation on that specific transition, not a hard DB constraint (the DM should always be able to correct a mistake).
+- **A successful force-open doesn't have one universal target state** — forcing a `stuck` door plausibly resolves to `open` (it was jammed, now it isn't); forcing a `locked` door via brute force more plausibly resolves to `broken` (you didn't unlock it, you broke it), not `open`. The SRD never draws this distinction (it doesn't separate "picking a lock" from "breaking a door down" as different outcomes at all) — this is a narrative/DM-adjudicated choice at the moment of applying the consequence, not a single hardcoded success-transition the implementing session should bake in for both starting states.
+- **Help composes with `force_door` with no new mechanism needed** — the general Help action (§1.3 above) granting advantage on an ally's "next ability check" applies to a force-door attempt exactly like any other ability check; no door-specific interaction, just confirming it isn't blocked by anything new here.
+
+### 4. What must be tested
+
+- **Door state enum accepts `stuck`/`broken`, rejects invalid values**: `PATCH /encounters/:id/map/elements/:elementId` with `props: { state: 'stuck' }` and `props: { state: 'broken' }` succeed (200); `props: { state: 'jammed' }` (or any non-enum value) is rejected (400) by the Zod schema.
+- **`stuck` blocks movement server-side, `broken` does not**: extend the existing wall/door movement-blocking coverage (`packages/server/src/services/movement.test.ts` and/or the encounters movement-context integration tests) with a `stuck` door on the only path between two cells — a move attempt through it is rejected, same assertion shape as the existing `locked`-blocks case; a `broken` door on the same path allows the move, same shape as the existing `open`-allows case.
+- **`stuck` blocks vision, `broken` does not**: extend `packages/server/src/services/mapElements.visibility.integration.test.ts`'s existing door-vision coverage with the two new states, same pattern as its existing `locked`/`open` cases.
+- **Forcing a door spends the action slot, not the object interaction**: an `applyActionEconomy` call for `force_door` sets `action_used = true` and leaves `object_interaction_used` unchanged from its pre-call value (extends the existing action-economy integration test pattern, `services/encounters.actionEconomyUndo.integration.test.ts` / `actionEconomyAuthz.integration.test.ts`).
+- **A player-role session cannot `PATCH` a door's `state` directly**, proving the "player rolls, DM applies" handoff isn't bypassable: the request is rejected `403` regardless of whether that player just validly spent their action on `force_door` — extends the existing `requireEncounterDm` authz coverage already tested elsewhere for this route.
+- **No endpoint auto-applies a forced-door result from a roll**: assert there is no code path that takes a roll total + a DC and automatically flips a door's `state` — the roll and the state mutation must remain two independent API calls with a human (DM) in between, matching this doc's existing "no auto-computed roll consequences" precedent for Grapple/Dodge/Hide (§3 above).
+- **`forceOpenDc` round-trips correctly and is never server-injected**: creating a door element without `forceOpenDc` in `props` persists/returns `null`/absent — proves the server never silently writes a hardcoded DC into the stored row (the suggested-default display, if any, is client-side only).
+
 ## DM-configurable, never hardcoded
 
 - **Search's exact skill** (Perception vs. Investigation in 2014; which of four Wisdom skills in 2024) is explicitly GM-adjudicated per the SRD's own text in both editions — the registry's single default (`Search (Perception)`, §2.2) is a UI simplification, not a hardcoded rule; the description text should make the GM's discretion visible rather than presenting the default as the only legal roll.
@@ -303,3 +427,6 @@ Server-side `*.integration.test.ts`, extending the existing `services/encounters
 - **Study's exact skill** (Arcana/History/Investigation/Nature/Religion, 2024) is explicitly GM-adjudicated, same shape as Search's own DM-configurable skill choice above — the `Study (Investigation)` default (§2.6) is a UI simplification, not a hardcoded rule.
 - **Whether a Hide check is contested against each observer's passive Perception or an active Perception check** is DM-adjudicated in both editions (this skill's grounding text never fixes one method for the Hide action specifically, only the surprise-round analogy in 2014) — the app has no server-side auto-compare against passive Perception anywhere (confirmed), and none should be added; the DM decides who's fooled, consistent with the "no auto-computed advantage/disadvantage" precedent restated in §3 above.
 - **Whether a grapple/shove target's size restriction is enforced as a hard block or a DM-overridable warning** is not itself an SRD-named toggle, but since this app has no enforcement today (§2.2/§3) and the SRD text is a flat rule (not phrased as optional), any future enforcement should be a warning the DM can override, not a hard client/server block — matching this app's consistent precedent of not hard-blocking narratively-adjudicated numbers (same posture as the Climb Athletics-check note above), named here explicitly so it isn't accidentally hardcoded as a blocking validation later.
+- **The forced-door-open DC** (Doors §1.3/§2.4) — the SRD provides no door-specific DC in either edition, only the fully generic Typical DC table. Any suggested default this app ships (e.g. 15) is an application convenience, never an SRD number, and must live as a per-door, GM-overridable `props.forceOpenDc` field — never a hardcoded constant baked into the force-door check itself.
+- **Whether a "stuck" door requires a Strength check at all, versus just costing the action slot with no roll** (Doors §1.2/§3) — 2014's own worked example for a "stuck door" names only the action-slot elevation, not a check; this app's (check-requiring) `stuck` state is a legitimate elaboration the SRD leaves open, not a rule it mandates. If both a "just costs the action" tier and a "needs a forced check" tier are ever built, which one a given door uses should be a per-door choice, not a single hardcoded interpretation presented as the only legal one.
+- **Which SRD-legal object-breaking model a door/campaign uses** — flat Strength(Athletics) check vs. attack-the-object-as-AC/HP (Doors §1.3/§2.3) — both are equally SRD-supported (2014's own text presents them as parallel options). Recommend a per-door or per-campaign toggle if both are ever built, defaulting to the simpler flat-check model (§2.3) — never silently pick one and present it as the only RAW-correct approach.

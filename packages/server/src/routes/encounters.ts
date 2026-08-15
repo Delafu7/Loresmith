@@ -29,11 +29,13 @@ import {
 } from '../schemas/encounters.js';
 import { performShoveSchema } from '../schemas/shove.js';
 import { performGrappleSchema } from '../schemas/grapple.js';
+import { performDoorActionSchema } from '../schemas/doorActions.js';
 import { recordActionSchema } from '../schemas/combatActions.js';
 import * as encountersService from '../services/encounters.js';
 import * as spawnService from '../services/spawn.js';
 import { performShove } from '../services/shove.js';
 import { performGrapple } from '../services/grapple.js';
+import { performDoorAction } from '../services/doorActions.js';
 import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import * as combatActionsService from '../services/combatActions.js';
 import * as mapsService from '../services/maps.js';
@@ -758,5 +760,53 @@ encountersRouter.post('/:id/participants/:pid/grapple', requireEncounterDm, asyn
     success: grapple.success,
     appliedEffect: grapple.appliedEffect?.effect ?? null,
     message: grapple.message,
+  });
+});
+
+// Interactive doors (open/close/force) — see services/doorActions.ts's
+// header comment for why this is requireOwnParticipantOrDm-gated rather
+// than requireEncounterDm like Shove/Grapple just above: the task this
+// route serves needs a genuine player-triggered action (a player opens a
+// door themselves, not the DM triggering it on their behalf), and the
+// server stays fully authoritative regardless — it rolls (for 'force'),
+// decides the outcome, and persists it; the client only ever sends the
+// intention ("open"/"close"/"force"), never a claimed result.
+encountersRouter.post('/:id/participants/:pid/doors/:elementId', requireOwnParticipantOrDm, async (req, res) => {
+  const input = performDoorActionSchema.parse(req.body);
+  const encounterId = req.params.id as string;
+  const participantId = req.params.pid as string;
+  const elementId = req.params.elementId as string;
+  const door = await performDoorAction(
+    pool, encounterId, participantId, req.user!.id, req.participantActionRole!, elementId, input.action,
+  );
+  const io = getIo(req.app);
+  await broadcastActionEconomyChanged(io, door.economy.encounter, door.economy.participant);
+  if (door.roll) {
+    await broadcastDiceRolled(io, door.economy.encounter.campaign_id, door.roll);
+  }
+  if (door.affectedEncounters.length > 0) {
+    await broadcastMapElementsChanged(io, door.affectedEncounters, 'updated', door.element);
+  }
+  // Combat log (nav point 2) — only 'force' is a resolved check worth a row
+  // (same "one row per resolved action" scope combatActionsService.ts's own
+  // header comment describes); a plain open/close is an unremarkable object
+  // interaction, same as every other one, and isn't logged either.
+  if (door.roll) {
+    const doorAction = await combatActionsService.recordAction(pool, req.user!.id, encounterId, {
+      actorParticipantId: participantId,
+      targetParticipantIds: [],
+      actionType: 'ability',
+      meansLabel: 'Force Door',
+      diceRollId: door.roll.id,
+      resultKind: door.success ? 'effect' : 'miss',
+      effectDescription: door.success ? 'Door forced open' : undefined,
+    });
+    await broadcastActionRecorded(io, pool, doorAction, door.economy.encounter.campaign_id);
+  }
+  res.json({
+    element: formatMapElementForWire(door.element),
+    roll: door.roll,
+    success: door.success,
+    message: door.message,
   });
 });

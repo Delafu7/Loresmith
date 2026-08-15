@@ -115,9 +115,19 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     icon: DoorIcon,
     category: 'structure',
     placement: 'segment',
-    blocksVision: (el) => el.props.state !== 'open',
-    blocksMovement: (el) => el.props.state === 'locked',
-    defaults: () => ({ props: { state: 'closed' } }),
+    // Kept in sync by inspection with server/src/domain/mapElementVisibility.ts's
+    // computeBlocksVision/computeBlocksMovement — see that file's header
+    // comment for the full state-by-state rationale (stuck blocks movement
+    // like locked but not differently from closed for vision; broken is a
+    // destroyed door, passable and transparent exactly like open).
+    blocksVision: (el) => el.props.state !== 'open' && el.props.state !== 'broken',
+    blocksMovement: (el) => el.props.state === 'locked' || el.props.state === 'stuck',
+    // forceDC seeded to match services/doorActions.ts's DEFAULT_FORCE_DOOR_DC
+    // app-convenience fallback — every field in `fields` below must have a
+    // seeded key here (registry.test.ts enforces this), and a GM who never
+    // touches this field should still see the same DC the server would fall
+    // back to if it were left unset entirely.
+    defaults: () => ({ props: { state: 'closed', forceDC: 15 } }),
     fields: [
       {
         key: 'state',
@@ -127,13 +137,25 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
           { value: 'open', labelKey: 'encounters.mapElements.doorStates.open' },
           { value: 'closed', labelKey: 'encounters.mapElements.doorStates.closed' },
           { value: 'locked', labelKey: 'encounters.mapElements.doorStates.locked' },
+          { value: 'stuck', labelKey: 'encounters.mapElements.doorStates.stuck' },
+          { value: 'broken', labelKey: 'encounters.mapElements.doorStates.broken' },
         ],
       },
+      { key: 'forceDC', kind: 'number', labelKey: 'encounters.mapElements.fields.forceDC', min: 1, max: 30, step: 1 },
     ],
     render: (el, ctx) => {
       if (el.x2 == null || el.y2 == null) return null;
       const style = segmentStyle(el.x1 * ctx.cellSizePx, el.y1 * ctx.cellSizePx, el.x2 * ctx.cellSizePx, el.y2 * ctx.cellSizePx, STROKE_WIDTH_PX + 3);
-      const color = el.props.state === 'open' ? 'bg-emerald-600/70' : el.props.state === 'locked' ? 'bg-red-700' : 'bg-amber-700';
+      const color =
+        el.props.state === 'open'
+          ? 'bg-emerald-600/70'
+          : el.props.state === 'broken'
+            ? 'bg-emerald-900/60'
+            : el.props.state === 'locked'
+              ? 'bg-red-700'
+              : el.props.state === 'stuck'
+                ? 'bg-orange-700'
+                : 'bg-amber-700';
       return (
         <div
           onClick={(e) => {

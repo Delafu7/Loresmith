@@ -16,7 +16,7 @@ import { pool } from '../db/pool.js';
 import { createEncounter } from './encounters.js';
 import { createMap, linkMapToEncounter, setActiveMap } from './maps.js';
 import { createMapElement, formatMapElementForViewer } from './mapElements.js';
-import { computeBlocksVision } from '../domain/mapElementVisibility.js';
+import { computeBlocksVision, computeBlocksMovement } from '../domain/mapElementVisibility.js';
 
 describe('map elements visibility (integration, live DB, throwaway fixtures)', () => {
   let dmUserId: string;
@@ -177,9 +177,19 @@ describe('map elements visibility (integration, live DB, throwaway fixtures)', (
     expect(computeBlocksVision({ type: 'door', props: { state: 'open' } })).toBe(false);
     expect(computeBlocksVision({ type: 'door', props: { state: 'closed' } })).toBe(true);
     expect(computeBlocksVision({ type: 'door', props: { state: 'locked' } })).toBe(true);
+    expect(computeBlocksVision({ type: 'door', props: { state: 'stuck' } })).toBe(true);
+    expect(computeBlocksVision({ type: 'door', props: { state: 'broken' } })).toBe(false);
     expect(computeBlocksVision({ type: 'light', props: {} })).toBe(false);
     expect(computeBlocksVision({ type: 'area', props: {} })).toBe(false);
     expect(computeBlocksVision({ type: 'note', props: {} })).toBe(false);
     expect(computeBlocksVision({ type: 'image', props: {} })).toBe(false);
+  });
+
+  it("computeBlocksMovement matches the client registry's door truth table", () => {
+    expect(computeBlocksMovement({ type: 'door', props: { state: 'open' } })).toBe(false);
+    expect(computeBlocksMovement({ type: 'door', props: { state: 'closed' } })).toBe(false);
+    expect(computeBlocksMovement({ type: 'door', props: { state: 'locked' } })).toBe(true);
+    expect(computeBlocksMovement({ type: 'door', props: { state: 'stuck' } })).toBe(true);
+    expect(computeBlocksMovement({ type: 'door', props: { state: 'broken' } })).toBe(false);
   });
 });

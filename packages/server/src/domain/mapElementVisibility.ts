@@ -17,8 +17,13 @@ export function computeBlocksVision(el: BlocksVisionInput): boolean {
   switch (el.type) {
     case 'wall':
       return true;
-    case 'door':
-      return (el.props as { state?: string }).state !== 'open';
+    case 'door': {
+      const state = (el.props as { state?: string }).state;
+      // A broken door is destroyed — nothing left to block sight through,
+      // same as 'open'. Every other state (closed/locked/stuck) is a solid
+      // door blocking line of sight.
+      return state !== 'open' && state !== 'broken';
+    }
     default:
       return false; // light/area/note/image never block vision
   }
@@ -30,13 +35,17 @@ export function computeBlocksVision(el: BlocksVisionInput): boolean {
 // above. Deliberately a DIFFERENT predicate for a door: a closed-but-
 // unlocked door blocks LINE OF SIGHT (you can't see through it) but not
 // MOVEMENT (a mover can open it and walk through as part of the move) —
-// only a locked door actually blocks movement.
+// only a door a mover can't just open blocks movement outright: 'locked'
+// (no key/no time to pick it) and 'stuck' (won't budge without forcing it)
+// both do; 'broken' is a destroyed door, passable exactly like 'open'.
 export function computeBlocksMovement(el: BlocksVisionInput): boolean {
   switch (el.type) {
     case 'wall':
       return true;
-    case 'door':
-      return (el.props as { state?: string }).state === 'locked';
+    case 'door': {
+      const state = (el.props as { state?: string }).state;
+      return state === 'locked' || state === 'stuck';
+    }
     default:
       return false; // light/area/note/image never block movement
   }

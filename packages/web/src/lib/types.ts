@@ -886,7 +886,7 @@ interface MapElementBase {
 export type MapElementType = 'wall' | 'door' | 'light' | 'area' | 'note' | 'image';
 export type MapElement =
   | (MapElementBase & { type: 'wall'; points: null; props: Record<string, never> })
-  | (MapElementBase & { type: 'door'; points: null; props: { state: 'open' | 'closed' | 'locked' } })
+  | (MapElementBase & { type: 'door'; points: null; props: { state: 'open' | 'closed' | 'locked' | 'stuck' | 'broken'; forceDC?: number } })
   | (MapElementBase & {
       type: 'light';
       points: null;
@@ -1236,5 +1236,18 @@ export interface GrappleResult {
   defenderOverridden: boolean;
   success: boolean;
   appliedEffect: Record<string, unknown> | null;
+  message: string;
+}
+
+// POST /encounters/:id/participants/:pid/doors/:elementId's response
+// (interactive doors) — `roll`/`success` are only populated for a 'force'
+// action (open/close never rolls); the door's new state itself is NOT read
+// from this response (same "no local cache write" discipline as every other
+// combat mutation in this app) — MAP_ELEMENTS_CHANGED over the socket is
+// what actually updates the map/sidebar.
+export interface DoorActionResult {
+  element: MapElement;
+  roll: DiceRoll | null;
+  success: boolean | null;
   message: string;
 }

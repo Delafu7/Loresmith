@@ -27,7 +27,9 @@ export interface MapElementRow {
   z_index: number;
 }
 
-const ELEMENT_ROW_COLUMNS = `id, map_id, type, x1, y1, x2, y2, points, props, label, visibility, owner_user_id, locked, z_index`;
+// Exported for services/doorActions.ts's own locked SELECT/UPDATE queries —
+// same reasoning as bumpLinkedEncounters above.
+export const ELEMENT_ROW_COLUMNS = `id, map_id, type, x1, y1, x2, y2, points, props, label, visibility, owner_user_id, locked, z_index`;
 
 // A missing x1/y1 pair on the 'area' (polygon) type would violate the DB's
 // NOT NULL constraint even though its real geometry lives in `points` — the
@@ -73,7 +75,13 @@ export interface AffectedEncounter {
 // the same map too, so the route can broadcast MAP_ELEMENTS_CHANGED to every
 // live session showing this room — not just the one the DM happens to be
 // editing from — with a freshly-bumped seq in each one's own envelope.
-async function bumpLinkedEncounters(client: PoolClient, mapId: string): Promise<AffectedEncounter[]> {
+// Exported for services/doorActions.ts — a door open/close/force action
+// mutates a map_elements row from a route OUTSIDE this file (participant-
+// scoped, not element-scoped, since it needs requireOwnParticipantOrDm's
+// :pid authorization), but still needs to bump every encounter sharing this
+// map exactly like create/update/delete above, so every live session
+// broadcasts the change — not a second, independently-maintained copy.
+export async function bumpLinkedEncounters(client: PoolClient, mapId: string): Promise<AffectedEncounter[]> {
   const result = await client.query<AffectedEncounter>(
     `UPDATE encounters SET sync_seq = sync_seq + 1
      WHERE id IN (SELECT encounter_id FROM encounter_maps_link WHERE map_id = $1)

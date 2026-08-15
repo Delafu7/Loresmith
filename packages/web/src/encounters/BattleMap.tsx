@@ -40,6 +40,7 @@ import { ELEMENT_REGISTRY, buildPreviewElement, renderMapElement } from './eleme
 import { ElementPalette } from './elements/ElementPalette';
 import { MapCanvasElements } from './elements/MapCanvasElements';
 import { ElementPropertyPanel } from './elements/ElementPropertyPanel';
+import { DoorActionPanel } from './elements/DoorActionPanel';
 import { useCreateMapElement, useSetMapElementsVisibilityBatch } from './elements/useMapElements';
 import { VisionOverlay } from './vision/VisionOverlay';
 import { useCampaignShell } from '../campaigns/CampaignShell';
@@ -1325,6 +1326,16 @@ export function BattleMap({
 
       {isDm && selectedElement && (
         <ElementPropertyPanel campaignId={campaignId} encounterId={encounterId} element={selectedElement} onClose={() => setSelectedElementId(null)} />
+      )}
+
+      {!isDm && selectedElement?.type === 'door' && (
+        <DoorActionPanel
+          encounterId={encounterId}
+          element={selectedElement}
+          participants={participants}
+          myCharacterIds={myCharacterIds}
+          onClose={() => setSelectedElementId(null)}
+        />
       )}
     </div>
   );

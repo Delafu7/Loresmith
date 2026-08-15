@@ -45,16 +45,20 @@ describe('ELEMENT_REGISTRY', () => {
     expect(elementBlocksMovement(wall)).toBe(true);
   });
 
-  it('a door blocks vision unless open, and blocks movement only when locked', () => {
-    const doorAt = (state: 'open' | 'closed' | 'locked'): MapElement => ({ ...BASE, type: 'door', points: null, props: { state } });
+  it('a door blocks vision unless open/broken, and blocks movement only when locked/stuck', () => {
+    const doorAt = (state: 'open' | 'closed' | 'locked' | 'stuck' | 'broken'): MapElement => ({ ...BASE, type: 'door', points: null, props: { state } });
 
     expect(elementBlocksVision(doorAt('open'))).toBe(false);
     expect(elementBlocksVision(doorAt('closed'))).toBe(true);
     expect(elementBlocksVision(doorAt('locked'))).toBe(true);
+    expect(elementBlocksVision(doorAt('stuck'))).toBe(true);
+    expect(elementBlocksVision(doorAt('broken'))).toBe(false);
 
     expect(elementBlocksMovement(doorAt('open'))).toBe(false);
     expect(elementBlocksMovement(doorAt('closed'))).toBe(false);
     expect(elementBlocksMovement(doorAt('locked'))).toBe(true);
+    expect(elementBlocksMovement(doorAt('stuck'))).toBe(true);
+    expect(elementBlocksMovement(doorAt('broken'))).toBe(false);
   });
 
   it('light/area/note/image never block vision or movement', () => {
