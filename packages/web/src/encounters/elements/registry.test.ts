@@ -74,8 +74,8 @@ describe('ELEMENT_REGISTRY', () => {
     }
   });
 
-  it('note defaults to gm_only; every other type defaults to visible (or leaves it server-defaulted)', () => {
-    expect(ELEMENT_REGISTRY.note.defaults().visibility).toBe('gm_only');
+  it('note defaults to revealed_to_players (GM notes are readable by players unless explicitly hidden); every other type defaults to visible (or leaves it server-defaulted)', () => {
+    expect(ELEMENT_REGISTRY.note.defaults().visibility).toBe('revealed_to_players');
   });
 
   // GM-only visibility layer — a hidden wall/door/light arrives from the

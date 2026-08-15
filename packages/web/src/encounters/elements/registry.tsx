@@ -257,7 +257,14 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
     placement: 'point',
     blocksVision: () => false,
     blocksMovement: () => false,
-    defaults: () => ({ props: { body: '' }, visibility: 'gm_only' }),
+    // Shared by default — a map note is normally in-world lore/flavor text a
+    // GM wants every player to be able to read (a plaque, a journal page), so
+    // a freshly-placed note starts 'revealed_to_players'. A GM who wants to
+    // leave themselves prep notes on the map (an ambush trigger, a monster's
+    // real stats) still can — the existing reveal/hide toggle just below
+    // (visibility field, same as every other element type) flips it back to
+    // 'gm_only' as an explicit private flag.
+    defaults: () => ({ props: { body: '' }, visibility: 'revealed_to_players' }),
     fields: [{ key: 'body', kind: 'textarea', labelKey: 'encounters.mapElements.fields.noteBody', maxLength: 5000 }],
     render: (el, ctx) => (
       <div
