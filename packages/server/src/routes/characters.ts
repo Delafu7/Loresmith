@@ -40,6 +40,7 @@ import {
   broadcastArmorClassChanged,
   broadcastResourcePoolChanged,
   broadcastCharactersUpdated,
+  broadcastPendingActionCreated,
 } from '../sockets/broadcast.js';
 import type { Server } from 'socket.io';
 import type { ArmorClassEncounterSync } from '../services/armorClass.js';
@@ -228,6 +229,15 @@ charactersRouter.post('/:id/apply-damage', async (req, res) => {
   const input = applyDamageSchema.parse(req.body);
   const result = await charactersService.applyDamage(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
+
+  // Phase 4 "DM approval before a player-submitted action resolves" — see
+  // routes/monsters.ts's apply-damage route for the identical branch.
+  if ('pending' in result) {
+    await broadcastPendingActionCreated(io, result.request.campaign_id, result.request);
+    res.status(202).json({ pending: true, request: result.request });
+    return;
+  }
+
   await Promise.all(
     result.encounterSyncs.map((sync) =>
       broadcastHpChanged(io, {

@@ -2,6 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm, requireOwnerOrDm, requireControllerOrDm, getMembership, type CampaignRole } from './authz.js';
 import { applyHpDeltaWithTempAbsorption, type HpState } from './hp.js';
+import { authorizeAttackerOnTurn } from './encounters.js';
+import { createPendingAction, type PendingActionCreated } from './pendingActions.js';
 import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
@@ -640,10 +642,49 @@ export async function applyDamage(
   actorId: string,
   characterId: string,
   input: ApplyDamageInput,
-): Promise<ApplyDamageResult> {
+): Promise<ApplyDamageResult | PendingActionCreated> {
   const character = await fetchCharacterOrThrow(pool, characterId);
   // Control-gated, not ownership-gated — same reasoning as applyHpDelta above.
+  // Unchanged from before Phase 2: this still requires the actor to control
+  // the TARGET character (self-inflicted damage, or a second character the
+  // same player has been delegated) — it does not open PC-vs-PC "friendly
+  // fire" damage, which is a separate, not-yet-decided scope question.
   const role = await authorizeCharacterAction(pool, actorId, character);
+
+  // Phase 2 "close the parity gap on character-vs-character damage": a
+  // non-DM caller who also names the attacking combat_participants row gets
+  // that participant's turn enforced too (authorizeAttackerOnTurn,
+  // services/encounters.ts — the same check applyMonsterInstanceDamage
+  // uses), on top of the target-control check above. Omitted entirely (no
+  // attackerParticipantId), this is a no-op — matches the pre-Phase-2
+  // behavior for any caller that hasn't been updated to send it yet.
+  if (role !== 'dm' && input.attackerParticipantId) {
+    await authorizeAttackerOnTurn(pool, actorId, input.encounterId!, input.attackerParticipantId);
+
+    // Phase 4 "DM approval before a player-submitted action resolves" — same
+    // "stop here and queue it" branch as services/monsters.ts's
+    // applyMonsterInstanceDamage; see that function's comment for the full
+    // rationale (routes/pendingActions.ts replays this same function with
+    // the DM's own actorId on approval, which skips this whole block).
+    const targetRes = await pool.query<{ id: string }>(
+      `SELECT id FROM combat_participants WHERE character_id = $1 AND encounter_id = $2`,
+      [characterId, input.encounterId!],
+    );
+    const targetParticipantId = targetRes.rows[0]?.id;
+    if (!targetParticipantId) throw new AppError('VALIDATION_ERROR', 'Target is not part of this encounter');
+
+    const request = await createPendingAction(pool, {
+      encounterId: input.encounterId!,
+      campaignId: character.campaign_id,
+      requestedByUserId: actorId,
+      actorParticipantId: input.attackerParticipantId,
+      targetParticipantIds: [targetParticipantId],
+      kind: 'attack_character',
+      label: input.rollContext ?? 'Attack',
+      payload: { characterId, damage: input },
+    });
+    return { pending: true, request };
+  }
 
   // M3: re-derived from the actual stored roll, never trusted from
   // input.isCritical — see deriveIsCriticalFromAttackRoll's own comment.

@@ -33,6 +33,11 @@ describe('performGrapple (integration, live DB, throwaway fixtures)', () => {
       [dmUserId],
     );
     campaignId = campaignRes.rows[0]!.id;
+    // Phase 4 "DM approval": performGrapple now resolves role internally
+    // (to decide DM-unconditional vs. queue-for-approval), which requires
+    // actual campaign_members membership — this row was previously never
+    // needed since authorization lived entirely at the route layer.
+    await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'dm')`, [campaignId, dmUserId]);
 
     const charRes = await pool.query<{ id: string }>(
       `INSERT INTO characters

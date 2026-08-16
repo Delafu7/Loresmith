@@ -11,7 +11,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { ResourcePool, SnapshotParticipant } from '../lib/types';
+import type { PendingActionRequest, ResourcePool, SnapshotParticipant } from '../lib/types';
 import { useCharacterResources, resourcesQueryKey } from '../characters/useResourcePools';
 import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
 import { useCampaignShell } from '../campaigns/CampaignShell';
@@ -42,13 +42,18 @@ export function CastPanel({
 
   const castMutation = useMutation({
     mutationFn: () =>
-      api.post(`/encounters/${encounterId}/cast`, {
+      api.post<{ pending: true; request: PendingActionRequest } | Record<string, unknown>>(`/encounters/${encounterId}/cast`, {
         characterId: casterCharacterId,
         resourceKey,
         effectDefinitionId: effectDefinitionId === '' ? undefined : effectDefinitionId,
         targetParticipantIds: [...targetIds],
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Phase 4 "DM pre-approval" — a pending request hasn't spent the slot
+      // or applied the effect yet, so leave the form as-is (and the resource
+      // query untouched) and show the submitted state below instead of
+      // resetting/closing as if the cast had actually resolved.
+      if ('pending' in data) return;
       void queryClient.invalidateQueries({ queryKey: resourcesQueryKey(casterCharacterId) });
       setEffectDefinitionId('');
       setTargetIds(new Set());
@@ -165,6 +170,9 @@ export function CastPanel({
         </button>
       </div>
       {castMutation.isError && <ErrorBanner message={errorMessage(castMutation.error)} />}
+      {castMutation.data && 'pending' in castMutation.data && (
+        <p className="text-[10px] text-amber-500">{t('encounters.pendingActions.submitted')}</p>
+      )}
     </div>
   );
 }

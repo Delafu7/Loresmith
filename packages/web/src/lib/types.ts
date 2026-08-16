@@ -1292,6 +1292,32 @@ export interface GrappleResult {
   message: string;
 }
 
+// Phase 4 "DM approval before a player-submitted action resolves" — raw
+// pending_action_requests row (snake_case, same convention as MonsterInstance
+// above). `payload` and `result` are opaque from the client's perspective
+// (the server-side shape varies by `kind`) — the client only ever displays
+// `label`/`status`/timestamps, never re-derives anything from them.
+export type PendingActionKind = 'attack_character' | 'attack_monster' | 'cast' | 'shove' | 'grapple';
+export type PendingActionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PendingActionRequest {
+  id: string;
+  encounter_id: string;
+  campaign_id: string;
+  requested_by_user_id: string;
+  actor_participant_id: string;
+  target_participant_ids: string[];
+  kind: PendingActionKind;
+  label: string;
+  payload: unknown;
+  status: PendingActionStatus;
+  resolved_by_user_id: string | null;
+  resolved_at: string | null;
+  result: unknown;
+  error: string | null;
+  created_at: string;
+}
+
 // POST /encounters/:id/participants/:pid/doors/:elementId's response
 // (interactive doors) — `roll`/`success` are only populated for a 'force'
 // action (open/close never rolls); the door's new state itself is NOT read

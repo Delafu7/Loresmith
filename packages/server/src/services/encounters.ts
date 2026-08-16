@@ -1146,6 +1146,35 @@ export async function authorizeParticipantAction(
   return role;
 }
 
+// Phase 1/2 "players attack from their own UI" — verifies a non-DM actor
+// controls the named attacking participant (reusing authorizeParticipantAction
+// above for membership + control) and that it's currently their turn
+// (requireCurrentTurn — a no-op outside an active encounter). Shared by
+// services/monsters.ts and services/characters.ts's apply-damage paths so a
+// player-initiated attack is turn-gated the same way regardless of target
+// type. The DM gets no turn check (matches every other actorRole !== 'dm'
+// gate in this file, e.g. computeValidatedMoveCost above).
+export async function authorizeAttackerOnTurn(
+  pool: Pool,
+  actorId: string,
+  encounterId: string,
+  attackerParticipantId: string,
+): Promise<CampaignRole> {
+  const role = await authorizeParticipantAction(pool, actorId, encounterId, attackerParticipantId);
+  if (role !== 'dm') {
+    const result = await pool.query<{ turn_order: number; status: EncounterRow['status']; current_turn_index: number }>(
+      `SELECT cp.turn_order, e.status, e.current_turn_index
+         FROM combat_participants cp
+         JOIN encounters e ON e.id = cp.encounter_id
+        WHERE cp.id = $1 AND cp.encounter_id = $2`,
+      [attackerParticipantId, encounterId],
+    );
+    const row = result.rows[0]!; // guaranteed to exist — authorizeParticipantAction above already confirmed it
+    requireCurrentTurn({ status: row.status, current_turn_index: row.current_turn_index }, { turn_order: row.turn_order });
+  }
+  return role;
+}
+
 // Per-turn action economy (Phase 3.6). Locks the participant row so a
 // double-click can't spend the same slot twice via a race — the CONFLICT
 // check and the write happen against the same locked row within one

@@ -227,6 +227,7 @@ export function SessionScreen({
         live={live}
         myCharacterIds={myCharacterIds}
         characters={characters}
+        monsterInstances={monsterInstances}
       />
     </>
   );

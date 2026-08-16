@@ -33,6 +33,7 @@ import { campaignRacesRouter } from './routes/campaignRaces.js';
 import { campaignClassesRouter } from './routes/campaignClasses.js';
 import { encounterEffectsRouter, effectsRouter } from './routes/effects.js';
 import { castingRouter } from './routes/casting.js';
+import { pendingActionsRouter } from './routes/pendingActions.js';
 import { campaignRestsRouter } from './routes/rests.js';
 import { notesRouter } from './routes/notes.js';
 import { plotThreadsRouter } from './routes/plotThreads.js';
@@ -145,6 +146,7 @@ async function main(): Promise<void> {
   app.use('/encounters', encountersRouter);
   app.use('/encounters', encounterEffectsRouter);
   app.use('/encounters', castingRouter);
+  app.use('/encounters', pendingActionsRouter);
   app.use('/effects', effectsRouter);
   app.use('/assets', assetsRouter);
 

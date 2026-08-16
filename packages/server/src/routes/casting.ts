@@ -12,7 +12,13 @@ import { AppError, notFound } from '../middleware/errors.js';
 import { isUuid } from '../domain/ids.js';
 import { castFromEncounterSchema } from '../schemas/casting.js';
 import { castFromEncounter } from '../services/casting.js';
-import { getIo, broadcastEffectApplied, broadcastEffectExpired, broadcastResourcePoolChanged } from '../sockets/broadcast.js';
+import {
+  getIo,
+  broadcastEffectApplied,
+  broadcastEffectExpired,
+  broadcastResourcePoolChanged,
+  broadcastPendingActionCreated,
+} from '../sockets/broadcast.js';
 
 async function loadEncounterCampaignId(encounterId: string): Promise<string> {
   if (!isUuid(encounterId)) throw new AppError('VALIDATION_ERROR', 'Invalid encounter id');
@@ -33,9 +39,19 @@ castingRouter.post('/:id/cast', async (req, res) => {
   // routes/effects.ts.
   await loadEncounterCampaignId(encounterId);
   const input = castFromEncounterSchema.parse(req.body);
-  const { resourcePool, campaignId, appliedEffects } = await castFromEncounter(pool, req.user!.id, encounterId, input);
+  const result = await castFromEncounter(pool, req.user!.id, encounterId, input);
 
   const io = getIo(req.app);
+
+  // Phase 4 "DM approval before a player-submitted action resolves" — see
+  // routes/monsters.ts's apply-damage route for the identical branch.
+  if ('pending' in result) {
+    await broadcastPendingActionCreated(io, result.request.campaign_id, result.request);
+    res.status(202).json({ pending: true, request: result.request });
+    return;
+  }
+
+  const { resourcePool, campaignId, appliedEffects } = result;
   broadcastResourcePoolChanged(io, campaignId, input.characterId, resourcePool);
   for (const applied of appliedEffects) {
     for (const sync of applied.encounterSyncs) {

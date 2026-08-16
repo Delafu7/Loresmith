@@ -14,14 +14,14 @@
 // per REFACTOR-PLAN.md §6: "never just a final number").
 
 import { useEffect, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { DiceRoller, keptDieIndex } from '../components/DiceRoller';
 import { parseDiceExpression } from '../components/QuickDiceRoller';
 import { ErrorBanner, errorMessage } from '../components/Feedback';
 import { useLocale } from '../i18n/LocaleContext';
 import { useDamageTypesCatalog } from '../lib/useCatalog';
-import type { DiceRoll } from '../lib/types';
+import type { CharacterAttack, DiceRoll, MonsterInstance, PendingActionRequest, SnapshotParticipant } from '../lib/types';
 
 export interface NormalizedAttack {
   key: string;
@@ -218,7 +218,7 @@ function AttackRow({
     mutationFn: () => {
       if (!target || !parsedDamage) throw new Error('No target selected');
       const path = target.characterId != null ? `/characters/${target.characterId}/apply-damage` : `/monster-instances/${target.monsterInstanceId}/apply-damage`;
-      return api.post<ApplyDamageResponse>(path, {
+      return api.post<ApplyDamageResponse | { pending: true; request: PendingActionRequest }>(path, {
         diceSides: parsedDamage.sides,
         diceCount: parsedDamage.count,
         modifier: parsedDamage.modifier,
@@ -231,9 +231,21 @@ function AttackRow({
         attackRollId: !isSaveBased ? (lastAttackRoll?.id ?? undefined) : undefined,
         rollContext: `${attack.name}${target ? ` → ${target.name}` : ''}`,
         encounterId,
+        // Phase 1 "players attack from their own UI" — lets the server verify
+        // a non-DM caller controls this participant and that it's their turn
+        // (services/monsters.ts's authorizePlayerAttack); a no-op extra field
+        // for the DM's own unconditional path.
+        attackerParticipantId: rollerParticipantId,
       });
     },
-    onSuccess: (data) => recordActionMutation.mutate({ appliedDamage: data.appliedDamage }),
+    onSuccess: (data) => {
+      // Phase 4 "DM pre-approval" — a pending request hasn't rolled/applied
+      // anything yet, so there's nothing to log; the combat-log entry for the
+      // eventual approved outcome is recorded by the DM's approval flow
+      // (routes/pendingActions.ts), not here.
+      if ('pending' in data) return;
+      recordActionMutation.mutate({ appliedDamage: data.appliedDamage });
+    },
   });
 
   return (
@@ -312,7 +324,10 @@ function AttackRow({
       </div>
 
       {applyDamageMutation.isError && <ErrorBanner message={errorMessage(applyDamageMutation.error)} />}
-      {applyDamageMutation.data && (
+      {applyDamageMutation.data && 'pending' in applyDamageMutation.data && (
+        <p className="text-[10px] text-amber-500">{t('encounters.pendingActions.submitted')}</p>
+      )}
+      {applyDamageMutation.data && !('pending' in applyDamageMutation.data) && (
         <p className="text-[10px] text-stone-400 font-mono tabular-nums">
           {t('encounters.attackRoller.rolled', { diceTotal: applyDamageMutation.data.breakdown.diceTotal })}
           {applyDamageMutation.data.breakdown.modifier !== 0 &&
@@ -336,5 +351,80 @@ function AttackRow({
         </p>
       )}
     </div>
+  );
+}
+
+// Every other live participant a roller could plausibly hit — moved here
+// (out of CombatTracker.tsx, its original home) so BattleModePlayerPanel.tsx
+// can reuse it too without a CombatTracker -> SessionScreen ->
+// BattleModePlayerPanel -> CombatTracker import cycle (CombatTracker.tsx
+// imports SessionScreen.tsx, which imports BattleModePlayerPanel.tsx).
+export function attackTargetsFor(
+  allParticipants: SnapshotParticipant[] | undefined,
+  selfId: string,
+  // Optional (Iteration 4) — when supplied, threads each monster target's
+  // already-role-redacted weakness fields onto AttackTarget so AttackRoller
+  // can show a proactive resist/vulnerable/immune hint before the roller
+  // commits. Omitted entirely still works exactly as before.
+  monsterInstances?: MonsterInstance[],
+): AttackTarget[] {
+  return (allParticipants ?? [])
+    .filter((p) => p.participantId !== selfId)
+    .map((p) => {
+      const mi = p.monsterInstanceId != null ? monsterInstances?.find((m) => m.id === p.monsterInstanceId) : undefined;
+      return {
+        participantId: p.participantId,
+        name: p.name,
+        characterId: p.characterId,
+        monsterInstanceId: p.monsterInstanceId,
+        damageVulnerabilities: mi?.damage_vulnerabilities,
+        damageResistances: mi?.damage_resistances,
+        damageImmunities: mi?.damage_immunities,
+      };
+    });
+}
+
+// Split out only because it needs its own useQuery for character_attacks —
+// a monster roller already has its attacks in hand (monster.actions, no
+// fetch needed) and calls AttackRoller directly. Exported for reuse by
+// ParticipantSheetPanel.tsx's "take action against this target" section and
+// BattleModePlayerPanel.tsx's own attack trigger.
+export function CharacterAttackRoller({
+  characterId,
+  encounterId,
+  rollerParticipantId,
+  targets,
+  initialTargetParticipantId,
+}: {
+  characterId: string;
+  encounterId: string;
+  rollerParticipantId: string;
+  targets: AttackTarget[];
+  initialTargetParticipantId?: string;
+}) {
+  const attacksQuery = useQuery({
+    queryKey: ['character', characterId, 'attacks'],
+    queryFn: () => api.get<{ attacks: CharacterAttack[] }>(`/characters/${characterId}/attacks`),
+  });
+  const normalized: NormalizedAttack[] = (attacksQuery.data?.attacks ?? []).map((a) => ({
+    key: String(a.id),
+    name: a.name,
+    attackBonus: a.attack_bonus,
+    damageDice: a.damage_dice,
+    damageType: a.damage_type,
+    saveDc: a.save_dc,
+    saveAbilityIndex: a.save_ability_index,
+    characterAttackId: a.id,
+  }));
+  if (normalized.length === 0) return null;
+  return (
+    <AttackRoller
+      attacks={normalized}
+      rollerCharacterId={characterId}
+      encounterId={encounterId}
+      rollerParticipantId={rollerParticipantId}
+      targets={targets}
+      initialTargetParticipantId={initialTargetParticipantId}
+    />
   );
 }

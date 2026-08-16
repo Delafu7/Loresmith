@@ -26,6 +26,7 @@ import {
   broadcastEffectExpired,
   broadcastRevealChanged,
   broadcastConcentrationCheckPrompted,
+  broadcastPendingActionCreated,
 } from '../sockets/broadcast.js';
 
 // Mounted at /catalog/monsters (bestiary browse)
@@ -209,6 +210,16 @@ monsterInstancesRouter.post('/:id/apply-damage', async (req, res) => {
   const input = applyDamageSchema.parse(req.body);
   const result = await monstersService.applyMonsterInstanceDamage(pool, req.user!.id, (req.params.id as string), input);
   const io = getIo(req.app);
+
+  // Phase 4 "DM approval before a player-submitted action resolves" — a
+  // non-DM attacker's damage was queued instead of applied; nothing to
+  // broadcast except "a request now exists for the DM to review."
+  if ('pending' in result) {
+    await broadcastPendingActionCreated(io, result.request.campaign_id, result.request);
+    res.status(202).json({ pending: true, request: result.request });
+    return;
+  }
+
   await Promise.all(
     result.encounterSyncs.map((sync) =>
       broadcastHpChanged(io, {

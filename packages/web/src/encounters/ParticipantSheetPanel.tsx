@@ -29,8 +29,8 @@ import { ParticipantHpDisplay } from '../components/ParticipantHpDisplay';
 import { EffectBadge } from '../components/EffectBadge';
 import { EmptyState, ErrorBanner, errorMessage } from '../components/Feedback';
 import { useLocale } from '../i18n/LocaleContext';
-import { ParticipantStatLookup, CharacterAttackRoller, attackTargetsFor } from './CombatTracker';
-import { AttackRoller, type NormalizedAttack } from './AttackRoller';
+import { ParticipantStatLookup } from './CombatTracker';
+import { AttackRoller, attackTargetsFor, CharacterAttackRoller, type NormalizedAttack } from './AttackRoller';
 
 export interface ParticipantSheetPanelProps {
   participant: SnapshotParticipant;

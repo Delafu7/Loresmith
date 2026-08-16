@@ -23,6 +23,7 @@ import { useEffectDefinitionsCatalog } from '../lib/useCatalog';
 import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { ActionEconomyPanel } from './ActionEconomyPanel';
+import { PendingActionsQueue } from './PendingActionsQueue';
 import { CONTROL_BADGE_DOT_COLOR, controlBadgeFor, controlBadgeLabel } from './controlBadge';
 import {
   ActionButton,
@@ -116,6 +117,8 @@ export function BattleModeDmPanel({
           </div>
         )}
       </div>
+
+      <PendingActionsQueue encounterId={encounterId} participants={live.participants} />
 
       <DispositionControl
         disposition={live.encounter.disposition}

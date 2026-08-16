@@ -19,6 +19,7 @@ import type {
   MapElementOrRedacted,
   MapLightingState,
   ParticipantHp,
+  PendingActionRequest,
   ResourcePool,
 } from './types';
 
@@ -491,6 +492,29 @@ export interface CharactersUpdatedEvent {
   serverTimestamp: number;
 }
 
+// PENDING_ACTION_CREATED / PENDING_ACTION_RESOLVED (Phase 4 "DM approval
+// before a player-submitted action resolves") — same "not part of turn-
+// sequencing, no seq" shape as DICE_ROLLED/ACTION_RECORDED: a missed event
+// just leaves the DM's review queue or the player's own submission status
+// one refetch behind. Server targets these at exactly the DM's sockets plus
+// the requesting player's own sockets (sockets/broadcast.ts's
+// broadcastPendingActionCreated/Resolved) — never room-wide, unlike
+// ACTION_RECORDED, since another player has no business seeing someone
+// else's in-flight or resolved request.
+export interface PendingActionCreatedEvent {
+  encounterId: string;
+  campaignId: string;
+  serverTimestamp: number;
+  request: PendingActionRequest;
+}
+
+export interface PendingActionResolvedEvent {
+  encounterId: string;
+  campaignId: string;
+  serverTimestamp: number;
+  request: PendingActionRequest;
+}
+
 export interface ServerToClientEvents {
   COMBAT_STARTED: (payload: CombatStartedEvent) => void;
   COMBAT_ENDED: (payload: CombatEndedEvent) => void;
@@ -531,6 +555,8 @@ export interface ServerToClientEvents {
   BESTIARY_UPDATED: (payload: BestiaryUpdatedEvent) => void;
   LOCATIONS_FACTIONS_UPDATED: (payload: LocationsFactionsUpdatedEvent) => void;
   CHARACTERS_UPDATED: (payload: CharactersUpdatedEvent) => void;
+  PENDING_ACTION_CREATED: (payload: PendingActionCreatedEvent) => void;
+  PENDING_ACTION_RESOLVED: (payload: PendingActionResolvedEvent) => void;
 }
 
 export interface AckOk {

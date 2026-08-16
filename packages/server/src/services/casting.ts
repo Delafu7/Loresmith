@@ -31,6 +31,8 @@ import { notFound } from '../middleware/errors.js';
 import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
 import { spendResource } from './resourcePools.js';
 import { applyEncounterEffect, type EffectMutationResult } from './effects.js';
+import { requireCurrentTurn } from './encounters.js';
+import { createPendingAction, type PendingActionCreated } from './pendingActions.js';
 import type { CastFromEncounterInput } from '../schemas/casting.js';
 
 export interface CastFromEncounterResult {
@@ -44,9 +46,56 @@ export async function castFromEncounter(
   actorId: string,
   encounterId: string,
   input: CastFromEncounterInput,
-): Promise<CastFromEncounterResult> {
+): Promise<CastFromEncounterResult | PendingActionCreated> {
   const character = await fetchCharacterOrThrow(pool, input.characterId);
-  await authorizeCharacterMutation(pool, actorId, character);
+  const role = await authorizeCharacterMutation(pool, actorId, character);
+
+  // Phase 3 "players cast from their own UI" — control was already verified
+  // above (owner-or-DM of the casting character); this adds the turn-order
+  // enforcement Phase 1/2 already applies to attacks, for combat parity. A
+  // no-op if the character has no combat_participants row for this encounter
+  // (e.g. casting isn't otherwise scoped to an active combat here) — same
+  // "can't reason about it, don't block" precedent as
+  // services/encounters.ts's computeValidatedMoveCost. Phase 4 "DM approval"
+  // gating only applies when there IS a participant row to attribute the
+  // request to — the same no-op edge case skips both.
+  if (role !== 'dm') {
+    const participantRes = await pool.query<{
+      id: string;
+      turn_order: number;
+      status: 'preparing' | 'active' | 'paused' | 'completed';
+      current_turn_index: number;
+    }>(
+      `SELECT cp.id, cp.turn_order, e.status, e.current_turn_index
+       FROM combat_participants cp
+       JOIN encounters e ON e.id = cp.encounter_id
+       WHERE cp.character_id = $1 AND cp.encounter_id = $2`,
+      [input.characterId, encounterId],
+    );
+    const participant = participantRes.rows[0];
+    if (participant) {
+      requireCurrentTurn(
+        { status: participant.status, current_turn_index: participant.current_turn_index },
+        { turn_order: participant.turn_order },
+      );
+
+      // Phase 4 "DM approval before a player-submitted action resolves" —
+      // same "stop here and queue it" branch as services/monsters.ts's
+      // applyMonsterInstanceDamage; see that function's comment for the full
+      // rationale.
+      const request = await createPendingAction(pool, {
+        encounterId,
+        campaignId: character.campaign_id,
+        requestedByUserId: actorId,
+        actorParticipantId: participant.id,
+        targetParticipantIds: input.targetParticipantIds,
+        kind: 'cast',
+        label: 'Cast',
+        payload: input,
+      });
+      return { pending: true, request };
+    }
+  }
 
   const { resource: resourcePool, campaignId } = await spendResource(pool, actorId, input.characterId, input.resourceKey, { amount: 1 });
 

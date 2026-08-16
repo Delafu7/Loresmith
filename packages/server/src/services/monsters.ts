@@ -1,6 +1,8 @@
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm, type CampaignRole } from './authz.js';
+import { authorizeAttackerOnTurn } from './encounters.js';
+import { createPendingAction, type PendingActionCreated } from './pendingActions.js';
 import { applyHpDeltaWithTempAbsorption } from './hp.js';
 import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { MONSTER_INSTANCE_STAT_BLOCK_SQL } from '../domain/revealFields.js';
@@ -366,15 +368,66 @@ export interface ApplyMonsterInstanceDamageResult {
   };
 }
 
+// Phase 1 "players attack from their own UI": the target instance must
+// actually be part of the attacker's encounter — authorizeAttackerOnTurn
+// (services/encounters.ts) already confirmed control + turn order for the
+// attacking participant itself, this just stops a crafted request from
+// applying damage to an instance the attacker isn't actually facing. Returns
+// the target's own combat_participants id (Phase 4 needs it for the pending
+// request's target_participant_ids).
+async function assertTargetInEncounter(pool: Pool, targetInstanceId: string, encounterId: string): Promise<string> {
+  const targetRes = await pool.query<{ id: string }>(
+    `SELECT id FROM combat_participants WHERE monster_instance_id = $1 AND encounter_id = $2`,
+    [targetInstanceId, encounterId],
+  );
+  const row = targetRes.rows[0];
+  if (!row) {
+    throw new AppError('VALIDATION_ERROR', 'Target is not part of this encounter');
+  }
+  return row.id;
+}
+
 export async function applyMonsterInstanceDamage(
   pool: Pool,
   actorId: string,
   instanceId: string,
   input: ApplyDamageInput,
-): Promise<ApplyMonsterInstanceDamageResult> {
+): Promise<ApplyMonsterInstanceDamageResult | PendingActionCreated> {
   const instance = await fetchInstanceOrThrow(pool, instanceId);
   const role = await requireMembership(pool, instance.campaign_id, actorId);
-  requireDm(role);
+
+  // Phase 1 "players attack from their own UI": a non-DM caller must name the
+  // combat_participants row they're attacking as (input.encounterId is
+  // guaranteed present alongside it by applyDamageSchema's refine), so
+  // authorizeAttackerOnTurn can verify they control that participant and
+  // that it's currently their turn. Omit it and a non-DM caller is rejected
+  // exactly as before — the DM keeps the original unconditional path.
+  if (role !== 'dm') {
+    if (!input.attackerParticipantId) requireDm(role);
+    else {
+      await authorizeAttackerOnTurn(pool, actorId, input.encounterId!, input.attackerParticipantId);
+      const targetParticipantId = await assertTargetInEncounter(pool, instanceId, input.encounterId!);
+
+      // Phase 4 "DM approval before a player-submitted action resolves":
+      // control + turn order are already verified above — this is the point
+      // where a DM caller would go on to roll and apply damage. A non-DM
+      // caller instead stops here and queues the exact same input for the
+      // DM to approve (routes/pendingActions.ts replays this same function
+      // with the DM's own actorId, which always takes the role === 'dm'
+      // branch below and skips this whole block).
+      const request = await createPendingAction(pool, {
+        encounterId: input.encounterId!,
+        campaignId: instance.campaign_id,
+        requestedByUserId: actorId,
+        actorParticipantId: input.attackerParticipantId,
+        targetParticipantIds: [targetParticipantId],
+        kind: 'attack_monster',
+        label: input.rollContext ?? 'Attack',
+        payload: { instanceId, damage: input },
+      });
+      return { pending: true, request };
+    }
+  }
 
   // M3: re-derived from the actual stored roll, never trusted from
   // input.isCritical — see deriveIsCriticalFromAttackRoll's own comment.

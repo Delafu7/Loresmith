@@ -32,6 +32,11 @@ describe('performShove turn-order enforcement (integration, live DB, throwaway f
       [dmUserId],
     );
     campaignId = campaignRes.rows[0]!.id;
+    // Phase 4 "DM approval": performShove now resolves role internally (to
+    // decide DM-unconditional vs. queue-for-approval), which requires actual
+    // campaign_members membership — this row was previously never needed
+    // since authorization lived entirely at the route layer.
+    await pool.query(`INSERT INTO campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'dm')`, [campaignId, dmUserId]);
 
     const charARes = await pool.query<{ id: string }>(
       `INSERT INTO characters

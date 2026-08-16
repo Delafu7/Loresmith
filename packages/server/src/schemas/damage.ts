@@ -33,5 +33,15 @@ export const applyDamageSchema = z.object({
   attackRollId: z.string().uuid().optional(),
   rollContext: z.string().min(1).max(200).optional().nullable(),
   encounterId: z.string().uuid().optional(),
-});
+  // Phase 1 "players attack from their own UI" — the attacking combat_participants
+  // id, required for a non-DM caller so the server can verify they control that
+  // participant and that it's currently their turn (services/monsters.ts's
+  // applyMonsterInstanceDamage). Omitted for DM-applied damage, which keeps its
+  // original unconditional path.
+  attackerParticipantId: z.string().uuid().optional(),
+})
+  .refine((data) => !data.attackerParticipantId || data.encounterId, {
+    message: 'encounterId is required when attackerParticipantId is provided',
+    path: ['encounterId'],
+  });
 export type ApplyDamageInput = z.infer<typeof applyDamageSchema>;

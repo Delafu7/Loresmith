@@ -3,15 +3,27 @@
 // NPC (monster_instance_id set), matching the feature's own framing rather
 // than the general "any participant vs any participant" case nobody asked
 // for. Reuses services/diceRolls.ts's rollDice for BOTH sides' d20s (same
-// server RNG, same dice_rolls history) instead of duplicating it; the whole
-// endpoint is requireEncounterDm-gated (routes/encounters.ts) so passing
-// role:'dm' to rollDice is always correct here, regardless of which
-// player's PC is attacking.
+// server RNG, same dice_rolls history) instead of duplicating it.
+//
+// Phase 3 "players act from their own UI": the route is
+// requireOwnParticipantOrDm-gated (routes/encounters.ts), not DM-only
+// anymore — control of attackerParticipantId is already verified there, and
+// requireCurrentTurn below enforces it's actually that participant's turn,
+// for DM and player callers alike (this was already unconditional before
+// Phase 3, not new). The two rollDice(..., 'dm', ...) calls below stay
+// hardcoded: the attacker's roll is for attackerCharacterId, which IS the
+// already-control-verified participant's own character, so the 'dm' role
+// only bypasses a redundant second control check; the defender's roll is a
+// system-computed mechanic of an action that's already fully authorized by
+// this point, not a capability that lets a player roll as an arbitrary
+// monster instance through the public dice-roll UI.
 
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { rollDice, type DiceRollRow } from './diceRolls.js';
 import { requireCurrentTurn } from './encounters.js';
+import { requireMembership } from './authz.js';
+import { createPendingAction, type PendingActionCreated } from './pendingActions.js';
 import type { PerformShoveInput } from '../schemas/shove.js';
 
 // Self-contained per-file pure helper — same "don't cross-import a one-line
@@ -73,7 +85,38 @@ export async function performShove(
   attackerParticipantId: string,
   actorUserId: string,
   input: PerformShoveInput,
-): Promise<ShoveResult> {
+): Promise<ShoveResult | PendingActionCreated> {
+  // Phase 4 "DM approval before a player-submitted action resolves" — role
+  // now has to be resolved here (it used to live entirely in the route's
+  // requireOwnParticipantOrDm middleware, which never passed it through):
+  // control of attackerParticipantId is already verified by that middleware
+  // by the time this runs, so this lookup is only to decide DM-unconditional
+  // vs. queue-for-approval, not a second authorization check. A non-DM
+  // caller stops here — no lock, no roll, no action-economy spend — and
+  // queues the exact same input for the DM to approve (routes/
+  // pendingActions.ts replays this same function with the DM's own
+  // actorUserId on approval, which always takes the DM branch below).
+  const campaignForRoleRes = await pool.query<{ campaign_id: string }>(
+    `SELECT e.campaign_id FROM combat_participants cp JOIN encounters e ON e.id = cp.encounter_id WHERE cp.id = $1 AND cp.encounter_id = $2`,
+    [attackerParticipantId, encounterId],
+  );
+  const campaignForRole = campaignForRoleRes.rows[0];
+  if (!campaignForRole) throw notFound('Attacker participant (must be a character)');
+  const role = await requireMembership(pool, campaignForRole.campaign_id, actorUserId);
+  if (role !== 'dm') {
+    const request = await createPendingAction(pool, {
+      encounterId,
+      campaignId: campaignForRole.campaign_id,
+      requestedByUserId: actorUserId,
+      actorParticipantId: attackerParticipantId,
+      targetParticipantIds: [input.targetParticipantId],
+      kind: 'shove',
+      label: 'Shove',
+      payload: input,
+    });
+    return { pending: true, request };
+  }
+
   const client = await pool.connect();
   let campaignId: string;
   let attackerStr: number;

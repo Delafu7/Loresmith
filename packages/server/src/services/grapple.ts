@@ -1,6 +1,8 @@
 // Grapple Check Against a Specific NPC — mirrors services/shove.ts almost
 // exactly (same PC-attacker/NPC-defender scope, same contested-roll shape,
-// same requireEncounterDm gating at the route layer), per docs/rules/actions.md's
+// same Phase 3 requireOwnParticipantOrDm gating at the route layer — see
+// shove.ts's header comment for the full rationale on why that's safe), per
+// docs/rules/actions.md's
 // Grapple section (2014-confirmed mechanic: Str(Athletics) vs. the target's
 // own choice of Str(Athletics) or Dex(Acrobatics); target must be no more
 // than one size category larger — reuses shove.ts's canShoveSize, since 5e's
@@ -12,16 +14,20 @@
 //
 // On success, applies the seeded "Grappled" effect_definition (a real SRD
 // condition, not a spell-style template) to the target via
-// services/effects.ts's applyEncounterEffect — the same DM-only mechanism
-// the existing effect-apply dialog already uses, so undo/removal reuses the
+// services/effects.ts's applyEncounterEffect — that function has no authz of
+// its own (trusts the caller, same as services/casting.ts's use of it), so a
+// player-triggered grapple applying it here is exactly as safe as a
+// player-triggered cast applying an effect already is; undo/removal reuses the
 // existing DELETE /effects/:id flow with no new plumbing.
 
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { rollDice, type DiceRollRow } from './diceRolls.js';
 import { requireCurrentTurn } from './encounters.js';
+import { requireMembership } from './authz.js';
 import { canShoveSize } from './shove.js';
 import { applyEncounterEffect, type EffectMutationResult } from './effects.js';
+import { createPendingAction, type PendingActionCreated } from './pendingActions.js';
 import type { PerformGrappleInput } from '../schemas/grapple.js';
 
 function abilityModifier(score: number): number {
@@ -73,7 +79,30 @@ export async function performGrapple(
   attackerParticipantId: string,
   actorUserId: string,
   input: PerformGrappleInput,
-): Promise<GrappleResult> {
+): Promise<GrappleResult | PendingActionCreated> {
+  // Phase 4 "DM approval before a player-submitted action resolves" — see
+  // shove.ts's performShove for the full rationale (this mirrors it exactly).
+  const campaignForRoleRes = await pool.query<{ campaign_id: string }>(
+    `SELECT e.campaign_id FROM combat_participants cp JOIN encounters e ON e.id = cp.encounter_id WHERE cp.id = $1 AND cp.encounter_id = $2`,
+    [attackerParticipantId, encounterId],
+  );
+  const campaignForRole = campaignForRoleRes.rows[0];
+  if (!campaignForRole) throw notFound('Attacker participant (must be a character)');
+  const role = await requireMembership(pool, campaignForRole.campaign_id, actorUserId);
+  if (role !== 'dm') {
+    const request = await createPendingAction(pool, {
+      encounterId,
+      campaignId: campaignForRole.campaign_id,
+      requestedByUserId: actorUserId,
+      actorParticipantId: attackerParticipantId,
+      targetParticipantIds: [input.targetParticipantId],
+      kind: 'grapple',
+      label: 'Grapple',
+      payload: input,
+    });
+    return { pending: true, request };
+  }
+
   const client = await pool.connect();
   let campaignId: string;
   let attackerStr: number;

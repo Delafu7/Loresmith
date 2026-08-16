@@ -67,6 +67,7 @@ import {
   broadcastActionRecorded,
   broadcastEncounterOpened,
   pushEncounterRoomJoinForOwner,
+  broadcastPendingActionCreated,
 } from '../sockets/broadcast.js';
 
 // Mounted at /campaigns/:id/encounters — nested CRUD (id under the campaign
@@ -679,13 +680,30 @@ encountersRouter.post('/:id/participants/:pid/action-economy/undo', requireEncou
   res.json({ participant });
 });
 
-// Shove Check Against a Specific NPC (Phase 3.7). Same requireEncounterDm
-// guard as the rest of this file — the DM triggers the contested roll on
-// behalf of whichever PC's turn it is, same as every other combat mutation.
-encountersRouter.post('/:id/participants/:pid/shove', requireEncounterDm, async (req, res) => {
+// Shove Check Against a Specific NPC (Phase 3.7). Phase 3 "players act from
+// their own UI": requireOwnParticipantOrDm (same gate as position/
+// action-economy) — a player may shove using their OWN participant;
+// performShove's requireCurrentTurn already enforces it's actually their
+// turn (services/shove.ts). The two rollDice(..., 'dm', ...) calls inside
+// performShove stay hardcoded — control of the attacking participant is
+// already verified here by the route middleware (attackerCharacterId is
+// THAT participant's own character), and the defender's roll is a
+// system-computed mechanic of an already-authorized action, not a
+// player-exposed "roll as a monster" capability (see performShove's own
+// header comment for the updated rationale).
+encountersRouter.post('/:id/participants/:pid/shove', requireOwnParticipantOrDm, async (req, res) => {
   const input = performShoveSchema.parse(req.body);
   const shove = await performShove(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
   const io = getIo(req.app);
+
+  // Phase 4 "DM approval before a player-submitted action resolves" — see
+  // routes/monsters.ts's apply-damage route for the identical branch.
+  if ('pending' in shove) {
+    await broadcastPendingActionCreated(io, shove.request.campaign_id, shove.request);
+    res.status(202).json({ pending: true, request: shove.request });
+    return;
+  }
+
   await broadcastActionEconomyChanged(io, shove.encounter, shove.participant);
   await broadcastDiceRolled(io, shove.encounter.campaign_id, shove.attackerRoll);
   if (shove.defenderRoll) {
@@ -722,13 +740,23 @@ encountersRouter.post('/:id/participants/:pid/shove', requireEncounterDm, async 
 });
 
 // Grapple Check Against a Specific NPC (Phase 7 / docs/rules/actions.md's
-// Grapple section) — mirrors the Shove route exactly, including its
-// requireEncounterDm gating: same "DM triggers the contested roll on behalf
-// of whichever PC's turn it is" reasoning as Shove above.
-encountersRouter.post('/:id/participants/:pid/grapple', requireEncounterDm, async (req, res) => {
+// Grapple section) — mirrors the Shove route exactly, including its Phase 3
+// requireOwnParticipantOrDm gating (see Shove's comment above for the full
+// rationale, including why performGrapple's hardcoded rollDice(..., 'dm', ...)
+// calls and its applyEncounterEffect call on success stay unchanged).
+encountersRouter.post('/:id/participants/:pid/grapple', requireOwnParticipantOrDm, async (req, res) => {
   const input = performGrappleSchema.parse(req.body);
   const grapple = await performGrapple(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
   const io = getIo(req.app);
+
+  // Phase 4 "DM approval before a player-submitted action resolves" — see
+  // routes/monsters.ts's apply-damage route for the identical branch.
+  if ('pending' in grapple) {
+    await broadcastPendingActionCreated(io, grapple.request.campaign_id, grapple.request);
+    res.status(202).json({ pending: true, request: grapple.request });
+    return;
+  }
+
   await broadcastActionEconomyChanged(io, grapple.encounter, grapple.participant);
   await broadcastDiceRolled(io, grapple.encounter.campaign_id, grapple.attackerRoll);
   if (grapple.defenderRoll) {

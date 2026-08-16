@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type {
   Character,
-  CharacterAttack,
   Encounter,
   MonsterCatalogEntry,
   MonsterInstance,
@@ -20,7 +19,7 @@ import { useLocale } from '../i18n/LocaleContext';
 import { useAuth } from '../auth/AuthContext';
 import { formatDistance } from '../lib/units';
 import { SessionScreen } from './SessionScreen';
-import { AttackRoller, type AttackTarget, type NormalizedAttack } from './AttackRoller';
+import { AttackRoller, attackTargetsFor, CharacterAttackRoller, type NormalizedAttack } from './AttackRoller';
 
 const WEAKNESS_FIELDS: Array<{ key: string; labelKey: 'vuln' | 'resist' | 'immune' }> = [
   { key: 'damage_vulnerabilities', labelKey: 'vuln' },
@@ -65,31 +64,6 @@ export function ParticipantWeaknessReveal({ monsterInstanceId }: { monsterInstan
 // devtools. Characters render via the same read-only AbilityScoreGrid the
 // character sheet itself uses, not a new component; monster instances reuse
 // StatBlock as-is (already built for the bestiary page).
-export function attackTargetsFor(
-  allParticipants: SnapshotParticipant[] | undefined,
-  selfId: string,
-  // Optional (Iteration 4) — when supplied, threads each monster target's
-  // already-role-redacted weakness fields onto AttackTarget so AttackRoller
-  // can show a proactive resist/vulnerable/immune hint before the roller
-  // commits. Omitted entirely still works exactly as before.
-  monsterInstances?: MonsterInstance[],
-): AttackTarget[] {
-  return (allParticipants ?? [])
-    .filter((p) => p.participantId !== selfId)
-    .map((p) => {
-      const mi = p.monsterInstanceId != null ? monsterInstances?.find((m) => m.id === p.monsterInstanceId) : undefined;
-      return {
-        participantId: p.participantId,
-        name: p.name,
-        characterId: p.characterId,
-        monsterInstanceId: p.monsterInstanceId,
-        damageVulnerabilities: mi?.damage_vulnerabilities,
-        damageResistances: mi?.damage_resistances,
-        damageImmunities: mi?.damage_immunities,
-      };
-    });
-}
-
 export function ParticipantStatLookup({
   participant,
   characters,
@@ -174,50 +148,6 @@ export function ParticipantStatLookup({
         />
       )}
     </div>
-  );
-}
-
-// Split out only because it needs its own useQuery for character_attacks —
-// the monster branch above already has its attacks in hand (monster.actions,
-// no fetch needed) so it calls AttackRoller directly. Exported for reuse by
-// ParticipantSheetPanel.tsx's "take action against this target" section.
-export function CharacterAttackRoller({
-  characterId,
-  encounterId,
-  rollerParticipantId,
-  targets,
-  initialTargetParticipantId,
-}: {
-  characterId: string;
-  encounterId: string;
-  rollerParticipantId: string;
-  targets: AttackTarget[];
-  initialTargetParticipantId?: string;
-}) {
-  const attacksQuery = useQuery({
-    queryKey: ['character', characterId, 'attacks'],
-    queryFn: () => api.get<{ attacks: CharacterAttack[] }>(`/characters/${characterId}/attacks`),
-  });
-  const normalized: NormalizedAttack[] = (attacksQuery.data?.attacks ?? []).map((a) => ({
-    key: String(a.id),
-    name: a.name,
-    attackBonus: a.attack_bonus,
-    damageDice: a.damage_dice,
-    damageType: a.damage_type,
-    saveDc: a.save_dc,
-    saveAbilityIndex: a.save_ability_index,
-    characterAttackId: a.id,
-  }));
-  if (normalized.length === 0) return null;
-  return (
-    <AttackRoller
-      attacks={normalized}
-      rollerCharacterId={characterId}
-      encounterId={encounterId}
-      rollerParticipantId={rollerParticipantId}
-      targets={targets}
-      initialTargetParticipantId={initialTargetParticipantId}
-    />
   );
 }
 

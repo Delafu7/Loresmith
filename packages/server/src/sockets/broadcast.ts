@@ -26,6 +26,7 @@ import { listMapElements, formatMapElementForWire, formatMapElementForViewer } f
 import type { MapElementRow } from '../services/mapElements.js';
 import type { CampaignRole } from '../services/authz.js';
 import { isActionVisibleToPlayers, type CombatActionView } from '../services/combatActions.js';
+import type { PendingActionRequestRow } from '../services/pendingActions.js';
 import { isRollVisibleToViewer } from '../services/diceRolls.js';
 import { resolveVisibilitySync } from '../services/visibility.js';
 import { computeBlocksVision } from '../domain/mapElementVisibility.js';
@@ -1534,4 +1535,31 @@ export async function broadcastActionRecorded(
     const visibleToPlayers = await isActionVisibleToPlayers(poolOrClient, action.encounterId, action);
     if (visibleToPlayers) io.to(playerSocketIds).emit('ACTION_RECORDED', payload);
   }
+}
+
+// ---- PENDING_ACTION_CREATED / PENDING_ACTION_RESOLVED (Phase 4 "DM
+// approval before a player-submitted action resolves") ----
+//
+// Unlike ACTION_RECORDED above, a pending request is only ever relevant to
+// the DM (who must review it) and the player who submitted it (who's
+// waiting on the outcome) — never room-wide, since another player has no
+// business seeing someone else's in-flight or rejected request, matching
+// services/pendingActions.ts's listPendingActions' own DM-sees-all/
+// player-sees-own-only scoping.
+export async function broadcastPendingActionCreated(io: Server, campaignId: string, request: PendingActionRequestRow): Promise<void> {
+  const room = encounterRoom(request.encounter_id);
+  const { dmSocketIds, playerSocketsByUser } = await splitSocketsByRole(io, campaignId, room);
+  const payload = { encounterId: request.encounter_id, campaignId, serverTimestamp: Date.now(), request };
+  if (dmSocketIds.length > 0) io.to(dmSocketIds).emit('PENDING_ACTION_CREATED', payload);
+  const requesterSocketIds = playerSocketsByUser.get(request.requested_by_user_id) ?? [];
+  if (requesterSocketIds.length > 0) io.to(requesterSocketIds).emit('PENDING_ACTION_CREATED', payload);
+}
+
+export async function broadcastPendingActionResolved(io: Server, campaignId: string, request: PendingActionRequestRow): Promise<void> {
+  const room = encounterRoom(request.encounter_id);
+  const { dmSocketIds, playerSocketsByUser } = await splitSocketsByRole(io, campaignId, room);
+  const payload = { encounterId: request.encounter_id, campaignId, serverTimestamp: Date.now(), request };
+  if (dmSocketIds.length > 0) io.to(dmSocketIds).emit('PENDING_ACTION_RESOLVED', payload);
+  const requesterSocketIds = playerSocketsByUser.get(request.requested_by_user_id) ?? [];
+  if (requesterSocketIds.length > 0) io.to(requesterSocketIds).emit('PENDING_ACTION_RESOLVED', payload);
 }
