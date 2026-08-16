@@ -214,6 +214,13 @@ export function BattleMap({
   // second path to the same positionMutation below, for when a finger is in
   // the way of precise dragging.
   const [pendingMove, setPendingMove] = useState<{ x: number; y: number } | null>(null);
+  // Direct DM/DM+player "type the exact cell" input (Target State: "also by
+  // entering exact coordinates") — feeds the SAME pendingMove/confirm flow
+  // as a map click or a drag drop, so it gets the same reachable-cell
+  // feedback and the same server-validated commit; it's just a third way to
+  // choose the target cell, not a separate write path. Reset whenever the
+  // selection changes so stale digits from a previous token never carry over.
+  const [coordInput, setCoordInput] = useState<{ x: string; y: string }>({ x: '', y: '' });
   // Client-side, session-only move undo (approved scope: no server/schema
   // changes, lost on refresh). Tracks the PRE-move cell(s) of whatever move
   // was just committed — group moves record every member so undo restores
@@ -657,7 +664,16 @@ export function BattleMap({
     enabled: canControlSelected,
   });
   const reachableCells = new Set(reachableQuery.data?.cells ?? []);
-  const moveTargetMode = !paintMode && selectedParticipant != null && canControl(selectedParticipant);
+  // Initial placement (from null,null) is always a free move server-side
+  // regardless of mode/turn (computeValidatedMoveCost) — so a selected
+  // unplaced token only needs the plain ownership check (canControlSelected),
+  // not canMoveToken's turn-order gate, which is about ALREADY-placed
+  // repositioning during active combat and would otherwise wrongly block a
+  // player from dropping their own not-yet-seated character outside their
+  // turn.
+  const selectedIsUnplaced = selectedParticipant != null && (selectedParticipant.posX == null || selectedParticipant.posY == null);
+  const moveTargetMode =
+    !paintMode && selectedParticipant != null && (selectedIsUnplaced ? canControlSelected : canControl(selectedParticipant));
   const pendingMoveIsReachable = pendingMove != null && (reachableCells.size === 0 || reachableCells.has(`${pendingMove.x},${pendingMove.y}`));
 
   // REFACTOR-PLAN.md §1: "on map load, spawn the creature instances assigned
@@ -688,6 +704,7 @@ export function BattleMap({
   function selectParticipant(id: string | null) {
     setSelectedId(id);
     setPendingMove(null);
+    setCoordInput({ x: '', y: '' });
   }
 
   // Shift-click toggles multi-select membership without disturbing the
@@ -1232,7 +1249,9 @@ export function BattleMap({
                                 : paintMode
                                   ? t('encounters.battleMap.cellPaintTitle', { cell: cellLabel(x, y) })
                                   : moveTargetMode
-                                    ? t('encounters.battleMap.moveHere', { cell: cellLabel(x, y) })
+                                    ? t(selectedIsUnplaced ? 'encounters.battleMap.placeHere' : 'encounters.battleMap.moveHere', {
+                                        cell: cellLabel(x, y),
+                                      })
                                     : (override?.note ?? undefined)
                             }
                             className={`${paintMode || moveTargetMode || placingType ? 'cursor-pointer hover:outline hover:outline-1 hover:outline-amber-500' : ''} ${
@@ -1346,6 +1365,52 @@ export function BattleMap({
             </div>
         </div>
 
+      {/* Exact-coordinates input — a third path to the same pendingMove/
+          confirm flow as a map click or a drag drop (Target State: "also by
+          entering exact coordinates"). Shown any time a controllable token
+          is selected, placed or not, so it covers both initial placement and
+          repositioning with one control. */}
+      {moveTargetMode && selectedParticipant && (
+        <div className="flex-shrink-0 rounded-md bg-stone-900 shadow-sm p-3 flex flex-wrap items-end gap-3">
+          <p className="text-xs text-stone-500">
+            {t('encounters.battleMap.coordinatesHint', { name: selectedParticipant.name })}
+          </p>
+          <Field label={t('encounters.battleMap.coordColumn')} htmlFor="battle-map-coord-x" className="w-20">
+            <Input
+              id="battle-map-coord-x"
+              type="number"
+              min={0}
+              max={map.gridColumns - 1}
+              value={coordInput.x}
+              onChange={(e) => setCoordInput((prev) => ({ ...prev, x: e.target.value }))}
+            />
+          </Field>
+          <Field label={t('encounters.battleMap.coordRow')} htmlFor="battle-map-coord-y" className="w-20">
+            <Input
+              id="battle-map-coord-y"
+              type="number"
+              min={0}
+              max={map.gridRows - 1}
+              value={coordInput.y}
+              onChange={(e) => setCoordInput((prev) => ({ ...prev, y: e.target.value }))}
+            />
+          </Field>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={coordInput.x === '' || coordInput.y === ''}
+            onClick={() => {
+              const x = clamp(Number(coordInput.x), 0, map.gridColumns - 1);
+              const y = clamp(Number(coordInput.y), 0, map.gridRows - 1);
+              setPendingMove({ x, y });
+            }}
+          >
+            {t('encounters.battleMap.goToCoordinates')}
+          </Button>
+        </div>
+      )}
+
       {/* Tap-to-move confirm bar (docs/design-tokens.md mobile pass) — a
           sticky bottom bar rather than inline, so it stays reachable without
           scrolling back up on a tall mobile layout, with an equally-obvious
@@ -1375,7 +1440,11 @@ export function BattleMap({
               }
               className="min-h-11 rounded-md border border-amber-500 px-4 text-sm font-semibold text-amber-500 hover:bg-amber-500/10 disabled:opacity-45"
             >
-              {positionMutation.isPending ? t('encounters.battleMap.moving') : t('encounters.battleMap.confirmMove')}
+              {positionMutation.isPending
+                ? t('encounters.battleMap.moving')
+                : selectedIsUnplaced
+                  ? t('encounters.battleMap.confirmPlacement')
+                  : t('encounters.battleMap.confirmMove')}
             </button>
           </div>
         </div>
@@ -1384,7 +1453,13 @@ export function BattleMap({
       {/* Initial placement (from null,null) is always a free move server-side
           regardless of mode/turn (computeValidatedMoveCost), so the gate
           here is plain ownership — DM places anyone, a player places their
-          own unplaced character. */}
+          own unplaced character. Selecting a name here no longer drops it
+          sight-unseen at the top-left corner — it enters the same
+          select-then-target flow as repositioning an already-placed token
+          (click the destination cell, drag isn't available yet since there's
+          no token on the map to drag from, or type exact coordinates above),
+          so the DM picks the real destination in one step instead of
+          place-then-drag. */}
       {unplacedControllable.length > 0 && (
         <div className="flex-shrink-0 rounded-md bg-stone-900 shadow-sm p-3">
           <p className="text-xs text-stone-500 mb-2">{t('encounters.battleMap.unplacedHint')}</p>
@@ -1393,9 +1468,12 @@ export function BattleMap({
               <button
                 key={p.participantId}
                 type="button"
-                disabled={positionMutation.isPending}
-                onClick={() => positionMutation.mutate({ participantId: p.participantId, x: 0, y: 0 })}
-                className="min-h-11 rounded-md bg-stone-800 hover:bg-stone-700 px-3 text-xs text-stone-200 disabled:opacity-60"
+                onClick={() => selectParticipant(selectedId === p.participantId ? null : p.participantId)}
+                className={`min-h-11 rounded-md px-3 text-xs text-stone-200 ${
+                  selectedId === p.participantId
+                    ? 'bg-amber-500/20 outline outline-2 outline-amber-400'
+                    : 'bg-stone-800 hover:bg-stone-700'
+                }`}
               >
                 {p.name}
               </button>
