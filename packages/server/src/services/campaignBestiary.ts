@@ -204,7 +204,10 @@ export async function assertMonsterCuratedInBestiary(
     [campaignId, monsterId],
   );
   if (res.rowCount === 0) {
-    throw new AppError('NOT_IN_BESTIARY', 'This creature is not in the campaign bestiary and cannot be added to an encounter');
+    throw new AppError(
+      'NOT_IN_BESTIARY',
+      'This creature must be imported into the campaign bestiary before it can be spawned into an encounter',
+    );
   }
 }
 
