@@ -35,7 +35,7 @@ import { formatDistance } from '../lib/units';
 import { canMoveToken } from './canMoveToken';
 import { Token } from './Token';
 import { controlBadgeFor } from './controlBadge';
-import { zoomAtPoint, type Viewport } from './geometry';
+import { zoomAtPoint, screenToWorld, snapToCell, type Viewport } from './geometry';
 import { ELEMENT_REGISTRY, buildPreviewElement, renderMapElement } from './elements/registry';
 import { ElementPalette } from './elements/ElementPalette';
 import { MapCanvasElements } from './elements/MapCanvasElements';
@@ -386,17 +386,42 @@ export function BattleMap({
     }
   }
 
+  // Element geometry (registry.tsx) is authored in grid-VERTEX space (a wall
+  // from (0,0)->(1,0) draws exactly along the top grid line — see
+  // segmentStyle's `el.x1 * cellSizePx`), a (gridColumns+1) x (gridRows+1)
+  // space of points, distinct from the CELL-index space (gridColumns x
+  // gridRows) tokens/paint/move-target use. Converts a raw pointer position
+  // straight to world space (screenToWorld) then to the nearest vertex
+  // (snapToCell, applied to a continuous world-pixel coordinate rather than
+  // a fixed per-cell index) — this is what makes placement land where the
+  // cursor actually is, anywhere in the cell, instead of always snapping to
+  // whichever cell's div happened to receive the click.
+  function pointerToVertex(clientX: number, clientY: number): { x: number; y: number } {
+    if (!map) return { x: 0, y: 0 };
+    const screen = containerRelative(clientX, clientY);
+    const world = screenToWorld(screen.x, screen.y, viewport);
+    return {
+      x: Math.min(Math.max(snapToCell(world.x, map.cellSizePx), 0), map.gridColumns),
+      y: Math.min(Math.max(snapToCell(world.y, map.cellSizePx), 0), map.gridRows),
+    };
+  }
+
   // Gate for every paint/move-target/element-placement cell click — a real
   // drag-to-pan that started on that same cell (justPannedRef, set by
   // handleMapPointerMove's promotion above) must not also trigger the
-  // cell's click action once the pointer lifts.
-  function handleCellClick(x: number, y: number) {
+  // cell's click action once the pointer lifts. `x`/`y` (the containing
+  // cell's own index) still drive paint/move-target, which are genuinely
+  // cell-scoped; placement instead re-derives a precise VERTEX from the
+  // click's own screen position via pointerToVertex, ignoring the coarser
+  // per-cell x/y.
+  function handleCellClick(x: number, y: number, e: React.MouseEvent) {
     if (justPannedRef.current) {
       justPannedRef.current = false;
       return;
     }
     if (placingType) {
-      handleElementPlacementClick(x, y);
+      const vertex = pointerToVertex(e.clientX, e.clientY);
+      handleElementPlacementClick(vertex.x, vertex.y);
     } else if (paintMode) {
       handleCellPaint(x, y);
     } else if (moveTargetMode) {
@@ -404,25 +429,42 @@ export function BattleMap({
     }
   }
 
-  // Cursor-anchored continuous wheel zoom. Attached as a native (non-passive)
-  // listener rather than React's synthetic onWheel — React 17+ attaches
-  // onWheel at the root as a passive listener by default, which silently
-  // drops preventDefault() and lets the page itself scroll/zoom underneath.
-  // Reads/writes viewport only through the functional setViewport updater
-  // above, so this never closes over a stale zoom/pan and can be attached
-  // once on mount.
+  // Wheel handling, attached as a native (non-passive) listener rather than
+  // React's synthetic onWheel — React 17+ attaches onWheel at the root as a
+  // passive listener by default, which silently drops preventDefault() and
+  // lets the page itself scroll/zoom underneath. Reads/writes viewport only
+  // through the functional setViewport updater above, so this never closes
+  // over a stale zoom/pan and can be attached once on mount.
+  //
+  // Branches on ctrlKey, not device type (which a wheel event can't reliably
+  // report): a trackpad's pinch gesture is delivered by the browser as a
+  // wheel event with ctrlKey synthetically set to true (same signal a mouse
+  // user gets by manually holding Ctrl/Cmd while scrolling) — that's the
+  // zoom gesture. Plain wheel with no ctrlKey covers both a mouse's actual
+  // wheel notches AND — critically — a trackpad's two-finger scroll, which
+  // is a laptop user's natural pan gesture; a version of this handler that
+  // zoomed on every wheel event (no ctrlKey branch) hijacked that gesture
+  // into zooming instead of panning, which is what "panning doesn't work"
+  // looks like on a trackpad. Pan applies deltaX/deltaY directly to
+  // panX/panY: both are already plain screen pixels regardless of zoom (see
+  // the Viewport doc comment in geometry.ts), same invariant the pointer-pan
+  // handlers below rely on.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      const rect = el!.getBoundingClientRect();
-      const screenX = e.clientX - rect.left;
-      const screenY = e.clientY - rect.top;
-      setViewport((prev) => {
-        const targetZoom = clampZoom(prev.zoom * Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY));
-        return zoomAtPoint(screenX, screenY, targetZoom, prev);
-      });
+      if (e.ctrlKey) {
+        const rect = el!.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        setViewport((prev) => {
+          const targetZoom = clampZoom(prev.zoom * Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY));
+          return zoomAtPoint(screenX, screenY, targetZoom, prev);
+        });
+        return;
+      }
+      setViewport((prev) => ({ ...prev, panX: prev.panX - e.deltaX, panY: prev.panY - e.deltaY }));
     }
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -1085,7 +1127,18 @@ export function BattleMap({
                 the way the old native-scroll spacer div was. */}
             <div
               className="absolute left-0 top-0 flex"
-              style={{ transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`, transformOrigin: 'top left' }}
+              // will-change promotes this subtree to its own compositor
+              // layer so pan/zoom is a cheap composite instead of a full
+              // repaint of everything under the transform (grid, tokens,
+              // and — the expensive one — a full-size background image) on
+              // every pointermove/wheel tick; without it, panning with a
+              // background image loaded visibly jumps/stutters where an
+              // empty grid (nothing costly to repaint) does not.
+              style={{
+                transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`,
+                transformOrigin: 'top left',
+                willChange: 'transform',
+              }}
             >
               {/* Row-number column */}
               <div className="flex flex-col flex-shrink-0" style={{ marginTop: 18 }}>
@@ -1154,6 +1207,12 @@ export function BattleMap({
                       gridTemplateColumns: `repeat(${map.gridColumns}, 1fr)`,
                       gridTemplateRows: `repeat(${map.gridRows}, 1fr)`,
                     }}
+                    // Hover tracking during placement is computed once here
+                    // from the raw pointer position (pointerToVertex), not
+                    // per-cell onMouseEnter — a per-cell handler could only
+                    // ever report that cell's own fixed index, the same
+                    // coarseness bug being fixed for the click itself below.
+                    onMouseMove={placingType ? (e) => setPlacementHoverCell(pointerToVertex(e.clientX, e.clientY)) : undefined}
                     onMouseLeave={() => placingType && setPlacementHoverCell(null)}
                   >
                     {Array.from({ length: map.gridRows }, (_, y) =>
@@ -1161,13 +1220,11 @@ export function BattleMap({
                         const override = overridesByCell.get(`${x},${y}`);
                         const isReachable = reachableCells.has(`${x},${y}`);
                         const isPending = pendingMove?.x === x && pendingMove?.y === y;
-                        const isPlacingPoint = placingPoints.some((pt) => pt.x === x && pt.y === y);
                         return (
                           <div
                             key={`${x},${y}`}
-                            onMouseEnter={placingType ? () => setPlacementHoverCell({ x, y }) : undefined}
                             onClick={
-                              placingType || paintMode || moveTargetMode ? () => handleCellClick(x, y) : undefined
+                              placingType || paintMode || moveTargetMode ? (e) => handleCellClick(x, y, e) : undefined
                             }
                             title={
                               placingType
@@ -1182,12 +1239,35 @@ export function BattleMap({
                               override ? OVERRIDE_TINT[override.cost_type] : ''
                             } ${isReachable && !override ? 'bg-emerald-600/15' : ''} ${
                               isPending ? 'outline outline-2 outline-amber-400 bg-amber-500/25' : ''
-                            } ${isPlacingPoint ? 'outline outline-2 outline-sky-400 bg-sky-500/25' : ''}`}
+                            }`}
                           />
                         );
                       }),
                     )}
                   </div>
+
+                  {/* Precise vertex markers for an in-progress placement —
+                      already-placed points (segment start / polygon
+                      vertices) plus the live snapped point under the
+                      cursor, at the exact vertex pointerToVertex computed
+                      (not a whole-cell tint, which can't represent a
+                      vertex — the outer grid boundary in particular has no
+                      containing cell of its own). This is the "visual
+                      feedback of the anchor point before release." */}
+                  {placingType &&
+                    placingPoints.map((pt, i) => (
+                      <div
+                        key={i}
+                        className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-400 ring-2 ring-sky-200"
+                        style={{ left: pt.x * map.cellSizePx, top: pt.y * map.cellSizePx }}
+                      />
+                    ))}
+                  {placingType && placementHoverCell && (
+                    <div
+                      className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-400 bg-amber-400/30"
+                      style={{ left: placementHoverCell.x * map.cellSizePx, top: placementHoverCell.y * map.cellSizePx }}
+                    />
+                  )}
 
                   <MapCanvasElements
                     elements={canvasMapElements}
