@@ -16,6 +16,7 @@ export const nav = {
   assets: 'Ressources',
   reference: 'Référence',
   catalog: 'Catalogue',
+  racesClasses: 'Races et classes',
   compendium: 'Recueil',
   members: 'Membres',
   settings: 'Paramètres',

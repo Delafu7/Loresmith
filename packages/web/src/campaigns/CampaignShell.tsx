@@ -37,6 +37,7 @@ const SECTION_LABEL_KEYS: Record<string, TranslationKey> = {
   assets: 'nav.assets',
   reference: 'nav.reference',
   catalog: 'nav.catalog',
+  'races-classes': 'nav.racesClasses',
   members: 'nav.members',
   settings: 'nav.settings',
 };
@@ -227,6 +228,7 @@ export function CampaignShell() {
               for a non-DM viewer). */}
           <NavItem to="reference" onClick={onNavigate}>{t('nav.reference')}</NavItem>
           {isDm && <NavItem to="catalog" onClick={onNavigate}>{t('nav.catalog')}</NavItem>}
+          {isDm && <NavItem to="races-classes" onClick={onNavigate}>{t('nav.racesClasses')}</NavItem>}
           {isDm && <NavItem to="members" onClick={onNavigate}>{t('nav.members')}</NavItem>}
           {isDm && <NavItem to="settings" onClick={onNavigate}>{t('nav.settings')}</NavItem>}
         </NavItemList>

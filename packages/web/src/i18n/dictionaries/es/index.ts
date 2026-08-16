@@ -27,6 +27,7 @@ import { bestiary } from './bestiary.js';
 import { campaignBestiary } from './campaignBestiary.js';
 import { statBlock } from './statBlock.js';
 import { catalog } from './catalog.js';
+import { campaignRacesClasses } from './campaignRacesClasses.js';
 import { encounters } from './encounters.js';
 import { members } from './members.js';
 import { profile } from './profile.js';
@@ -39,6 +40,6 @@ import { about } from './about.js';
 export const es = {
   common, login, register, dashboard, campaignDashboard, nav, hp, proficiency, effects, hpAdjust, upload,
   campaigns, notes, plotThreads, locationsFactions, campaignCalendar, bastions, pwa, sessionLog, assets, dice, landing, characters,
-  monsters, bestiary, campaignBestiary, statBlock, catalog, encounters, members, profile, items, mapSection, settings,
+  monsters, bestiary, campaignBestiary, statBlock, catalog, campaignRacesClasses, encounters, members, profile, items, mapSection, settings,
   reference, about,
 } satisfies typeof en;

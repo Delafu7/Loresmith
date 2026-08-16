@@ -222,6 +222,9 @@ export interface RaceCatalog {
   speed: number;
   size: string;
   ability_bonuses: unknown;
+  is_homebrew?: boolean;
+  owning_campaign_id?: string | null;
+  owning_user_id?: string | null;
 }
 
 export interface SubraceCatalog {
@@ -244,6 +247,9 @@ export interface ClassCatalog {
   // proficiency toggles from the selected CLASS's own proficiencies, since
   // subclasses have none of their own to read.
   saving_throw_proficiency_ids: string[] | null;
+  is_homebrew?: boolean;
+  owning_campaign_id?: string | null;
+  owning_user_id?: string | null;
 }
 
 export interface SubclassCatalog {
@@ -443,6 +449,44 @@ export interface CampaignBestiaryEntry {
   // curating this template, computed fresh server-side on every read. 1
   // means "just this campaign" — render no badge, not a redundant one.
   shared_campaign_count: number;
+}
+
+// Campaign race/class curation (packages/server/src/{routes,services}/
+// campaignRaces.ts, campaignClasses.ts) — a reference to a RaceCatalog/
+// ClassCatalog row plus campaign-scoped overrides, mirroring
+// CampaignBestiaryEntry's shape (no categories/images/discovered flag,
+// those are bestiary-specific). No FK relationship to characters.race_id/
+// character_classes.class_id — a character keeps pointing at the catalog row
+// directly, so importing/removing an entry never affects existing characters.
+
+export interface CampaignRaceEntry {
+  id: string;
+  campaign_id: string;
+  race_id: string;
+  custom_name: string | null;
+  // Raw override blob (snake_case keys matching races columns) — prefer
+  // `effective` for display.
+  overrides: Record<string, unknown>;
+  notes: string | null;
+  added_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  race: RaceCatalog;
+  effective: RaceCatalog;
+}
+
+export interface CampaignClassEntry {
+  id: string;
+  campaign_id: string;
+  class_id: string;
+  custom_name: string | null;
+  overrides: Record<string, unknown>;
+  notes: string | null;
+  added_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  class: ClassCatalog;
+  effective: ClassCatalog;
 }
 
 export interface BestiaryEntryImage {

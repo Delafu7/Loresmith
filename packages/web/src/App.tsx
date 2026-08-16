@@ -42,6 +42,7 @@ import { NotesIndexPage } from './notes/NotesIndexPage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
 import { AboutPage } from './about/AboutPage';
 import { CatalogEditorPage } from './catalog/CatalogEditorPage';
+import { CampaignRacesClassesPage } from './catalog/CampaignRacesClassesPage';
 import { CompendiumLayout } from './compendium/CompendiumLayout';
 import { CompendiumEditorPage } from './compendium/CompendiumEditorPage';
 import { GlobalItemInventoryPage } from './items/GlobalItemInventoryPage';
@@ -152,6 +153,7 @@ function App() {
                   <Route path="assets" element={<AssetsPage />} />
                   <Route path="reference" element={<CampaignReferencePage />} />
                   <Route path="catalog" element={<CatalogEditorPage />} />
+                  <Route path="races-classes" element={<CampaignRacesClassesPage />} />
                   <Route path="members" element={<CampaignMembersPage />} />
                   <Route path="settings" element={<CampaignSettingsPage />} />
                 </Route>

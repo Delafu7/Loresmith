@@ -29,6 +29,8 @@ import { campaignEncountersRouter, encountersRouter } from './routes/encounters.
 import { campaignBestiaryRouter, campaignCategoriesRouter } from './routes/campaignBestiary.js';
 import { campaignMapsRouter } from './routes/maps.js';
 import { campaignItemStashRouter } from './routes/campaignItems.js';
+import { campaignRacesRouter } from './routes/campaignRaces.js';
+import { campaignClassesRouter } from './routes/campaignClasses.js';
 import { encounterEffectsRouter, effectsRouter } from './routes/effects.js';
 import { castingRouter } from './routes/casting.js';
 import { campaignRestsRouter } from './routes/rests.js';
@@ -130,6 +132,8 @@ async function main(): Promise<void> {
   app.use('/campaigns/:id/reference-notes', campaignReferenceRouter);
   app.use('/campaigns/:id/catalog', campaignCatalogRouter);
   app.use('/campaigns/:id/item-stash', campaignItemStashRouter);
+  app.use('/campaigns/:id/races', campaignRacesRouter);
+  app.use('/campaigns/:id/classes', campaignClassesRouter);
   app.use('/campaigns', campaignsRouter); // handles /, /:id, /:id/members, /:id/sessions itself
 
   // Flat resource-id-keyed routers. encounterEffectsRouter is mounted

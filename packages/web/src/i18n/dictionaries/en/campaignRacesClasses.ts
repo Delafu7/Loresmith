@@ -1,0 +1,28 @@
+// CampaignRacesClassesPage.tsx — per-campaign race/class curation (browse
+// the global catalog, import into the campaign, edit a local override).
+export const campaignRacesClasses = {
+  dmOnly: 'Races & Classes curation is only available to the DM.',
+  heading: 'Races & Classes',
+  subtitle: 'Choose which catalog races and classes this campaign has adopted, and give any of them a campaign-local tweak.',
+  races: 'Races',
+  classes: 'Classes',
+  catalogHeading: 'Catalog',
+  manageCatalogLink: 'Create / duplicate entries →',
+  catalogEmpty: 'No entries match this filter.',
+  homebrewBadge: 'Homebrew',
+  import: 'Import',
+  imported: 'Imported',
+  importedHeading: 'Imported into this campaign',
+  importedEmpty: 'Nothing imported yet — import one from the catalog above.',
+  overriddenBadge: 'Overridden',
+  removeAria: 'Remove from campaign',
+  editOverride: 'Edit override',
+  editModalTitle: 'Edit {name}',
+  customNameLabel: 'Custom name',
+  notesLabel: 'Notes',
+  overridesLabel: 'Overrides (JSON)',
+  overridesHint: 'Fields set here are shallow-merged over the catalog entry for this campaign only — the shared entry is never modified.',
+  invalidJson: 'Overrides must be valid JSON.',
+  cancel: 'Cancel',
+  save: 'Save',
+};
