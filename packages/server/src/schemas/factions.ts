@@ -7,5 +7,9 @@ export const createFactionSchema = z.object({
 });
 export type CreateFactionInput = z.infer<typeof createFactionSchema>;
 
-export const updateFactionSchema = createFactionSchema.partial();
+// DM-only hide/reveal toggle — see schemas/locations.ts's identical field
+// for why this isn't part of createFactionSchema.
+export const updateFactionSchema = createFactionSchema.partial().extend({
+  visibleToPlayers: z.boolean().optional(),
+});
 export type UpdateFactionInput = z.infer<typeof updateFactionSchema>;

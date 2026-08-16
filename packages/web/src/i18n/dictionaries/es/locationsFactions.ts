@@ -19,4 +19,7 @@ export const locationsFactions = {
   deleteFactionConfirm: '¿Eliminar "{name}"? Esta acción no se puede deshacer.',
   editLocationTitle: 'Editar lugar',
   editFactionTitle: 'Editar facción',
+  hiddenBadge: 'Oculto',
+  toggleToRevealed: 'Revelar a los jugadores',
+  toggleToHidden: 'Ocultar de los jugadores',
 };

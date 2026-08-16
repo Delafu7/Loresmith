@@ -12,12 +12,17 @@ interface FactionRow {
   name: string;
   description: string | null;
   notes: string | null;
+  visible_to_players: boolean;
   created_at: string;
   updated_at: string;
 }
 
-export async function listFactions(pool: Pool, campaignId: string) {
-  const result = await pool.query<FactionRow>(`SELECT * FROM factions WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
+export async function listFactions(pool: Pool, campaignId: string, role: CampaignRole) {
+  const values: unknown[] = [campaignId];
+  let where = 'campaign_id = $1';
+  if (role !== 'dm') where += ' AND visible_to_players = true';
+
+  const result = await pool.query<FactionRow>(`SELECT * FROM factions WHERE ${where} ORDER BY name ASC`, values);
   return result.rows;
 }
 
@@ -53,6 +58,7 @@ export async function updateFaction(
   if (input.name !== undefined) { sets.push(`name = $${i++}`); values.push(input.name); }
   if (input.description !== undefined) { sets.push(`description = $${i++}`); values.push(input.description); }
   if (input.notes !== undefined) { sets.push(`notes = $${i++}`); values.push(input.notes); }
+  if (input.visibleToPlayers !== undefined) { sets.push(`visible_to_players = $${i++}`); values.push(input.visibleToPlayers); }
   if (sets.length === 0) return fetchFactionScoped(pool, campaignId, factionId);
 
   sets.push('updated_at = now()');

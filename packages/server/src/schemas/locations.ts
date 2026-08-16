@@ -7,5 +7,11 @@ export const createLocationSchema = z.object({
 });
 export type CreateLocationInput = z.infer<typeof createLocationSchema>;
 
-export const updateLocationSchema = createLocationSchema.partial();
+// DM-only hide/reveal toggle — a role_split boolean (services/visibility.ts),
+// same shape as campaign_assets.visible_to_players, not part of
+// createLocationSchema since a new location is always created hidden
+// regardless of what's in the create request (see services/locations.ts).
+export const updateLocationSchema = createLocationSchema.partial().extend({
+  visibleToPlayers: z.boolean().optional(),
+});
 export type UpdateLocationInput = z.infer<typeof updateLocationSchema>;

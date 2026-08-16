@@ -19,4 +19,7 @@ export const locationsFactions = {
   deleteFactionConfirm: 'Supprimer "{name}" ? Cette action est irréversible.',
   editLocationTitle: 'Modifier le lieu',
   editFactionTitle: 'Modifier la faction',
+  hiddenBadge: 'Caché',
+  toggleToRevealed: 'Révéler aux joueurs',
+  toggleToHidden: 'Cacher aux joueurs',
 };

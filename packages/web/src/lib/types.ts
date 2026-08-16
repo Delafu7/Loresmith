@@ -1021,15 +1021,17 @@ export interface PlotThread {
 }
 
 // Phase 3 "locations and factions" — GET /campaigns/:id/locations and
-// /campaigns/:id/factions. All-member read, DM-only write (services/locations.ts,
-// services/factions.ts) — no redaction, so both shapes are identical and
-// carry no visibility bookkeeping like PlotThread's visibleToUserIds above.
+// /campaigns/:id/factions. DM-only write (services/locations.ts,
+// services/factions.ts); a player's response never contains a hidden row at
+// all (server-side filtered), so `visible_to_players` here is only ever
+// meaningful to a DM viewer — a player's own rows are always true.
 export interface Location {
   id: string;
   campaign_id: string;
   name: string;
   description: string | null;
   notes: string | null;
+  visible_to_players: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1040,6 +1042,7 @@ export interface Faction {
   name: string;
   description: string | null;
   notes: string | null;
+  visible_to_players: boolean;
   created_at: string;
   updated_at: string;
 }

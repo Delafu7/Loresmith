@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Faction, Location } from '../lib/types';
+import type { LocationsFactionsUpdatedEvent } from '../lib/socketTypes';
 import { useCampaignShell } from '../campaigns/CampaignShell';
+import { useSocket } from '../lib/SocketContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
@@ -33,6 +35,7 @@ type SimpleEntity = Location | Faction;
 function EntitySection({ campaignId, isDm, kind }: { campaignId: string; isDm: boolean; kind: EntityKind }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
+  const { socket } = useSocket();
   const [showCreate, setShowCreate] = useState(false);
   const [editingEntity, setEditingEntity] = useState<SimpleEntity | null>(null);
 
@@ -41,6 +44,27 @@ function EntitySection({ campaignId, isDm, kind }: { campaignId: string; isDm: b
     queryFn: () => api.get<Record<EntityKind, SimpleEntity[]>>(`/campaigns/${campaignId}/${kind}`),
   });
   const entities = listQuery.data?.[kind] ?? [];
+
+  // A DM's reveal/hide (or another of the DM's own tabs, or an edit from
+  // another device) should refresh this list live for every connected
+  // player — same "bare invalidation signal" contract as BESTIARY_UPDATED
+  // (see sockets/broadcast.ts's broadcastLocationsFactionsUpdated).
+  useEffect(() => {
+    function onUpdated(payload: LocationsFactionsUpdatedEvent) {
+      if (payload.campaignId !== campaignId || payload.kind !== kind) return;
+      void queryClient.invalidateQueries({ queryKey: [kind, campaignId] });
+    }
+    socket.on('LOCATIONS_FACTIONS_UPDATED', onUpdated);
+    return () => {
+      socket.off('LOCATIONS_FACTIONS_UPDATED', onUpdated);
+    };
+  }, [socket, campaignId, kind, queryClient]);
+
+  const visibilityMutation = useMutation({
+    mutationFn: ({ entityId, visibleToPlayers }: { entityId: string; visibleToPlayers: boolean }) =>
+      api.patch<Record<'location' | 'faction', SimpleEntity>>(`/campaigns/${campaignId}/${kind}/${entityId}`, { visibleToPlayers }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: [kind, campaignId] }),
+  });
 
   const [form, setForm, clearDraft] = useFormDraft(`draft:${kind}:new:${campaignId}`, emptyEntityForm);
 
@@ -126,9 +150,26 @@ function EntitySection({ campaignId, isDm, kind }: { campaignId: string; isDm: b
           <li key={entity.id}>
             <Card>
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-medium text-stone-100">{entity.name}</h3>
+                <h3 className="font-medium text-stone-100 flex items-center gap-2">
+                  {entity.name}
+                  {isDm && !entity.visible_to_players && (
+                    <span className="rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-400">
+                      {t('locationsFactions.hiddenBadge')}
+                    </span>
+                  )}
+                </h3>
                 {isDm && (
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        visibilityMutation.mutate({ entityId: entity.id, visibleToPlayers: !entity.visible_to_players })
+                      }
+                      disabled={visibilityMutation.isPending}
+                      className="min-h-11 px-1 text-stone-300 hover:text-stone-100 text-xs disabled:opacity-50"
+                    >
+                      {entity.visible_to_players ? t('locationsFactions.toggleToHidden') : t('locationsFactions.toggleToRevealed')}
+                    </button>
                     <button
                       type="button"
                       onClick={() => setEditingEntity(entity)}
@@ -269,10 +310,12 @@ function EntityEditForm({
 
 /**
  * Phase 3 "locations and factions" — DM-authored world reference data,
- * visible to every campaign member, DM-only to create/edit/delete. Both
- * entity kinds share an identical shape server-side (services/locations.ts,
- * services/factions.ts), so this page is a thin tab switch over the one
- * generic EntitySection above rather than two near-duplicate pages.
+ * DM-only to create/edit/delete, hidden from players by default until the DM
+ * reveals it (services/locations.ts, services/factions.ts filter every
+ * player-facing read server-side — never a client-side hide). Both entity
+ * kinds share an identical shape server-side, so this page is a thin tab
+ * switch over the one generic EntitySection above rather than two
+ * near-duplicate pages.
  */
 export function LocationsFactionsPage() {
   const { t } = useLocale();

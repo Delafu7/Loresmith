@@ -471,6 +471,17 @@ export interface BestiaryUpdatedEvent {
   serverTimestamp: number;
 }
 
+// LOCATIONS_FACTIONS_UPDATED — DM hide/reveal for locations/factions. Same
+// bare-invalidation-signal shape as BESTIARY_UPDATED above: carries no row
+// data, just which of the two shared-UI tabs (LocationsFactionsPage.tsx)
+// changed, so a receiving client refetches the already-role-filtered
+// GET /campaigns/:id/locations|factions.
+export interface LocationsFactionsUpdatedEvent {
+  campaignId: string;
+  kind: 'locations' | 'factions';
+  serverTimestamp: number;
+}
+
 export interface ServerToClientEvents {
   COMBAT_STARTED: (payload: CombatStartedEvent) => void;
   COMBAT_ENDED: (payload: CombatEndedEvent) => void;
@@ -509,6 +520,7 @@ export interface ServerToClientEvents {
   ENCOUNTER_OPENED: (payload: EncounterOpenedEvent) => void;
   ENCOUNTER_FULLSCREEN_FORCED: (payload: EncounterOpenedEvent) => void;
   BESTIARY_UPDATED: (payload: BestiaryUpdatedEvent) => void;
+  LOCATIONS_FACTIONS_UPDATED: (payload: LocationsFactionsUpdatedEvent) => void;
 }
 
 export interface AckOk {

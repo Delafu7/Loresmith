@@ -1294,6 +1294,20 @@ export function broadcastBestiaryUpdated(io: Server, campaignId: string): void {
   io.to(campaignRoom(campaignId)).emit('BESTIARY_UPDATED', { campaignId, serverTimestamp: Date.now() });
 }
 
+// ---- LOCATIONS_FACTIONS_UPDATED (DM hide/reveal for locations/factions) ----
+//
+// Same bare-invalidation-signal shape as BESTIARY_UPDATED just above, for the
+// same reason: computing a role-correct location/faction payload here would
+// risk leaking a still-hidden one to a player over the socket, so the client
+// just refetches GET /campaigns/:id/locations|factions, which already
+// applies the visible_to_players filter server-side (services/locations.ts,
+// services/factions.ts). One event for both `kind`s rather than two near-
+// identical ones, mirroring LocationsFactionsPage.tsx's own shared-UI choice
+// for the same reason (identical shape, identical authorization).
+export function broadcastLocationsFactionsUpdated(io: Server, campaignId: string, kind: 'locations' | 'factions'): void {
+  io.to(campaignRoom(campaignId)).emit('LOCATIONS_FACTIONS_UPDATED', { campaignId, kind, serverTimestamp: Date.now() });
+}
+
 // Iteration 3 minor sweep — spending/recovering a resource pool (ki points,
 // rage uses, spell slots) never broadcast anything at all, unlike every
 // other combat-relevant mutation in this app, which is disciplined about

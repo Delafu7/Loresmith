@@ -1,6 +1,8 @@
 // Integration test for Phase 3 "locations and factions" (services/locations.ts)
-// — DM-only write, all-member read, no redaction. Same throwaway
-// campaign/user fixture convention as plotThreads.integration.test.ts.
+// — DM-only write, DM hide/reveal (role_split, services/visibility.ts):
+// created hidden by default, filtered out of a non-DM listLocations call
+// until the DM reveals it. Same throwaway campaign/user fixture convention as
+// plotThreads.integration.test.ts.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';
@@ -41,23 +43,34 @@ describe('locations (integration, live DB, throwaway fixtures)', () => {
     await expect(deleteLocation(pool, campaignId, location.id, 'player')).rejects.toBeInstanceOf(AppError);
   });
 
-  it('creates, lists (all-member read), updates, and deletes a location', async () => {
+  it('creates, lists (DM-only hide/reveal), updates, and deletes a location', async () => {
     const location = await createLocation(pool, campaignId, 'dm', {
       name: 'The Yawning Portal',
       description: 'A tavern built around a portal to Undermountain.',
       notes: 'Durnan runs the place.',
     });
     expect(location.name).toBe('The Yawning Portal');
+    expect(location.visible_to_players).toBe(false);
 
-    const listedForPlayer = await listLocations(pool, campaignId);
-    expect(listedForPlayer.map((l) => l.id)).toContain(location.id);
+    const listedForDm = await listLocations(pool, campaignId, 'dm');
+    expect(listedForDm.map((l) => l.id)).toContain(location.id);
 
-    const updated = await updateLocation(pool, campaignId, location.id, 'dm', { notes: 'Durnan runs the place. Trapdoor to level 1.' });
+    const listedForPlayerHidden = await listLocations(pool, campaignId, 'player');
+    expect(listedForPlayerHidden.map((l) => l.id)).not.toContain(location.id);
+
+    const updated = await updateLocation(pool, campaignId, location.id, 'dm', {
+      notes: 'Durnan runs the place. Trapdoor to level 1.',
+      visibleToPlayers: true,
+    });
     expect(updated.notes).toBe('Durnan runs the place. Trapdoor to level 1.');
     expect(updated.description).toBe('A tavern built around a portal to Undermountain.');
+    expect(updated.visible_to_players).toBe(true);
+
+    const listedForPlayerRevealed = await listLocations(pool, campaignId, 'player');
+    expect(listedForPlayerRevealed.map((l) => l.id)).toContain(location.id);
 
     await deleteLocation(pool, campaignId, location.id, 'dm');
-    const listedAfterDelete = await listLocations(pool, campaignId);
+    const listedAfterDelete = await listLocations(pool, campaignId, 'dm');
     expect(listedAfterDelete.map((l) => l.id)).not.toContain(location.id);
   });
 });

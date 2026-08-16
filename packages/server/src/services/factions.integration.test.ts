@@ -1,6 +1,7 @@
 // Integration test for Phase 3 "locations and factions" (services/factions.ts)
-// — identical shape/authorization to services/locations.ts, see that file's
-// own test for the fuller comment. Same throwaway fixture convention.
+// — identical shape/authorization/hide-reveal to services/locations.ts, see
+// that file's own test for the fuller comment. Same throwaway fixture
+// convention.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pool } from '../db/pool.js';
@@ -41,23 +42,34 @@ describe('factions (integration, live DB, throwaway fixtures)', () => {
     await expect(deleteFaction(pool, campaignId, faction.id, 'player')).rejects.toBeInstanceOf(AppError);
   });
 
-  it('creates, lists (all-member read), updates, and deletes a faction', async () => {
+  it('creates, lists (DM-only hide/reveal), updates, and deletes a faction', async () => {
     const faction = await createFaction(pool, campaignId, 'dm', {
       name: 'Zhentarim',
       description: 'A mercenary and trade coalition with a shady reputation.',
       notes: 'Secretly backed by the party\'s current patron.',
     });
     expect(faction.name).toBe('Zhentarim');
+    expect(faction.visible_to_players).toBe(false);
 
-    const listedForPlayer = await listFactions(pool, campaignId);
-    expect(listedForPlayer.map((f) => f.id)).toContain(faction.id);
+    const listedForDm = await listFactions(pool, campaignId, 'dm');
+    expect(listedForDm.map((f) => f.id)).toContain(faction.id);
 
-    const updated = await updateFaction(pool, campaignId, faction.id, 'dm', { description: 'Openly hostile to the Harpers now.' });
+    const listedForPlayerHidden = await listFactions(pool, campaignId, 'player');
+    expect(listedForPlayerHidden.map((f) => f.id)).not.toContain(faction.id);
+
+    const updated = await updateFaction(pool, campaignId, faction.id, 'dm', {
+      description: 'Openly hostile to the Harpers now.',
+      visibleToPlayers: true,
+    });
     expect(updated.description).toBe('Openly hostile to the Harpers now.');
     expect(updated.notes).toBe('Secretly backed by the party\'s current patron.');
+    expect(updated.visible_to_players).toBe(true);
+
+    const listedForPlayerRevealed = await listFactions(pool, campaignId, 'player');
+    expect(listedForPlayerRevealed.map((f) => f.id)).toContain(faction.id);
 
     await deleteFaction(pool, campaignId, faction.id, 'dm');
-    const listedAfterDelete = await listFactions(pool, campaignId);
+    const listedAfterDelete = await listFactions(pool, campaignId, 'dm');
     expect(listedAfterDelete.map((f) => f.id)).not.toContain(faction.id);
   });
 });

@@ -19,4 +19,7 @@ export const locationsFactions = {
   deleteFactionConfirm: 'Delete "{name}"? This cannot be undone.',
   editLocationTitle: 'Edit location',
   editFactionTitle: 'Edit faction',
+  hiddenBadge: 'Hidden',
+  toggleToRevealed: 'Reveal to players',
+  toggleToHidden: 'Hide from players',
 };

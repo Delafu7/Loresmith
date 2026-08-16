@@ -1,6 +1,10 @@
 // Locations (Phase 3 "locations and factions") — DM-authored world reference
-// data, visible to every campaign member (same "no redaction" baseline as
-// notes/plot_threads' own content once shared), DM-only to write.
+// data, DM-only to write. Hide/reveal (services/visibility.ts's 'role_split'
+// mode, same shape as campaign_assets.visible_to_players): a player's list
+// response omits a hidden location entirely — filtered in SQL, never a
+// post-fetch JS pass, matching this codebase's existing "list-endpoint
+// filtering belongs in the query" convention (see assets.ts's listAssets,
+// notes.ts's listNotes).
 
 import type { Pool } from 'pg';
 import { notFound } from '../middleware/errors.js';
@@ -13,12 +17,17 @@ interface LocationRow {
   name: string;
   description: string | null;
   notes: string | null;
+  visible_to_players: boolean;
   created_at: string;
   updated_at: string;
 }
 
-export async function listLocations(pool: Pool, campaignId: string) {
-  const result = await pool.query<LocationRow>(`SELECT * FROM locations WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
+export async function listLocations(pool: Pool, campaignId: string, role: CampaignRole) {
+  const values: unknown[] = [campaignId];
+  let where = 'campaign_id = $1';
+  if (role !== 'dm') where += ' AND visible_to_players = true';
+
+  const result = await pool.query<LocationRow>(`SELECT * FROM locations WHERE ${where} ORDER BY name ASC`, values);
   return result.rows;
 }
 
@@ -54,6 +63,7 @@ export async function updateLocation(
   if (input.name !== undefined) { sets.push(`name = $${i++}`); values.push(input.name); }
   if (input.description !== undefined) { sets.push(`description = $${i++}`); values.push(input.description); }
   if (input.notes !== undefined) { sets.push(`notes = $${i++}`); values.push(input.notes); }
+  if (input.visibleToPlayers !== undefined) { sets.push(`visible_to_players = $${i++}`); values.push(input.visibleToPlayers); }
   if (sets.length === 0) return fetchLocationScoped(pool, campaignId, locationId);
 
   sets.push('updated_at = now()');
