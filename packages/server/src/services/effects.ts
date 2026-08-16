@@ -9,6 +9,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireDm, requireMembership, type CampaignRole } from './authz.js';
+import { fetchCharacterOrThrow, requireCharacterReadAccess } from './characters.js';
 import { isUniqueViolation } from './dbErrors.js';
 import type { ApplyEncounterEffectInput, ApplyTargetEffectInput } from '../schemas/effects.js';
 
@@ -262,10 +263,8 @@ export async function listEncounterEffects(pool: Pool, encounterId: string, _rol
 // effect is visible to the whole party.
 
 export async function listCharacterEffects(pool: Pool, actorId: string, characterId: string) {
-  const charRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM characters WHERE id = $1`, [characterId]);
-  const character = charRes.rows[0];
-  if (!character) throw notFound('Character');
-  await requireMembership(pool, character.campaign_id, actorId);
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  await requireCharacterReadAccess(pool, actorId, character);
 
   const result = await pool.query(
     `SELECT ae.*, ed.name AS effect_definition_name FROM active_effects ae

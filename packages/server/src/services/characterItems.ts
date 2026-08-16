@@ -10,8 +10,7 @@
 
 import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
-import { requireMembership } from './authz.js';
-import { authorizeCharacterMutation, fetchCharacterOrThrow, redactGmNotes } from './characters.js';
+import { authorizeCharacterMutation, fetchCharacterOrThrow, redactGmNotes, requireCharacterReadAccess } from './characters.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
 import { computeEncumbrance, type EncumbranceResult } from './encumbrance.js';
 import type { CreateCharacterItemInput, UpdateCharacterItemInput } from '../schemas/characterItems.js';
@@ -21,7 +20,7 @@ import type { CreateCharacterItemInput, UpdateCharacterItemInput } from '../sche
 // attunement.md: "nothing exempts worn/equipped items from the total").
 export async function getCharacterEncumbrance(pool: Pool, actorId: string, characterId: string): Promise<EncumbranceResult> {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId);
+  await requireCharacterReadAccess(pool, actorId, character);
 
   const weightRes = await pool.query<{ total: string | null }>(
     `SELECT SUM(ci.quantity * COALESCE(i.weight_lb, 0)) AS total
@@ -66,7 +65,7 @@ async function assertAttunementLimitNotExceeded(
 
 export async function listCharacterItems(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId);
+  await requireCharacterReadAccess(pool, actorId, character);
   const result = await pool.query(
     `SELECT * FROM character_items WHERE character_id = $1 ORDER BY acquired_at ASC`,
     [characterId],

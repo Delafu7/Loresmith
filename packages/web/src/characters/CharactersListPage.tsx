@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Campaign, Character, CampaignMember } from '../lib/types';
+import type { CharactersUpdatedEvent } from '../lib/socketTypes';
 import { useAuth } from '../auth/AuthContext';
 import { useCampaignShell } from '../campaigns/CampaignShell';
+import { useSocket } from '../lib/SocketContext';
 import { Loading, ErrorBanner, EmptyState, errorMessage } from '../components/Feedback';
 import { abilityModifier, formatModifier } from '../lib/dnd-math';
 import { AbilityScoreGenerator } from './AbilityScoreGenerator';
@@ -32,12 +34,28 @@ export function CharactersListPage() {
   const { user } = useAuth();
   const { t } = useLocale();
   const queryClient = useQueryClient();
+  const { socket } = useSocket();
   const [showCreate, setShowCreate] = useState(false);
 
   const charactersQuery = useQuery({
     queryKey: ['characters', campaignId],
     queryFn: () => api.get<{ characters: Character[] }>(`/campaigns/${campaignId}/characters`),
   });
+
+  // A DM's NPC reveal/hide should refresh this list live for every connected
+  // player — same "bare invalidation signal" contract as BESTIARY_UPDATED/
+  // LOCATIONS_FACTIONS_UPDATED (see sockets/broadcast.ts's
+  // broadcastCharactersUpdated).
+  useEffect(() => {
+    function onUpdated(payload: CharactersUpdatedEvent) {
+      if (payload.campaignId !== campaignId) return;
+      void queryClient.invalidateQueries({ queryKey: ['characters', campaignId] });
+    }
+    socket.on('CHARACTERS_UPDATED', onUpdated);
+    return () => {
+      socket.off('CHARACTERS_UPDATED', onUpdated);
+    };
+  }, [socket, campaignId, queryClient]);
 
   // Not DM-only — GET /:id/members is open to any campaign member, and a
   // player needs their OWN row here to know their can_create_characters/
@@ -332,7 +350,14 @@ function CharacterCard({
     <li className="rounded-md bg-stone-900 shadow-sm hover:border-amber-700 hover:bg-stone-800/60 transition-colors">
       <Link to={`/campaigns/${campaignId}/characters/${character.id}`} className="block px-4 py-3">
         <div className="flex items-center justify-between">
-          <span className="font-medium text-stone-100">{character.name}</span>
+          <span className="font-medium text-stone-100 flex items-center gap-2">
+            {character.name}
+            {isDm && !character.is_pc && !character.visible_to_players && (
+              <span className="rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-400">
+                {t('characters.list.hiddenBadge')}
+              </span>
+            )}
+          </span>
           {!character.is_alive && <span className="text-xs text-red-400 font-semibold uppercase">{t('characters.common.deceased')}</span>}
         </div>
         <div className="flex items-center gap-3 text-xs text-stone-400 mt-1">
@@ -343,6 +368,7 @@ function CharacterCard({
           <span>DEX {formatModifier(abilityModifier(character.dex))}</span>
         </div>
       </Link>
+      {isDm && !character.is_pc && <NpcVisibilityControl character={character} campaignId={campaignId} />}
       {isDm && character.is_pc && character.owner_user_id === null && (
         <AssignOwnerControl characterId={character.id} campaignId={campaignId} />
       )}
@@ -350,6 +376,35 @@ function CharacterCard({
         <DelegateControlControl character={character} campaignId={campaignId} players={players} />
       )}
     </li>
+  );
+}
+
+// DM-only reveal/hide toggle for an NPC — same shape as LocationsFactionsPage.tsx's
+// per-row visibility toggle (services/characters.ts's requireCharacterVisible
+// is the server-side enforcement this drives). Rendered below (not inside)
+// the card's own Link, same convention as AssignOwnerControl/
+// DelegateControlControl siblings.
+function NpcVisibilityControl({ character, campaignId }: { character: Character; campaignId: string }) {
+  const { t } = useLocale();
+  const queryClient = useQueryClient();
+
+  const visibilityMutation = useMutation({
+    mutationFn: (visibleToPlayers: boolean) =>
+      api.patch<{ character: Character }>(`/characters/${character.id}`, { visibleToPlayers }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['characters', campaignId] }),
+  });
+
+  return (
+    <div className="flex items-center justify-end border-t border-stone-800 px-4 py-2">
+      <button
+        type="button"
+        onClick={() => visibilityMutation.mutate(!character.visible_to_players)}
+        disabled={visibilityMutation.isPending}
+        className="rounded border border-stone-700 text-stone-300 hover:bg-stone-800 disabled:opacity-45 px-2 py-1 text-[11px] font-semibold"
+      >
+        {character.visible_to_players ? t('characters.list.toggleToHidden') : t('characters.list.toggleToRevealed')}
+      </button>
+    </div>
   );
 }
 

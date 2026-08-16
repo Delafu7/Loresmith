@@ -184,6 +184,17 @@ export function CharacterSheetPage() {
     },
   });
 
+  // DM hide/reveal for NPCs — own mutation for the same reason as
+  // npcMotivationMutation above (never closes an in-progress core-stats
+  // edit). services/characters.ts's requireCharacterVisible is the
+  // server-side enforcement this drives.
+  const npcVisibilityMutation = useMutation({
+    mutationFn: (visibleToPlayers: boolean) => api.patch<{ character: Character }>(`/characters/${characterId}`, { visibleToPlayers }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['character', characterId], data);
+    },
+  });
+
   const skillsMutation = useMutation({
     mutationFn: (rows: Array<{ skillId: string; level: SkillProficiencyLevel }>) =>
       api.put<{ skillProficiencies: SkillProficiency[] }>(`/characters/${characterId}/skill-proficiencies`, rows),
@@ -572,7 +583,25 @@ export function CharacterSheetPage() {
 
       {role === 'dm' && !character.is_pc && (
         <section className="rounded-md bg-stone-900 shadow-sm p-4 sm:p-5 border border-violet-900/40">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-violet-400 mb-2">{t('characters.sheet.npcMotivationTitle')}</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-violet-400">{t('characters.sheet.npcMotivationTitle')}</h3>
+            <div className="flex items-center gap-2">
+              {!character.visible_to_players && (
+                <span className="rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-400">
+                  {t('characters.list.hiddenBadge')}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => npcVisibilityMutation.mutate(!character.visible_to_players)}
+                disabled={npcVisibilityMutation.isPending}
+                className="rounded border border-stone-700 text-stone-300 hover:bg-stone-800 disabled:opacity-45 px-2 py-1 text-[11px] font-semibold"
+              >
+                {character.visible_to_players ? t('characters.list.toggleToHidden') : t('characters.list.toggleToRevealed')}
+              </button>
+            </div>
+          </div>
+          {npcVisibilityMutation.isError && <ErrorBanner message={errorMessage(npcVisibilityMutation.error)} />}
           <p className="text-xs text-stone-500 mb-2">{t('characters.sheet.npcMotivationHint')}</p>
           <textarea
             rows={2}

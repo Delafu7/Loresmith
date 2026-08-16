@@ -32,6 +32,9 @@ export const characters = {
     delegateToPlaceholder: 'Delegar control a…',
     delegateControlButton: 'Delegar control',
     delegatingControl: 'Delegando…',
+    hiddenBadge: 'Oculto',
+    toggleToRevealed: 'Revelar a los jugadores',
+    toggleToHidden: 'Ocultar de los jugadores',
   },
   wizard: {
     title: 'Crear un personaje',

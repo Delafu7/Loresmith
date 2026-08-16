@@ -1308,6 +1308,21 @@ export function broadcastLocationsFactionsUpdated(io: Server, campaignId: string
   io.to(campaignRoom(campaignId)).emit('LOCATIONS_FACTIONS_UPDATED', { campaignId, kind, serverTimestamp: Date.now() });
 }
 
+// ---- CHARACTERS_UPDATED (DM hide/reveal for NPCs) ----
+//
+// Same bare-invalidation-signal shape as BESTIARY_UPDATED/
+// LOCATIONS_FACTIONS_UPDATED above: carries no row data (computing a
+// role-correct character payload here would risk leaking a still-hidden
+// NPC), so a receiving client just refetches GET /campaigns/:id/characters,
+// which already applies the visible_to_players filter server-side
+// (services/characters.ts's listCharacters). Only fired from the
+// visibleToPlayers branch of PATCH /characters/:id (routes/characters.ts) —
+// not every character mutation, since HP/items/effects/etc. already have
+// their own targeted broadcasts and don't need a full list refetch.
+export function broadcastCharactersUpdated(io: Server, campaignId: string): void {
+  io.to(campaignRoom(campaignId)).emit('CHARACTERS_UPDATED', { campaignId, serverTimestamp: Date.now() });
+}
+
 // Iteration 3 minor sweep — spending/recovering a resource pool (ki points,
 // rage uses, spell slots) never broadcast anything at all, unlike every
 // other combat-relevant mutation in this app, which is disciplined about

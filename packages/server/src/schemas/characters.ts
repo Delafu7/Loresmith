@@ -50,6 +50,11 @@ const sharedCharacterShape = {
   // Phase 3 "NPC 'what they want' field" — DM-only, same drop-from-non-DM-
   // patch/never-in-create-INSERT treatment as gmNotes above.
   npcMotivation: z.string().max(2000).optional().nullable(),
+  // DM hide/reveal for NPCs (role_split, services/visibility.ts) — DM-only,
+  // same drop-from-non-DM-patch/never-in-create-INSERT treatment as gmNotes/
+  // npcMotivation above: a new NPC is always created hidden (DB column
+  // default), only ever changed via a later PATCH.
+  visibleToPlayers: z.boolean().optional(),
 };
 
 export const createCharacterSchema = z.object(sharedCharacterShape).extend({

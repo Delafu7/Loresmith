@@ -482,6 +482,15 @@ export interface LocationsFactionsUpdatedEvent {
   serverTimestamp: number;
 }
 
+// CHARACTERS_UPDATED — DM hide/reveal for NPCs. Same bare-invalidation-signal
+// shape as BESTIARY_UPDATED/LOCATIONS_FACTIONS_UPDATED: carries no row data,
+// so a receiving client refetches the already-role-filtered
+// GET /campaigns/:id/characters.
+export interface CharactersUpdatedEvent {
+  campaignId: string;
+  serverTimestamp: number;
+}
+
 export interface ServerToClientEvents {
   COMBAT_STARTED: (payload: CombatStartedEvent) => void;
   COMBAT_ENDED: (payload: CombatEndedEvent) => void;
@@ -521,6 +530,7 @@ export interface ServerToClientEvents {
   ENCOUNTER_FULLSCREEN_FORCED: (payload: EncounterOpenedEvent) => void;
   BESTIARY_UPDATED: (payload: BestiaryUpdatedEvent) => void;
   LOCATIONS_FACTIONS_UPDATED: (payload: LocationsFactionsUpdatedEvent) => void;
+  CHARACTERS_UPDATED: (payload: CharactersUpdatedEvent) => void;
 }
 
 export interface AckOk {

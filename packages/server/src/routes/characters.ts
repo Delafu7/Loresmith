@@ -39,6 +39,7 @@ import {
   broadcastEffectExpired,
   broadcastArmorClassChanged,
   broadcastResourcePoolChanged,
+  broadcastCharactersUpdated,
 } from '../sockets/broadcast.js';
 import type { Server } from 'socket.io';
 import type { ArmorClassEncounterSync } from '../services/armorClass.js';
@@ -72,7 +73,7 @@ export const campaignCharactersRouter = Router({ mergeParams: true });
 campaignCharactersRouter.use(requireAuth, requireCampaignMember());
 
 campaignCharactersRouter.get('/', async (req, res) => {
-  const characters = await charactersService.listCharacters(pool, req.campaignId!, req.campaignRole!);
+  const characters = await charactersService.listCharacters(pool, req.campaignId!, req.user!.id, req.campaignRole!);
   res.json({ characters });
 });
 
@@ -101,6 +102,14 @@ charactersRouter.patch('/:id', async (req, res) => {
       armorClassSync.character.armor_class as number,
       armorClassSync.encounterSyncs,
     );
+  }
+  // DM hide/reveal for NPCs — same bare-invalidation-signal contract as
+  // BESTIARY_UPDATED/LOCATIONS_FACTIONS_UPDATED, fired only for this one
+  // field (not every character PATCH — HP/items/etc. already have their own
+  // targeted broadcasts, and a full characters-list refetch on every HP tick
+  // would be needless list-page churn for something no list view even shows).
+  if (input.visibleToPlayers !== undefined) {
+    broadcastCharactersUpdated(getIo(req.app), character.campaign_id as string);
   }
   res.json({ character });
 });

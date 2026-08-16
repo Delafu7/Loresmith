@@ -46,6 +46,9 @@ export const characters = {
     delegateToPlaceholder: 'Delegate control to…',
     delegateControlButton: 'Delegate control',
     delegatingControl: 'Delegating…',
+    hiddenBadge: 'Hidden',
+    toggleToRevealed: 'Reveal to players',
+    toggleToHidden: 'Hide from players',
   },
   wizard: {
     title: 'Create a character',

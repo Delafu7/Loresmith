@@ -9,14 +9,13 @@
 
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
-import { requireMembership } from './authz.js';
-import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
+import { authorizeCharacterMutation, fetchCharacterOrThrow, requireCharacterReadAccess } from './characters.js';
 import { isUniqueViolation } from './dbErrors.js';
 import type { CreateCharacterFeatInput } from '../schemas/characterFeats.js';
 
 export async function listCharacterFeats(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId);
+  await requireCharacterReadAccess(pool, actorId, character);
   const result = await pool.query(
     `SELECT * FROM character_feats WHERE character_id = $1 ORDER BY granted_at ASC`,
     [characterId],

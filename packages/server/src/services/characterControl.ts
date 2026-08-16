@@ -11,6 +11,7 @@
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm, getMembership } from './authz.js';
+import { fetchCharacterOrThrow, requireCharacterReadAccess } from './characters.js';
 import type { DelegateControlInput } from '../schemas/characters.js';
 
 interface CharacterControlRow {
@@ -141,10 +142,8 @@ export async function revokeControl(pool: Pool, characterId: string, grantedByUs
 // read-openness as encounter disposition history) — it's a transparency/
 // dispute-resolution log, not sensitive data.
 export async function listControlDelegations(pool: Pool, actorId: string, characterId: string): Promise<ControlDelegationEventRow[]> {
-  const characterRes = await pool.query<{ campaign_id: string }>(`SELECT campaign_id FROM characters WHERE id = $1`, [characterId]);
-  const character = characterRes.rows[0];
-  if (!character) throw notFound('Character');
-  await requireMembership(pool, character.campaign_id, actorId);
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  await requireCharacterReadAccess(pool, actorId, character);
 
   const result = await pool.query<ControlDelegationEventRow>(
     `SELECT * FROM character_control_delegations WHERE character_id = $1 ORDER BY created_at DESC`,

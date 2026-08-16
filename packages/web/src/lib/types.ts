@@ -151,6 +151,12 @@ export interface Character {
   // Phase 3 "NPC 'what they want' field" — same DM-only redaction as
   // gm_notes above (extended into the same redactGmNotes function).
   npc_motivation: string | null;
+  // DM hide/reveal for NPCs (role_split, same shape as
+  // Location/Faction.visible_to_players) — only ever meaningful when
+  // is_pc is false; a PC is always visible regardless of this value. A
+  // player's response never contains a hidden NPC row at all (server-side
+  // filtered), so this is only meaningful to a DM viewer.
+  visible_to_players: boolean;
   portrait_asset_id: string | null;
   created_at: string;
   updated_at: string;

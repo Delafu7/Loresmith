@@ -5,8 +5,7 @@
 // change it.
 
 import type { Pool } from 'pg';
-import { requireMembership } from './authz.js';
-import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
+import { authorizeCharacterMutation, fetchCharacterOrThrow, requireCharacterReadAccess } from './characters.js';
 import type { UpdateCharacterCurrencyInput } from '../schemas/characterCurrency.js';
 
 export interface CharacterCurrency {
@@ -23,7 +22,7 @@ const ZERO_CURRENCY = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } as const;
 
 export async function getCharacterCurrency(pool: Pool, actorId: string, characterId: string): Promise<CharacterCurrency> {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId);
+  await requireCharacterReadAccess(pool, actorId, character);
 
   const result = await pool.query<CharacterCurrency>(`SELECT * FROM character_currency WHERE character_id = $1`, [characterId]);
   // No row yet (never spent/earned anything) means an empty purse, not a 404

@@ -33,6 +33,10 @@ interface CharacterRow {
   // owner_user_id (see requireControllerOrDm in services/authz.ts).
   controller_user_id: string | null;
   gm_notes: string | null;
+  // DM hide/reveal for NPCs (role_split, services/visibility.ts) — only ever
+  // meaningful for is_pc = false; requireCharacterVisible below always treats
+  // a PC as visible regardless of this column's value.
+  visible_to_players: boolean;
   str: number;
   dex: number;
   con: number;
@@ -86,6 +90,42 @@ export async function authorizeCharacterAction(
   return role;
 }
 
+// DM hide/reveal for NPCs — the same reusable role_split layer locations/
+// factions use (services/visibility.ts's resolveVisibilitySync), applied
+// here to a single already-fetched row rather than a list query (see that
+// module's own header comment on when to use which). A PC (is_pc = true) is
+// always visible, full stop — only an NPC can be hidden. 404s (not 403) on a
+// hidden NPC, matching notes.ts's "don't confirm existence of hidden content
+// to an unauthorized viewer" precedent.
+function requireCharacterVisible(character: CharacterRow, actorId: string, role: CampaignRole): void {
+  if (character.is_pc) return;
+  const visible = resolveVisibilitySync(
+    { mode: 'role_split', ownerUserId: character.owner_user_id, visibleToPlayers: character.visible_to_players },
+    actorId,
+    role,
+  );
+  if (!visible) throw notFound('Character');
+}
+
+/**
+ * Layer 2+3 for a resource-id-keyed character READ route (get the sheet, or
+ * list/get a sub-resource: items, spells, feats, attacks, resource pools,
+ * currency, effects, control-delegation history): membership, then the NPC
+ * hide/reveal check above. Sibling of authorizeCharacterMutation (which
+ * additionally enforces ownership, for WRITES) — every read-only character
+ * service exported across this file and its siblings (characterItems.ts,
+ * characterSpells.ts, characterFeats.ts, characterAttacks.ts,
+ * resourcePools.ts, characterCurrency.ts, effects.ts, characterControl.ts)
+ * calls this instead of a bare requireMembership, so a hidden NPC's entire
+ * sheet 404s the same way from every one of those endpoints, enforced in
+ * this one place rather than re-derived per file.
+ */
+export async function requireCharacterReadAccess(pool: Pool, actorId: string, character: CharacterRow): Promise<CampaignRole> {
+  const role = await requireMembership(pool, character.campaign_id, actorId);
+  requireCharacterVisible(character, actorId, role);
+  return role;
+}
+
 // HP and every other character field are always visible to the whole
 // campaign now (hide/reveal was removed) — this is a plain read for every
 // role, `role` is kept only because callers already have it from the
@@ -109,14 +149,29 @@ export function redactGmNotes<T extends { gm_notes?: unknown; npc_motivation?: u
 // here so a future mutation can't reintroduce the leak by forgetting to call
 // redactGmNotes directly.
 
-export async function listCharacters(pool: Pool, campaignId: string, role: CampaignRole) {
-  const result = await pool.query<CharacterRow>(`SELECT * FROM characters WHERE campaign_id = $1 ORDER BY name ASC`, [campaignId]);
+// DM hide/reveal for NPCs (role_split) — filtered in SQL, never a post-fetch
+// JS pass, matching this codebase's existing "list-endpoint filtering
+// belongs in the query" convention (see assets.ts's listAssets, notes.ts's
+// listNotes, services/locations.ts's listLocations). A PC row always passes
+// (is_pc = true); an NPC passes only when revealed or owned by the actor
+// (owner_user_id is normally null for an NPC, but the OR costs nothing and
+// keeps this in sync with requireCharacterVisible's pure-JS equivalent for a
+// single row).
+export async function listCharacters(pool: Pool, campaignId: string, actorId: string, role: CampaignRole) {
+  const values: unknown[] = [campaignId];
+  let where = 'campaign_id = $1';
+  if (role !== 'dm') {
+    where += ' AND (is_pc = true OR visible_to_players = true OR owner_user_id = $2)';
+    values.push(actorId);
+  }
+
+  const result = await pool.query<CharacterRow>(`SELECT * FROM characters WHERE ${where} ORDER BY name ASC`, values);
   return result.rows.map((row) => redactGmNotes(row, role));
 }
 
 export async function getCharacter(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  const role = await requireMembership(pool, character.campaign_id, actorId); // any role may read
+  const role = await requireCharacterReadAccess(pool, actorId, character);
   return redactGmNotes(character, role);
 }
 
@@ -264,6 +319,8 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
   gmNotes: 'gm_notes',
   // Phase 3 "NPC 'what they want' field" — same DM-only treatment as gmNotes.
   npcMotivation: 'npc_motivation',
+  // DM hide/reveal for NPCs — same DM-only treatment as gmNotes/npcMotivation.
+  visibleToPlayers: 'visible_to_players',
 };
 
 export interface UpdateCharacterResult {
@@ -296,6 +353,7 @@ export async function updateCharacter(
   if (role !== 'dm') {
     delete patch.gmNotes;
     delete patch.npcMotivation;
+    delete patch.visibleToPlayers;
   }
   if ('hitDiceRemaining' in patch) {
     // JSONB column needs an explicit column + serialization; handled separately below.
@@ -743,21 +801,21 @@ export async function undoLastDamage(pool: Pool, actorId: string, characterId: s
 
 export async function getClasses(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId);
+  await requireCharacterReadAccess(pool, actorId, character);
   const result = await pool.query(`SELECT * FROM character_classes WHERE character_id = $1`, [characterId]);
   return result.rows;
 }
 
 export async function getSkillProficiencies(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId);
+  await requireCharacterReadAccess(pool, actorId, character);
   const result = await pool.query(`SELECT * FROM character_skill_proficiencies WHERE character_id = $1`, [characterId]);
   return result.rows;
 }
 
 export async function getSavingThrowProficiencies(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId);
+  await requireCharacterReadAccess(pool, actorId, character);
   const result = await pool.query(
     `SELECT * FROM character_saving_throw_proficiencies WHERE character_id = $1`,
     [characterId],

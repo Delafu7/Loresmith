@@ -9,13 +9,12 @@
 import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { isCheckViolation } from './dbErrors.js';
-import { requireMembership } from './authz.js';
-import { authorizeCharacterMutation, fetchCharacterOrThrow } from './characters.js';
+import { authorizeCharacterMutation, fetchCharacterOrThrow, requireCharacterReadAccess } from './characters.js';
 import type { CreateCharacterAttackInput, UpdateCharacterAttackInput } from '../schemas/characterAttacks.js';
 
 export async function listCharacterAttacks(pool: Pool, actorId: string, characterId: string) {
   const character = await fetchCharacterOrThrow(pool, characterId);
-  await requireMembership(pool, character.campaign_id, actorId);
+  await requireCharacterReadAccess(pool, actorId, character);
   const result = await pool.query(
     `SELECT * FROM character_attacks WHERE character_id = $1 ORDER BY sort_order ASC, id ASC`,
     [characterId],
