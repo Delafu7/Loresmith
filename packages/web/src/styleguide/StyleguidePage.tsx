@@ -1,5 +1,6 @@
-// /styleguide (deliverable per the Nocturne redesign brief) — the full
-// token set, type scale, and every shared component in every state, in one
+// /styleguide (originally a deliverable of the Nocturne redesign brief,
+// carried forward through the later Field Ledger pass) — the full token
+// set, type scale, and every shared component in every state, in one
 // place, viewable at both mobile and desktop widths. Not behind auth (it's
 // a design reference, not app data) and deliberately reads its own classes
 // directly off the token layer (index.css) rather than hardcoding hex, so
@@ -186,8 +187,9 @@ export function StyleguidePage() {
         </Link>
         <h1 className="font-display text-2xl font-medium mt-1">Styleguide</h1>
         <p className="text-sm text-stone-400 max-w-2xl mt-1">
-          Nocturne design system reference — docs/design-tokens.md is the full write-up; this page is the visual
-          index. Resize the window (or open on a phone) to check every component at both mobile and desktop widths.
+          Field Ledger design system reference — this page reads its classes live from index.css, the source of
+          truth (docs/design-tokens.md describes the superseded Nocturne pass and is kept for history only). Resize
+          the window (or open on a phone) to check every component at both mobile and desktop widths.
         </p>
       </header>
 
@@ -211,7 +213,7 @@ export function StyleguidePage() {
           </div>
         </Section>
 
-        <Section title="Type" description="Fraunces for h1-h3 (kept from the app's existing pairing — OPEN_QUESTIONS.md #11), Inter for everything else, weight 500 on headings per the source.">
+        <Section title="Type" description="Bitter (slab serif) for h1-h3, IBM Plex Sans for everything else, IBM Plex Mono for numbers — the Field Ledger pairing (index.css).">
           <div className="space-y-2">
             <h1 className="font-display text-4xl font-medium">Heading 1 / 42px</h1>
             <h2 className="font-display text-3xl font-medium">Heading 2 / 32px</h2>

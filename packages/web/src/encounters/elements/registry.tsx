@@ -243,7 +243,7 @@ export const ELEMENT_REGISTRY: { [K in MapElementType]: ElementRegistryEntry<K> 
           style={{ pointerEvents: 'none' }}
         >
           <polygon points={pointsAttr} fill={el.props.color} fillOpacity={0.25} stroke={el.props.color} strokeWidth={2} style={{ pointerEvents: 'auto' }} />
-          {ctx.isSelected && <polygon points={pointsAttr} fill="none" stroke="#fbbf24" strokeWidth={2} strokeDasharray="4 3" />}
+          {ctx.isSelected && <polygon points={pointsAttr} fill="none" stroke="var(--color-amber-400)" strokeWidth={2} strokeDasharray="4 3" />}
         </svg>
       );
     },

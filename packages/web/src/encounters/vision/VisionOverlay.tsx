@@ -176,7 +176,9 @@ export function VisionOverlay({
       <defs>
         <mask id={maskId} maskUnits="userSpaceOnUse" x={0} y={0} width={mapWidthPx} height={mapHeightPx}>
           <rect x={0} y={0} width={mapWidthPx} height={mapHeightPx} fill="white" />
-          {/* Darkvision punches a partial (dim/grayscale-ish) hole; bright is drawn last so it always wins where the two overlap. */}
+          {/* Darkvision punches a partial (dim/grayscale-ish) hole; bright is drawn last so it always wins where the two overlap.
+              #555555 here is an SVG mask luminance value (fixed ~33% reveal), not a themed display color — it must
+              stay a flat gray so the punched-hole opacity is consistent across themes, not a var(--color-*). */}
           {darkvisionPolygons.map((p) => (
             <polygon key={p.id} points={p.points.map((pt) => `${pt.x},${pt.y}`).join(' ')} fill="#555555" />
           ))}
@@ -185,7 +187,7 @@ export function VisionOverlay({
           ))}
         </mask>
       </defs>
-      <rect x={0} y={0} width={mapWidthPx} height={mapHeightPx} fill="#0c0a09" fillOpacity={0.92} mask={`url(#${maskId})`} />
+      <rect x={0} y={0} width={mapWidthPx} height={mapHeightPx} fill="var(--color-stone-950)" fillOpacity={0.92} mask={`url(#${maskId})`} />
     </svg>
   );
 }

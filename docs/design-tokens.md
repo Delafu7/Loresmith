@@ -1,4 +1,18 @@
-# Design tokens — Nocturne
+# Design tokens — Nocturne (superseded)
+
+> **This document is historical.** It describes "Nocturne," a design pass that has
+> since been replaced by **"Field Ledger"** (Bitter + IBM Plex Sans + IBM Plex Mono,
+> brass/wax-red palette). The current source of truth is
+> `packages/web/src/index.css` (the `@theme` block and the `[data-theme]` /
+> `prefers-color-scheme` overrides) and the live `/styleguide` route
+> (`packages/web/src/styleguide/StyleguidePage.tsx`), which reads its swatches
+> directly from those classes. For the current design-consistency audit, see
+> `design-system/Loresmith VTT.md`.
+>
+> None of the hex values, font names, or component specs below reflect the shipped
+> app. Kept only because some still-current decisions (e.g. primary buttons being
+> outline/ghost rather than filled, due to a contrast failure) originate in the
+> reasoning below and were carried forward unchanged.
 
 Extracted from `design/nocturne.html` (a self-unpacking bundle; the real markup/CSS
 lives inside `<script type="__bundler/template">` as an escaped JSON string —
