@@ -796,7 +796,7 @@ export async function getParticipantReachableCells(
   pool: Pool,
   encounterId: string,
   participantId: string,
-): Promise<{ cells: string[]; remainingFt: number }> {
+): Promise<{ cells: string[]; remainingFt: number; spentCells: string[] }> {
   const encounter = await fetchEncounterById(pool, encounterId);
   const participantRes = await pool.query<ParticipantRow>(
     `SELECT * FROM combat_participants WHERE id = $1 AND encounter_id = $2`,
@@ -812,14 +812,31 @@ export async function getParticipantReachableCells(
     encounter.mode !== 'combat' ||
     encounter.status !== 'active'
   ) {
-    return { cells: [], remainingFt: 0 };
+    return { cells: [], remainingFt: 0, spentCells: [] };
   }
 
   const ctx = await loadMovementContext(pool, encounter, participant);
-  if (!ctx) return { cells: [], remainingFt: 0 };
+  if (!ctx) return { cells: [], remainingFt: 0, spentCells: [] };
 
-  const reachable = computeReachableSet(ctx.grid, ctx.mover, { x: participant.pos_x, y: participant.pos_y }, ctx.remainingFt);
-  return { cells: [...reachable], remainingFt: ctx.remainingFt };
+  const from = { x: participant.pos_x, y: participant.pos_y };
+  const reachable = computeReachableSet(ctx.grid, ctx.mover, from, ctx.remainingFt);
+
+  // "Already-spent movement" cells (docs/design-tokens.md's overlay
+  // legibility pass): the portion of THIS turn's full speed footprint no
+  // longer reachable because some of it has already been spent — a visually
+  // distinct "you used to be able to get here" ring around the still-live
+  // `reachable` set, not just a flat cutoff. Only computed when something has
+  // actually been spent (movement_used_ft > 0); a fresh turn's full-speed
+  // footprint IS the reachable set, so spentCells is trivially empty and
+  // skipping the second Dijkstra pass saves the (identical) work.
+  let spentCells: string[] = [];
+  if (participant.movement_used_ft > 0) {
+    const fullBudgetFt = ctx.speedFt * (participant.dash_used ? 2 : 1);
+    const fullReachable = computeReachableSet(ctx.grid, ctx.mover, from, fullBudgetFt);
+    spentCells = [...fullReachable].filter((cell) => !reachable.has(cell));
+  }
+
+  return { cells: [...reachable], remainingFt: ctx.remainingFt, spentCells };
 }
 
 export async function setParticipantPosition(

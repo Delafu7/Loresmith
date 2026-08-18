@@ -658,12 +658,37 @@ export function BattleMap({
   // ask).
   const selectedParticipant = participants.find((p) => p.participantId === selectedId) ?? null;
   const canControlSelected = selectedParticipant != null && (isDm || isOwnToken(selectedParticipant));
+  // Keyed on the selected participant's own position/movement usage (not
+  // just their id) so ANY move — a drag, a tap-confirm, an exact-coordinate
+  // move, an undo, or another viewer's TOKEN_MOVED arriving over the socket
+  // — produces a fresh cache key and therefore a fresh fetch. Previously
+  // keyed on selectedId alone: the overlay kept showing the PRE-move
+  // reachable set until the token was deselected and reselected (toggling
+  // `enabled`), since nothing else ever invalidated this query — bug: stale
+  // range after moving without deselecting.
   const reachableQuery = useQuery({
-    queryKey: ['encounter', encounterId, 'reachable', selectedId],
-    queryFn: () => api.get<{ cells: string[]; remainingFt: number }>(`/encounters/${encounterId}/participants/${selectedId}/reachable`),
+    queryKey: [
+      'encounter',
+      encounterId,
+      'reachable',
+      selectedId,
+      selectedParticipant?.posX,
+      selectedParticipant?.posY,
+      selectedParticipant?.movementUsedFt,
+      selectedParticipant?.dashUsed,
+    ],
+    queryFn: () =>
+      api.get<{ cells: string[]; remainingFt: number; spentCells: string[] }>(
+        `/encounters/${encounterId}/participants/${selectedId}/reachable`,
+      ),
     enabled: canControlSelected,
   });
   const reachableCells = new Set(reachableQuery.data?.cells ?? []);
+  // Cells reachable at this turn's FULL speed but no longer reachable given
+  // movement already spent — rendered with a distinct "used up" treatment so
+  // the overlay reads as "here's your whole potential footprint, and here's
+  // what's left of it" rather than a single flat cutoff.
+  const spentMovementCells = new Set(reachableQuery.data?.spentCells ?? []);
   // Initial placement (from null,null) is always a free move server-side
   // regardless of mode/turn (computeValidatedMoveCost) — so a selected
   // unplaced token only needs the plain ownership check (canControlSelected),
@@ -1236,6 +1261,7 @@ export function BattleMap({
                       Array.from({ length: map.gridColumns }, (_, x) => {
                         const override = overridesByCell.get(`${x},${y}`);
                         const isReachable = reachableCells.has(`${x},${y}`);
+                        const isSpentMovement = !isReachable && spentMovementCells.has(`${x},${y}`);
                         const isPending = pendingMove?.x === x && pendingMove?.y === y;
                         return (
                           <div
@@ -1254,10 +1280,26 @@ export function BattleMap({
                                       })
                                     : (override?.note ?? undefined)
                             }
+                            // Legible over any background (dark map, light map, or a
+                            // detailed image): a semi-transparent fill alone (the old
+                            // bg-emerald-600/15) all but disappears over busy art, so
+                            // reachable cells also get a solid, high-contrast outline.
+                            // spentMovementCells (this turn's full-speed footprint minus
+                            // what's still reachable) get a distinct muted/dashed
+                            // treatment — "you could reach here on a fresh turn, not
+                            // anymore" — instead of just silently not being highlighted.
                             className={`${paintMode || moveTargetMode || placingType ? 'cursor-pointer hover:outline hover:outline-1 hover:outline-amber-500' : ''} ${
                               override ? OVERRIDE_TINT[override.cost_type] : ''
-                            } ${isReachable && !override ? 'bg-emerald-600/15' : ''} ${
-                              isPending ? 'outline outline-2 outline-amber-400 bg-amber-500/25' : ''
+                            } ${
+                              isReachable && !override
+                                ? 'bg-emerald-500/25 outline outline-1 -outline-offset-1 outline-emerald-400'
+                                : ''
+                            } ${
+                              isSpentMovement && !override
+                                ? 'bg-rose-900/20 outline outline-1 outline-dashed -outline-offset-1 outline-rose-500/60'
+                                : ''
+                            } ${
+                              isPending ? 'outline outline-2 -outline-offset-1 outline-amber-400 bg-amber-500/25' : ''
                             }`}
                           />
                         );
