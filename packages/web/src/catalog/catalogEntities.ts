@@ -143,6 +143,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'abilityBonuses', label: 'Ability bonuses (JSON)', type: 'json', required: true },
       { key: 'traits', label: 'Traits (JSON array)', type: 'json', required: true },
       { key: 'source', label: 'Source', type: 'text' },
+      { key: 'description', label: 'Description', type: 'textarea' },
     ],
   },
   {
@@ -174,6 +175,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'spellcastingType', label: 'Spellcasting type', type: 'select', required: true, options: ['full', 'half', 'third', 'pact', 'none'] },
       { key: 'savingThrowProficiencyIds', label: 'Saving throw proficiencies', type: 'reference-array', reference: REFERENCE_CATALOGS.abilityScores },
       { key: 'source', label: 'Source', type: 'text' },
+      { key: 'description', label: 'Description', type: 'textarea' },
     ],
   },
   {

@@ -104,6 +104,7 @@ interface FormState {
   legendaryActionCount: string;
   reactions: EntryDraft[];
   source: string;
+  description: string;
   artAssetId: string | null;
   isUnique: boolean;
   // Iteration 2 "Shared bestiary" — create-time only, never editable via the
@@ -144,6 +145,7 @@ function emptyForm(): FormState {
     legendaryActionCount: '',
     reactions: [],
     source: '',
+    description: '',
     artAssetId: null,
     isUnique: false,
     libraryScope: 'campaign',
@@ -195,6 +197,7 @@ function monsterToForm(m: MonsterCatalogEntry): FormState {
     legendaryActionCount: m.legendary_action_count != null ? String(m.legendary_action_count) : '',
     reactions: Array.isArray(m.reactions) ? (m.reactions as StatBlockEntry[]).map(entryToDraft) : [],
     source: m.source ?? '',
+    description: m.description ?? '',
     artAssetId: m.art_asset_id,
     isUnique: m.is_unique,
     libraryScope: 'campaign',
@@ -248,6 +251,7 @@ function buildPayload(form: FormState) {
     legendaryActionCount: form.legendaryActionCount.trim() ? Number(form.legendaryActionCount) : null,
     reactions: form.reactions.map(draftToEntry).filter((e): e is StatBlockEntry => e !== null),
     source: form.source.trim() || null,
+    description: form.description.trim() || null,
     artAssetId: form.artAssetId,
     isUnique: form.isUnique,
     libraryScope: form.libraryScope,
@@ -290,6 +294,7 @@ function previewMonster(form: FormState): MonsterCatalogEntry {
     legendary_action_count: payload.legendaryActionCount,
     reactions: payload.reactions,
     source: payload.source,
+    description: payload.description,
     is_homebrew: true,
     owning_campaign_id: null,
     owning_user_id: null,
@@ -497,6 +502,14 @@ export function CreatureEditorPage() {
             />
           </Field>
         </div>
+        <Field label={t('monsters.editor.fieldOverview')}>
+          <textarea
+            rows={3}
+            value={form.description}
+            onChange={(e) => update('description', e.target.value)}
+            className="w-full rounded-md bg-stone-800 border border-stone-700 px-2 py-1.5 text-sm text-stone-100"
+          />
+        </Field>
         <label className="flex items-center gap-2 text-sm text-stone-300">
           <input
             type="checkbox"

@@ -68,6 +68,7 @@ const homebrewMonsterShape = {
   legendaryActionCount: z.number().int().positive().optional().nullable(),
   reactions: z.array(statBlockEntrySchema).optional().nullable(),
   source: z.string().max(200).optional().nullable(),
+  description: z.string().max(20000).optional().nullable(),
   // Caps monster_instances at 1 per campaign for this catalog row (see
   // services/monsters.ts's createMonsterInstance). No `.default()` here —
   // same reason as every other field in this shape (see top-of-file

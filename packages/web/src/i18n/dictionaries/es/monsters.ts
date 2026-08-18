@@ -58,6 +58,7 @@ export const monsters = {
     creatureTypePlaceholder: 'p. ej. bestia, diablo, humanoide',
     fieldAlignment: 'Alineamiento',
     fieldSource: 'Fuente',
+    fieldOverview: 'Descripción',
     uniqueLabel: 'Única (nombrada/legendaria — limitada a una instancia activa por campaña)',
     libraryScopeLabel: 'Guardar en',
     libraryScopeCampaign: 'Solo esta campaña',

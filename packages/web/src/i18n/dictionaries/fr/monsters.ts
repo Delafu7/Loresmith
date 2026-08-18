@@ -58,6 +58,7 @@ export const monsters = {
     creatureTypePlaceholder: 'ex. bête, fielon, humanoïde',
     fieldAlignment: 'Alignement',
     fieldSource: 'Source',
+    fieldOverview: 'Description',
     uniqueLabel: 'Unique (nommée/légendaire — limitée à une instance active par campagne)',
     libraryScopeLabel: 'Enregistrer dans',
     libraryScopeCampaign: 'Cette campagne uniquement',

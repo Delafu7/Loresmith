@@ -32,6 +32,7 @@ import { LairActionBanner, LairActionsEditor, TerrainNotesPanel } from './LairAc
 import { XpBudgetPanel } from './XpBudgetPanel';
 import { DispositionBadge, DispositionHistoryPanel } from './DispositionPanel';
 import { ParticipantSheetPanel } from './ParticipantSheetPanel';
+import { MapDescriptionPanel } from './MapDescriptionPanel';
 import { PartyStatsSidebar } from './PartyStatsSidebar';
 import { SidebarShell } from './SidebarShell';
 import { SessionOverlayPanel } from './SessionOverlayPanel';
@@ -310,6 +311,16 @@ export function SessionScreen({
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">{managePanel}</div>
+      )}
+
+      {showMap && (
+        <MapDescriptionPanel
+          participant={selectedParticipant}
+          isDm={isDm}
+          characters={characters}
+          monsterInstances={monsterInstances}
+          monsters={monsters}
+        />
       )}
 
       <SessionOverlayPanel open={overlay !== null} onClose={() => setOverlay(null)} title={overlayTitle}>

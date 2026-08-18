@@ -67,6 +67,7 @@ export const raceHomebrewShape = {
   abilityBonuses: z.record(z.string(), z.number().int()),
   traits: z.array(z.object({ name: z.string(), description: z.string().optional() })),
   source: z.string().max(200).optional().nullable(),
+  description: z.string().max(20000).optional().nullable(),
 };
 
 export const subraceHomebrewShape = {
@@ -86,6 +87,7 @@ export const classHomebrewShape = {
   spellcastingType: z.enum(['full', 'half', 'third', 'pact', 'none']),
   savingThrowProficiencyIds: z.array(z.string().uuid()).optional().nullable(),
   source: z.string().max(200).optional().nullable(),
+  description: z.string().max(20000).optional().nullable(),
 };
 
 export const subclassHomebrewShape = {

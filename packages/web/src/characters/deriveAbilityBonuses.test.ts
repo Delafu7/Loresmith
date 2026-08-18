@@ -5,7 +5,7 @@ import type { RaceCatalog, SubraceCatalog } from '../lib/types';
 const baseScores = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
 
 function race(overrides: Partial<RaceCatalog>): RaceCatalog {
-  return { id: 'race-1', index_key: 'elf', name: 'Elf', edition_scope: 'both', speed: 30, size: 'Medium', ability_bonuses: [], ...overrides };
+  return { id: 'race-1', index_key: 'elf', name: 'Elf', edition_scope: 'both', speed: 30, size: 'Medium', ability_bonuses: [], description: null, ...overrides };
 }
 
 function subrace(overrides: Partial<SubraceCatalog>): SubraceCatalog {

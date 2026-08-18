@@ -62,6 +62,7 @@ export const monsters = {
     creatureTypePlaceholder: 'e.g. beast, fiend, humanoid',
     fieldAlignment: 'Alignment',
     fieldSource: 'Source',
+    fieldOverview: 'Description',
     uniqueLabel: 'Unique (named/legendary — limit to one active instance per campaign)',
     libraryScopeLabel: 'Save to',
     libraryScopeCampaign: 'This campaign only',

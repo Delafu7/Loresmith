@@ -430,6 +430,17 @@ export const encounters = {
     collapseLabel: 'Roster',
     expand: 'Expand roster',
   },
+  descriptionPanel: {
+    creatureSubheading: 'Creature',
+    raceSubheading: 'Race — {race}',
+    empty: 'No description yet.',
+    edit: 'Edit description',
+    save: 'Save',
+    saving: 'Saving…',
+    cancel: 'Cancel',
+    expand: 'Expand',
+    collapse: 'Collapse',
+  },
   live: {
     minimize: 'Minimize',
     forceFullscreen: 'Bring everyone to fullscreen',

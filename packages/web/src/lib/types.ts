@@ -228,6 +228,7 @@ export interface RaceCatalog {
   speed: number;
   size: string;
   ability_bonuses: unknown;
+  description: string | null;
   is_homebrew?: boolean;
   owning_campaign_id?: string | null;
   owning_user_id?: string | null;
@@ -253,6 +254,7 @@ export interface ClassCatalog {
   // proficiency toggles from the selected CLASS's own proficiencies, since
   // subclasses have none of their own to read.
   saving_throw_proficiency_ids: string[] | null;
+  description: string | null;
   is_homebrew?: boolean;
   owning_campaign_id?: string | null;
   owning_user_id?: string | null;
@@ -318,6 +320,7 @@ export interface MonsterCatalogEntry {
   legendary_action_count: number | null;
   reactions: unknown;
   source: string | null;
+  description: string | null;
   // Phase 3.2: homebrew bestiary entries (routes/monsters.ts's
   // campaignMonstersRouter). Global/seeded rows have is_homebrew=false and
   // owning_campaign_id=null; a campaign's own homebrew creatures union in via
