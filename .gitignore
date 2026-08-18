@@ -19,3 +19,7 @@ backups/
 # config (that's what the "local" in the filename denotes).
 .claude/skills/
 .claude/settings.local.json
+.claude/settings.json
+
+# Design export/mockup, not project source.
+design/Loresmith VTT.html
