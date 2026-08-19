@@ -27,6 +27,7 @@ export const dice = {
   quickPlaceholder: 'p. ej. 2d6+3',
   quickRolling: 'Tirando…',
   quickInvalidExpression: 'Se esperaba una expresión de dado como «d20», «2d6» o «2d6+3».',
+  fabHistoryLink: 'Ver historial de tiradas',
   manualEntryToggle: 'Lo tiré físicamente',
   manualEntryHint: 'Introduce el/los {count} dado(s) que tiraste (1–{sides} cada uno)',
   visibilityLabel: 'Visible para',

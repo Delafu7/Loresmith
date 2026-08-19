@@ -33,6 +33,7 @@ export const dice = {
   quickPlaceholder: 'p. ex. 2d6+3',
   quickRolling: 'Lancement…',
   quickInvalidExpression: 'Attendu : une expression de dé comme « d20 », « 2d6 » ou « 2d6+3 ».',
+  fabHistoryLink: 'Voir l’historique des lancers',
   manualEntryToggle: "Je l'ai lancé physiquement",
   manualEntryHint: 'Entrez le(s) {count} dé(s) lancé(s) (1–{sides} chacun)',
   visibilityLabel: 'Visible par',

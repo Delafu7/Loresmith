@@ -12,6 +12,7 @@ import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
 import { useFormDraft } from '../lib/useFormDraft';
 import { useLocale, type TranslationKey } from '../i18n/LocaleContext';
+import { JournalTabs } from './JournalTabs';
 
 interface EntityFormValues {
   name: string;
@@ -325,6 +326,7 @@ export function LocationsFactionsPage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
+      <JournalTabs />
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-display text-lg font-medium">{t('locationsFactions.title')}</h2>
       </div>

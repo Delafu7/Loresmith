@@ -10,6 +10,7 @@ import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
 import { useFormDraft } from '../lib/useFormDraft';
 import { useLocale } from '../i18n/LocaleContext';
+import { JournalTabs } from './JournalTabs';
 
 interface EventFormValues {
   inGameDay: string;
@@ -73,6 +74,7 @@ export function CampaignCalendarPage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
+      <JournalTabs />
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-display text-lg font-medium">{t('campaignCalendar.title')}</h2>
         {isDm && (

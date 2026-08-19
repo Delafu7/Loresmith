@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useCampaignShell } from '../campaigns/CampaignShell';
 import { CATALOG_ENTITIES, type CatalogEntityConfig } from './catalogEntities';
 import { useCatalogEntityCrud, type CatalogRow } from './useCatalogEntityCrud';
@@ -53,13 +54,24 @@ export function CatalogEditorPage() {
         )}
       </div>
 
-      <Select value={entitySegment} onChange={(e) => setEntitySegment(e.target.value)} className="max-w-xs">
-        {CATALOG_ENTITIES.map((e) => (
-          <option key={e.segment} value={e.segment}>
-            {e.pluralLabel}
-          </option>
-        ))}
-      </Select>
+      <div className="flex items-center gap-3 flex-wrap">
+        <Select value={entitySegment} onChange={(e) => setEntitySegment(e.target.value)} className="max-w-xs">
+          {CATALOG_ENTITIES.map((e) => (
+            <option key={e.segment} value={e.segment}>
+              {e.pluralLabel}
+            </option>
+          ))}
+        </Select>
+        {/* Races/classes are unique among these 13 entities in having a second,
+            campaign-scoped page (CampaignRacesClassesPage.tsx) for adopting a
+            catalog row into this campaign — that page already links back here
+            ("Create / duplicate entries →"); this is the other direction. */}
+        {(entitySegment === 'races' || entitySegment === 'subraces' || entitySegment === 'classes' || entitySegment === 'subclasses') && (
+          <Link to={`/campaigns/${campaignId}/races-classes`} className="text-xs text-amber-500 hover:text-amber-400 underline">
+            {t('catalog.list.manageAdoptionLink')}
+          </Link>
+        )}
+      </div>
 
       {listQuery.isLoading && <Loading />}
       {listQuery.isError && <ErrorBanner message={errorMessage(listQuery.error)} />}

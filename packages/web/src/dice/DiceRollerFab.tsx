@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { QuickDiceRoller } from '../components/QuickDiceRoller';
 import { DiceRollsIcon } from '../components/layout/navIcons';
 import { useLocale } from '../i18n/LocaleContext';
@@ -16,8 +17,19 @@ import { useLocale } from '../i18n/LocaleContext';
  * background) matches this app's one rule for its accent color — see
  * Button.tsx's `primary` variant, the same rule this reuses at a larger,
  * circular size for a FAB.
+ *
+ * This is now the ONLY route into rolling — CampaignShell.tsx dropped its
+ * separate "Dice Rolls" sidebar item because it pointed at the exact same
+ * feature this FAB already surfaces everywhere. The footer link below is
+ * what keeps /dice-rolls (full history + roll requests, which this compact
+ * popover doesn't show) reachable now that it's not a standing nav entry.
+ *
+ * campaignId is a prop, not read via useCampaignShell(), so this file
+ * doesn't import back from campaigns/CampaignShell.tsx — that module is the
+ * one that renders this component, and a two-way import between them would
+ * be a circular dependency.
  */
-export function DiceRollerFab() {
+export function DiceRollerFab({ campaignId }: { campaignId: string }) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
 
@@ -26,12 +38,19 @@ export function DiceRollerFab() {
       {open && (
         <div className="w-[min(20rem,calc(100vw-2.5rem))] rounded-md border border-stone-700 shadow-lg overflow-hidden">
           <QuickDiceRoller />
+          <Link
+            to={`/campaigns/${campaignId}/dice-rolls`}
+            onClick={() => setOpen(false)}
+            className="block border-t border-stone-800 bg-stone-900 px-4 py-2 text-center text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200"
+          >
+            {t('dice.fabHistoryLink')}
+          </Link>
         </div>
       )}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label={t('nav.diceRolls')}
+        aria-label={t('dice.quickHeading')}
         aria-haspopup="dialog"
         aria-expanded={open}
         className="flex size-14 items-center justify-center rounded-full border-2 border-amber-500 bg-stone-950 text-amber-500 shadow-lg hover:bg-amber-500/10 active:bg-amber-500/20"

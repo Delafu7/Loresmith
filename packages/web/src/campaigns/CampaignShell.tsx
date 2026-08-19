@@ -16,11 +16,8 @@ import {
   CharactersIcon,
   BestiaryIcon,
   CompendiumIcon,
-  SessionLogIcon,
   NotesIcon,
-  CalendarIcon,
   BastionsIcon,
-  DiceRollsIcon,
   SettingsIcon,
 } from '../components/layout/navIcons';
 import { isUuid } from '../lib/ids';
@@ -203,44 +200,38 @@ export function CampaignShell() {
           <NavItem to="map" onClick={onNavigate} icon={<MapIcon />}>{t('nav.map')}</NavItem>
           <NavItem to="characters" onClick={onNavigate} icon={<CharactersIcon />}>{t('nav.characters')}</NavItem>
           {/* Task 1: curated bestiary, visible to DM + players (server-side
-              filters undiscovered creatures for players) — not gated like
-              the DM-only "monsters" workbench below. */}
+              filters undiscovered creatures for players). One sidebar entry
+              for both this and the DM-only "monsters" workbench — BestiaryTabs
+              (rendered inside CampaignBestiaryPage/MonstersPage) is the routed
+              tab strip that switches between them; a player only ever sees
+              this Bestiary tab since MonstersPage has nothing for them. */}
           <NavItem to="bestiary" onClick={onNavigate} icon={<BestiaryIcon />}>{t('nav.bestiary')}</NavItem>
-          {isDm && <NavItem to="monsters" onClick={onNavigate} icon={<BestiaryIcon />}>{t('nav.monsters')}</NavItem>}
           {isDm && <NavItem to="items" onClick={onNavigate} icon={<CompendiumIcon />}>{t('nav.items')}</NavItem>}
           <NavItem to="session" onClick={onNavigate}>{t('nav.session')}</NavItem>
-          {/* "Session Log" — the DM's per-session recap (SessionLogPage), NOT
-              the live combat view above. Not DM-gated: any member can read the
-              recap log; only the write actions inside the page are DM-only. */}
-          <NavItem to="session-log" onClick={onNavigate} icon={<SessionLogIcon />}>{t('nav.sessionLog')}</NavItem>
-          <NavItem to="notes" onClick={onNavigate} icon={<NotesIcon />}>{t('nav.notes')}</NavItem>
-          {/* Phase 3 "plot threads" — visible to every member (a player only
-              ever sees threads the DM has explicitly shared with them via
-              entity_visibility; the page itself hides the sharing controls
-              for a non-DM viewer, same "page hides its own DM section"
-              pattern as reference above). */}
-          <NavItem to="plot-threads" onClick={onNavigate}>{t('nav.plotThreads')}</NavItem>
-          {/* Phase 3 "locations and factions" — DM-authored world reference
-              data, visible to every member; write controls are hidden for a
-              non-DM viewer inside the page itself (same pattern as above). */}
-          <NavItem to="locations" onClick={onNavigate}>{t('nav.locationsFactions')}</NavItem>
-          {/* Phase 3 "campaign calendar" — a DM-entered timeline of in-world
-              events, visible to every member; write controls are hidden for
-              a non-DM viewer inside the page itself (same pattern as above). */}
-          <NavItem to="calendar" onClick={onNavigate} icon={<CalendarIcon />}>{t('nav.campaignCalendar')}</NavItem>
+          {/* No "Session Log" sidebar entry — the recap page (SessionLogPage,
+              route still `session-log`, unchanged) stays reachable via
+              CampaignDashboardPage's "latest session" card and its
+              openSessionLogLink button, so removing the standing nav item
+              doesn't strand it. */}
+          {/* "Journal" — one sidebar entry for the five DM-prep/worldbuilding
+              pages (Notes, Plot Threads, Locations & Factions, Calendar,
+              Reference), which used to be five separate top-level items here.
+              Each is still its own route with its own data/sockets; JournalTabs
+              (rendered inside each page) is the routed tab strip that switches
+              between them, matching the LocationsFactionsPage in-page tab
+              style. Lands on "notes" first, same as before this collapse. */}
+          <NavItem to="notes" onClick={onNavigate} icon={<NotesIcon />}>{t('nav.journal')}</NavItem>
           {/* Phase 4 "Bastion tracking" — DM opt-in (campaigns.bastions_enabled,
               CampaignSettingsPage); the page itself shows an explanatory empty
               state when the DM hasn't turned it on yet, rather than hiding the
               nav item entirely (a player should be able to discover the
               feature exists). */}
           <NavItem to="bastions" onClick={onNavigate} icon={<BastionsIcon />}>{t('nav.bastions')}</NavItem>
-          <NavItem to="dice-rolls" onClick={onNavigate} icon={<DiceRollsIcon />}>{t('nav.diceRolls')}</NavItem>
+          {/* No "Dice Rolls" sidebar entry — DiceRollerFab (mounted below,
+              on every campaign screen) is the primary access point for
+              rolling and links out to this same /dice-rolls history route,
+              so a second always-visible nav item to it was pure duplication. */}
           <NavItem to="assets" onClick={onNavigate}>{t('nav.assets')}</NavItem>
-          {/* Iteration 4 — DM-only crucial-info notes + a coin-value table
-              every member can see, both on one page; not gated like the
-              DM-only pages below (the page itself hides the notes section
-              for a non-DM viewer). */}
-          <NavItem to="reference" onClick={onNavigate}>{t('nav.reference')}</NavItem>
           {isDm && <NavItem to="catalog" onClick={onNavigate}>{t('nav.catalog')}</NavItem>}
           {isDm && <NavItem to="races-classes" onClick={onNavigate}>{t('nav.racesClasses')}</NavItem>}
           {isDm && <NavItem to="members" onClick={onNavigate}>{t('nav.members')}</NavItem>}
@@ -315,7 +306,7 @@ export function CampaignShell() {
           <Outlet />
         </main>
 
-        <DiceRollerFab />
+        <DiceRollerFab campaignId={campaignId} />
       </div>
     </CampaignShellContext.Provider>
   );

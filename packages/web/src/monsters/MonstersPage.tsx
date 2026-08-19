@@ -12,6 +12,7 @@ import { HpAdjustForm } from '../components/HpAdjustForm';
 import { StatBlock } from '../components/StatBlock';
 import { DiceRoller } from '../components/DiceRoller';
 import { parseDiceExpression } from '../components/QuickDiceRoller';
+import { BestiaryTabs } from '../bestiary/BestiaryTabs';
 
 export function MonstersPage() {
   const { campaignId, campaign, role } = useCampaignShell();
@@ -169,6 +170,7 @@ export function MonstersPage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto space-y-8">
+      <BestiaryTabs />
       <section>
         <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
           <h2 className="text-lg font-semibold">{t('monsters.list.heading')}</h2>

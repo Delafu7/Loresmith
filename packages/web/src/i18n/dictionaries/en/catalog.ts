@@ -20,6 +20,13 @@ export const catalog = {
     promoteToLibrary: 'Move to my compendium',
     assignToCampaign: 'Move to this campaign',
     selectCampaign: 'Select campaign…',
+    // Shown only for the races/subraces/classes/subclasses segments — this
+    // page authors/edits the shared catalog row, but adopting one into THIS
+    // campaign (plus any campaign-local tweak) happens on a separate page
+    // (CampaignRacesClassesPage.tsx), which already links back here via its
+    // own "Create / duplicate entries →". This is that link's other
+    // direction, so the relationship is discoverable from either side.
+    manageAdoptionLink: 'Choose which this campaign uses →',
   },
   form: {
     selectPlaceholder: 'Select…',

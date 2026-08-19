@@ -17,6 +17,7 @@ export const catalog = {
     promoteToLibrary: 'Déplacer vers mon recueil',
     assignToCampaign: 'Déplacer vers cette campagne',
     selectCampaign: 'Sélectionner une campagne…',
+    manageAdoptionLink: 'Choisir ceux utilisés par cette campagne →',
   },
   form: {
     selectPlaceholder: 'Sélectionner…',

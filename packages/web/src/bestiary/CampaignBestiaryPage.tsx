@@ -13,6 +13,7 @@ import { Input, Textarea } from '../components/ui/Field';
 import { StatBlock } from '../components/StatBlock';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { formatCrLabel } from './formatCr';
+import { BestiaryTabs } from './BestiaryTabs';
 
 // Task 1: the curated per-campaign bestiary — distinct from
 // /campaigns/:id/monsters (combat-spawn + homebrew-authoring workbench,
@@ -94,6 +95,7 @@ export function CampaignBestiaryPage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto space-y-4 pb-24">
+      <BestiaryTabs />
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h2 className="text-lg font-semibold">{t('nav.bestiary')}</h2>
         {isDm && <ButtonLink to="add" variant="primary" size="sm">{t('campaignBestiary.addButton')}</ButtonLink>}

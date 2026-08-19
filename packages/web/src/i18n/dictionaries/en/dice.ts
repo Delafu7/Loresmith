@@ -34,6 +34,10 @@ export const dice = {
   quickPlaceholder: 'e.g. 2d6+3',
   quickRolling: 'Rolling…',
   quickInvalidExpression: 'Expected a die expression like "d20", "2d6", or "2d6+3".',
+  // DiceRollerFab.tsx — link out of the floating quick-roller into the full
+  // history/roll-requests page (nav.diceRollLog), so that page stays reachable
+  // even though it's no longer a separate always-visible sidebar item.
+  fabHistoryLink: 'View roll history',
   // Iteration 3 §2.3/2.4 — manual entry, visibility, void, roll requests.
   manualEntryToggle: 'I rolled this physically',
   manualEntryHint: 'Enter the {count} die/dice you rolled (1–{sides} each)',

@@ -7,6 +7,7 @@ export const nav = {
   items: 'Objetos',
   session: 'Sesión',
   sessionLog: 'Registro de sesión',
+  journal: 'Diario',
   notes: 'Notas',
   plotThreads: 'Tramas',
   locationsFactions: 'Lugares y facciones',

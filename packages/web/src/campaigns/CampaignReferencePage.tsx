@@ -5,6 +5,7 @@ import { useCampaignShell } from './CampaignShell';
 import { useLocale } from '../i18n/LocaleContext';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { Card, CardKicker } from '../components/ui/Card';
+import { JournalTabs } from '../notes/JournalTabs';
 
 interface ReferenceNotes {
   body: string;
@@ -23,6 +24,7 @@ export function CampaignReferencePage() {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-4">
+      <JournalTabs />
       <h2 className="text-lg font-semibold">{t('reference.title')}</h2>
       {isDm && <GmNotesSection campaignId={campaignId} />}
       <CoinValueTable />
