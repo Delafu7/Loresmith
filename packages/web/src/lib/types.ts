@@ -6,7 +6,7 @@
 
 export type CampaignRole = 'dm' | 'player' | 'spectator';
 
-export type UiTheme = 'crimson' | 'amber' | 'ember';
+export type UiTheme = 'crimson' | 'amber' | 'ember' | 'arcane';
 
 export type Locale = 'en' | 'es' | 'fr';
 

@@ -47,10 +47,10 @@ body :where(h1, h2, h3) {
  * (`--color-amber-600` etc., see node_modules/tailwindcss/theme.css). Every
  * existing `bg-amber-600`/`text-stone-500`/etc. class anywhere in the app
  * re-colors automatically based on which theme is active, with zero
- * component changes. "Ember" is the default/no-attribute theme; "Crimson"
- * and "Amber" remain selectable alternates (Customizable Styles per Role —
- * see auth/AuthContext.tsx for how `data-theme` gets set from the logged-in
- * user's persisted `ui_theme` column).
+ * component changes. "Ember" is the default/no-attribute theme; "Crimson",
+ * "Amber", and "Arcane Console" remain selectable alternates (Customizable
+ * Styles per Role — see auth/AuthContext.tsx for how `data-theme` gets set
+ * from the logged-in user's persisted `ui_theme` column).
  */
 /*
  * "Field Ledger" visual direction. Repaints the "ember" slot in place
@@ -155,7 +155,7 @@ body :where(h1, h2, h3) {
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="crimson"]):not([data-theme="amber"]) {
+  :root:not([data-theme="crimson"]):not([data-theme="amber"]):not([data-theme="arcane"]) {
     --color-amber-400: #cf644a;
     --color-amber-500: #b1492f;
     --color-amber-600: #993f29;
@@ -240,6 +240,96 @@ body :where(h1, h2, h3) {
   --color-stone-800: oklch(26.8% 0.007 34.298);
   --color-stone-900: oklch(21.6% 0.006 56.043);
   --color-stone-950: oklch(14.7% 0.004 49.25);
+}
+
+/*
+ * "Arcane Console" — a 4th selectable theme, added alongside (not
+ * replacing) Field Ledger/Crimson/Amber; see
+ * packages/server/src/db/migrations/1784269830666_add-arcane-user-ui-theme.ts.
+ * Dark-only by design (excluded from the light-mode media query below, same
+ * as Crimson/Amber). Reuses the app's existing override slots rather than
+ * inventing new ones: `amber-*` (this app's one accent family — outline/
+ * ghost/link/focus-ring only, never a filled background, same rule as
+ * every other theme) becomes the violet accent; `sky-*` (elsewhere "info/
+ * temp-HP", a spare slot no other theme repaints) becomes the cyan
+ * secondary accent, so no component needs a new color family to get two
+ * accents. `red-*`/`emerald-*`/`yellow-*`/`orange-*` (danger/heal/warning/
+ * bloodied) are recalibrated for a near-black background, same purpose as
+ * every other theme's semantic ramp.
+ *
+ * Typography is also per-theme here for the first time (every other theme
+ * only ever varied color — see main.tsx) — `--font-display`/`--font-sans`
+ * are Space Grotesk instead of Bitter/Plex Sans; `--font-mono` is left
+ * alone (still IBM Plex Mono, the app-wide "every number is mono"
+ * convention, unchanged across all four themes).
+ *
+ * Every pairing below was checked with a literal relative-luminance WCAG
+ * contrast calculation (not eyeballed), same practice as the Field Ledger
+ * pass documented above: body text (stone-100) and dim text (stone-400)
+ * against both the page bg (stone-950) and raised-card bg (stone-800) all
+ * clear 4.5:1; the violet/cyan/danger/heal/warning/bloodied "-400"/"-500"
+ * text tones clear 4.5:1 against both surfaces too; the accent focus ring
+ * clears 3:1. Same known, deliberate gap as every other theme: hairline
+ * decorative borders (stone-700/stone-800) sit below 3:1 — a genuinely
+ * functional border that needs to be seen uses stone-500 instead (3.65:1
+ * against the page bg), consistent with this app's existing precedent of
+ * never chasing AA on purely decorative dividers.
+ */
+:root[data-theme="arcane"] {
+  color-scheme: dark;
+
+  --font-display: 'Space Grotesk', ui-sans-serif, sans-serif;
+  --font-sans: 'Space Grotesk', ui-sans-serif, sans-serif;
+
+  /* violet — primary accent (links, active nav, focus rings, outline buttons). */
+  --color-amber-400: oklch(78% 0.12 300);
+  --color-amber-500: oklch(72% 0.17 300);
+  --color-amber-600: oklch(64% 0.19 300);
+  --color-amber-700: oklch(54% 0.18 300);
+  --color-amber-950: oklch(20% 0.09 300);
+
+  /* stone — near-black cool neutral. 950=darkest=page bg, 100=lightest=text. */
+  --color-stone-100: oklch(92% 0.010 260);
+  --color-stone-200: oklch(85% 0.012 260);
+  --color-stone-300: oklch(75% 0.013 260);
+  --color-stone-400: oklch(63% 0.014 260);
+  --color-stone-500: oklch(52% 0.014 260);
+  --color-stone-600: oklch(42% 0.014 260);
+  --color-stone-700: oklch(32% 0.015 260);
+  --color-stone-800: oklch(24% 0.016 260);
+  --color-stone-900: oklch(18% 0.016 260);
+  --color-stone-950: oklch(13% 0.015 260);
+
+  /* red — danger/damage. */
+  --color-red-300: oklch(80% 0.10 25);
+  --color-red-400: oklch(72% 0.16 25);
+  --color-red-600: oklch(60% 0.19 25);
+  --color-red-700: oklch(50% 0.18 25);
+  --color-red-800: oklch(40% 0.16 25);
+  --color-red-950: oklch(20% 0.08 25);
+
+  /* emerald — heal/success. */
+  --color-emerald-400: oklch(76% 0.15 150);
+  --color-emerald-500: oklch(68% 0.16 150);
+  --color-emerald-600: oklch(58% 0.15 150);
+  --color-emerald-700: oklch(48% 0.13 150);
+  --color-emerald-800: oklch(32% 0.08 150);
+  --color-emerald-900: oklch(24% 0.05 150);
+  --color-emerald-950: oklch(18% 0.05 150);
+
+  /* yellow — warning / "injured" HP band. */
+  --color-yellow-400: oklch(82% 0.15 95);
+  --color-yellow-600: oklch(58% 0.11 95);
+
+  /* orange — "bloodied" HP band only. */
+  --color-orange-400: oklch(75% 0.15 55);
+  --color-orange-600: oklch(52% 0.12 55);
+
+  /* cyan — secondary accent / info / temp-HP indicator, repaints the "sky" slot. */
+  --color-sky-400: oklch(78% 0.13 220);
+  --color-sky-500: oklch(62% 0.105 220);
+  --color-sky-600: oklch(52% 0.085 220);
+  --color-sky-700: oklch(44% 0.075 220);
 }
 
 /*

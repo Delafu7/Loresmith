@@ -21,7 +21,7 @@ export interface UserRow {
   id: string;
   email: string;
   displayName: string;
-  uiTheme: 'crimson' | 'amber' | 'ember';
+  uiTheme: 'crimson' | 'amber' | 'ember' | 'arcane';
   locale: 'en' | 'es' | 'fr';
   avatarUrl: string | null;
   textSize: 'normal' | 'large';
@@ -38,7 +38,7 @@ interface RawUserRow {
   id: string;
   email: string;
   display_name: string;
-  ui_theme: 'crimson' | 'amber' | 'ember';
+  ui_theme: 'crimson' | 'amber' | 'ember' | 'arcane';
   locale: 'en' | 'es' | 'fr';
   avatar_url: string | null;
   text_size: 'normal' | 'large';

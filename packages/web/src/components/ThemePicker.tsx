@@ -10,6 +10,7 @@ const THEME_LABELS: Record<UiTheme, string> = {
   ember: 'Field Ledger',
   crimson: 'Crimson',
   amber: 'Amber',
+  arcane: 'Arcane Console',
 };
 
 /**

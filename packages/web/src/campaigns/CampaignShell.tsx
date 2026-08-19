@@ -10,7 +10,21 @@ import { useLiveMapAutoOpen } from './useLiveMapAutoOpen';
 import { Loading, ErrorBanner, errorMessage } from '../components/Feedback';
 import { Sidebar, NavItemList, NavItem } from '../components/ui/Nav';
 import { NavDrawer } from '../components/layout/NavDrawer';
+import {
+  DashboardIcon,
+  MapIcon,
+  CharactersIcon,
+  BestiaryIcon,
+  CompendiumIcon,
+  SessionLogIcon,
+  NotesIcon,
+  CalendarIcon,
+  BastionsIcon,
+  DiceRollsIcon,
+  SettingsIcon,
+} from '../components/layout/navIcons';
 import { isUuid } from '../lib/ids';
+import { DiceRollerFab } from '../dice/DiceRollerFab';
 import { useBreadcrumb } from '../components/layout/BreadcrumbContext';
 import { useHeaderBadge } from '../components/layout/HeaderBadgeContext';
 
@@ -182,24 +196,24 @@ export function CampaignShell() {
           {/* First item, matching design/nocturne.html's sidebar ordering
               — the campaign's default landing view (see App.tsx's index
               redirect). */}
-          <NavItem to="dashboard" onClick={onNavigate}>{t('nav.dashboard')}</NavItem>
+          <NavItem to="dashboard" onClick={onNavigate} icon={<DashboardIcon />}>{t('nav.dashboard')}</NavItem>
           {/* Positioned right after Dashboard (not nocturne's literal
               6th-of-8 slot) — this app's map-first premise makes it a
               primary surface, not a secondary browse tab. */}
-          <NavItem to="map" onClick={onNavigate}>{t('nav.map')}</NavItem>
-          <NavItem to="characters" onClick={onNavigate}>{t('nav.characters')}</NavItem>
+          <NavItem to="map" onClick={onNavigate} icon={<MapIcon />}>{t('nav.map')}</NavItem>
+          <NavItem to="characters" onClick={onNavigate} icon={<CharactersIcon />}>{t('nav.characters')}</NavItem>
           {/* Task 1: curated bestiary, visible to DM + players (server-side
               filters undiscovered creatures for players) — not gated like
               the DM-only "monsters" workbench below. */}
-          <NavItem to="bestiary" onClick={onNavigate}>{t('nav.bestiary')}</NavItem>
-          {isDm && <NavItem to="monsters" onClick={onNavigate}>{t('nav.monsters')}</NavItem>}
-          {isDm && <NavItem to="items" onClick={onNavigate}>{t('nav.items')}</NavItem>}
+          <NavItem to="bestiary" onClick={onNavigate} icon={<BestiaryIcon />}>{t('nav.bestiary')}</NavItem>
+          {isDm && <NavItem to="monsters" onClick={onNavigate} icon={<BestiaryIcon />}>{t('nav.monsters')}</NavItem>}
+          {isDm && <NavItem to="items" onClick={onNavigate} icon={<CompendiumIcon />}>{t('nav.items')}</NavItem>}
           <NavItem to="session" onClick={onNavigate}>{t('nav.session')}</NavItem>
           {/* "Session Log" — the DM's per-session recap (SessionLogPage), NOT
               the live combat view above. Not DM-gated: any member can read the
               recap log; only the write actions inside the page are DM-only. */}
-          <NavItem to="session-log" onClick={onNavigate}>{t('nav.sessionLog')}</NavItem>
-          <NavItem to="notes" onClick={onNavigate}>{t('nav.notes')}</NavItem>
+          <NavItem to="session-log" onClick={onNavigate} icon={<SessionLogIcon />}>{t('nav.sessionLog')}</NavItem>
+          <NavItem to="notes" onClick={onNavigate} icon={<NotesIcon />}>{t('nav.notes')}</NavItem>
           {/* Phase 3 "plot threads" — visible to every member (a player only
               ever sees threads the DM has explicitly shared with them via
               entity_visibility; the page itself hides the sharing controls
@@ -213,14 +227,14 @@ export function CampaignShell() {
           {/* Phase 3 "campaign calendar" — a DM-entered timeline of in-world
               events, visible to every member; write controls are hidden for
               a non-DM viewer inside the page itself (same pattern as above). */}
-          <NavItem to="calendar" onClick={onNavigate}>{t('nav.campaignCalendar')}</NavItem>
+          <NavItem to="calendar" onClick={onNavigate} icon={<CalendarIcon />}>{t('nav.campaignCalendar')}</NavItem>
           {/* Phase 4 "Bastion tracking" — DM opt-in (campaigns.bastions_enabled,
               CampaignSettingsPage); the page itself shows an explanatory empty
               state when the DM hasn't turned it on yet, rather than hiding the
               nav item entirely (a player should be able to discover the
               feature exists). */}
-          <NavItem to="bastions" onClick={onNavigate}>{t('nav.bastions')}</NavItem>
-          <NavItem to="dice-rolls" onClick={onNavigate}>{t('nav.diceRolls')}</NavItem>
+          <NavItem to="bastions" onClick={onNavigate} icon={<BastionsIcon />}>{t('nav.bastions')}</NavItem>
+          <NavItem to="dice-rolls" onClick={onNavigate} icon={<DiceRollsIcon />}>{t('nav.diceRolls')}</NavItem>
           <NavItem to="assets" onClick={onNavigate}>{t('nav.assets')}</NavItem>
           {/* Iteration 4 — DM-only crucial-info notes + a coin-value table
               every member can see, both on one page; not gated like the
@@ -230,7 +244,7 @@ export function CampaignShell() {
           {isDm && <NavItem to="catalog" onClick={onNavigate}>{t('nav.catalog')}</NavItem>}
           {isDm && <NavItem to="races-classes" onClick={onNavigate}>{t('nav.racesClasses')}</NavItem>}
           {isDm && <NavItem to="members" onClick={onNavigate}>{t('nav.members')}</NavItem>}
-          {isDm && <NavItem to="settings" onClick={onNavigate}>{t('nav.settings')}</NavItem>}
+          {isDm && <NavItem to="settings" onClick={onNavigate} icon={<SettingsIcon />}>{t('nav.settings')}</NavItem>}
         </NavItemList>
         {isDm && (
           <div className="mt-auto">
@@ -300,6 +314,8 @@ export function CampaignShell() {
         <main className="flex-1 min-w-0">
           <Outlet />
         </main>
+
+        <DiceRollerFab />
       </div>
     </CampaignShellContext.Provider>
   );
