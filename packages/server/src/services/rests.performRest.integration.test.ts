@@ -41,8 +41,10 @@ describe('performRest (integration, live DB, throwaway fixtures)', () => {
       [campaignId, userId, hpMax, hpCurrent, JSON.stringify(hitDiceRemaining)],
     );
     const characterId = res.rows[0]!.id;
-    // Fighter, level 4 -> 4 total (d10) hit dice, so a long rest restores
-    // floor(4/2) = 2.
+    // Fighter, level 4 -> 4 total (d10) hit dice. This campaign is
+    // srd_edition='2024', so a long rest restores all 4 (Rules Glossary
+    // "Long Rest" § Benefits of the Rest, line 1135: "all spent Hit Point
+    // Dice").
     await pool.query(`INSERT INTO character_classes (character_id, class_id, level) VALUES ($1, $2, 4)`, [characterId, fighterClassId]);
     for (const [resourceKey, rechargeOn] of [
       ['short_pool', 'short_rest'],
@@ -105,10 +107,11 @@ describe('performRest (integration, live DB, throwaway fixtures)', () => {
       [longRestCharacterId],
     );
     expect(charRow.rows[0]!.hp_current).toBe(30);
-    // 4 total hit dice -> floor(4/2) = 2 restored (computeHitDiceRestore is
-    // unit-tested on its own in rests.test.ts; this just confirms performRest
-    // actually persists that result).
-    expect(charRow.rows[0]!.hit_dice_remaining).toEqual({ d10: 2 });
+    // 4 total hit dice, srd_edition='2024' -> all 4 restored
+    // (computeHitDiceRestore's edition branching is unit-tested on its own
+    // in rests.test.ts; this just confirms performRest actually persists
+    // that result for a real 2024 campaign row).
+    expect(charRow.rows[0]!.hit_dice_remaining).toEqual({ d10: 4 });
 
     const pools = await pool.query<{ resource_key: string; current_value: number }>(
       `SELECT resource_key, current_value FROM character_resource_pools WHERE character_id = $1 ORDER BY resource_key`,

@@ -2,8 +2,9 @@
 // POST /campaigns/:id/rests (DM-only, see routes/rests.ts for the
 // authorization-matrix note this endpoint's role gate follows).
 //
-// Long rest: hp_current -> hp_max, restore floor(total_hit_dice/2) (min 1)
-// hit dice (capped per die type), reset every character_resource_pools row
+// Long rest: hp_current -> hp_max, restore hit dice (capped per die type;
+// 2024 restores all spent dice, 2014 restores floor(total_hit_dice/2) min 1
+// — see computeHitDiceRestore), reset every character_resource_pools row
 // with recharge_on IN ('short_rest','long_rest','dawn') to max_value.
 // Short rest: only recharge_on='short_rest' pools reset — no HP, no hit
 // dice. A real short rest lets a player optionally SPEND hit dice to heal,
@@ -22,20 +23,30 @@ interface HitDieTypeProgression {
 
 /**
  * Pure function (unit-testable without a DB, matching the
- * dexModifier/computeNextTurn precedent in services/encounters.ts):
+ * dexModifier/computeNextTurn precedent in services/encounters.ts, and the
+ * edition-branching signature of domain/xpBudget.ts's assessEncounterXp):
  * distributes a long rest's hit-dice recovery across a character's die
  * types. 5e lets the PLAYER choose which dice to restore; this endpoint is a
  * bulk DM action with no such choice available, so it picks a fixed,
  * deterministic order (largest die type first) and documents that as the
  * stand-in for the player's choice, rather than inventing a smarter
  * heuristic nothing in the task brief asked for.
+ *
+ * Edition determines how many dice a Long Rest restores:
+ * - 2024: "You regain all lost Hit Points and all spent Hit Point Dice."
+ *   (docs/players-handbook-2024/Rules Glossary/rulesGlossary.md:1135, "Long
+ *   Rest" § Benefits of the Rest)
+ * - 2014: restores only half the character's total hit dice (min 1) — the
+ *   2014 SRD formula, kept for campaigns still running that edition.
  */
 export function computeHitDiceRestore(
   progression: HitDieTypeProgression[],
   current: Record<string, number>,
+  edition: '2014' | '2024',
 ): { hitDiceRemaining: Record<string, number>; restoredCount: number } {
   const totalHitDice = progression.reduce((sum, p) => sum + p.maxForType, 0);
-  const toRestore = totalHitDice > 0 ? Math.max(1, Math.floor(totalHitDice / 2)) : 0;
+  const toRestore =
+    totalHitDice > 0 ? (edition === '2024' ? totalHitDice : Math.max(1, Math.floor(totalHitDice / 2))) : 0;
 
   const hitDiceRemaining: Record<string, number> = { ...current };
   let remaining = toRestore;
@@ -93,6 +104,13 @@ export async function performRest(
   try {
     await client.query('BEGIN');
 
+    const campaignRes = await client.query<{ srd_edition: '2014' | '2024' }>(
+      `SELECT srd_edition FROM campaigns WHERE id = $1`,
+      [campaignId],
+    );
+    const srdEdition = campaignRes.rows[0]?.srd_edition;
+    if (!srdEdition) throw notFound('Campaign');
+
     const restEventRes = await client.query(
       `INSERT INTO rest_events (campaign_id, rest_type, initiated_by_user_id) VALUES ($1, $2, $3) RETURNING *`,
       [campaignId, input.restType, actorId],
@@ -121,7 +139,7 @@ export async function performRest(
         hpAfter = character.hp_max;
 
         const progression = await fetchHitDieProgression(client, characterId);
-        const restore = computeHitDiceRestore(progression, character.hit_dice_remaining ?? {});
+        const restore = computeHitDiceRestore(progression, character.hit_dice_remaining ?? {}, srdEdition);
         resourcesRestored.hitDiceRestored = restore.restoredCount;
         resourcesRestored.hitDiceRemaining = restore.hitDiceRemaining;
 
