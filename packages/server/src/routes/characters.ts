@@ -11,6 +11,7 @@ import {
   replaceClassesSchema,
   replaceSavingThrowProficienciesSchema,
   replaceSkillProficienciesSchema,
+  stabilizeCharacterSchema,
   updateArmorClassModeSchema,
   updateCharacterSchema,
 } from '../schemas/characters.js';
@@ -304,6 +305,56 @@ charactersRouter.post('/:id/hp/undo', async (req, res) => {
     ),
   );
   res.json({ character: result.character });
+});
+
+// docs/rules/death-saving-throws.md §2.3 — rolled server-side, no request
+// body (RNG lives here and only here, same invariant as apply-damage).
+charactersRouter.post('/:id/death-save', async (req, res) => {
+  const result = await charactersService.rollDeathSave(pool, req.user!.id, (req.params.id as string));
+  const io = getIo(req.app);
+  await Promise.all(
+    result.encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: (req.params.id as string),
+        monsterInstanceId: null,
+        hpCurrent: result.character.hp_current as number,
+        hpMax: result.character.hp_max as number,
+        hpTemp: result.character.hp_temp as number,
+        delta: 0,
+      }),
+    ),
+  );
+  res.json({ character: result.character, roll: result.roll, stabilized: result.stabilized, died: result.died });
+});
+
+// docs/rules/death-saving-throws.md §1.6/§2.3 — :id is the STABILIZED
+// target; the helper administering first aid (and rolling the Medicine
+// check) is named in the body.
+charactersRouter.post('/:id/stabilize', async (req, res) => {
+  const input = stabilizeCharacterSchema.parse(req.body);
+  const result = await charactersService.stabilizeCharacter(pool, req.user!.id, (req.params.id as string), input);
+  const io = getIo(req.app);
+  await Promise.all(
+    result.encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: (req.params.id as string),
+        monsterInstanceId: null,
+        hpCurrent: result.target.hp_current as number,
+        hpMax: result.target.hp_max as number,
+        hpTemp: result.target.hp_temp as number,
+        delta: 0,
+      }),
+    ),
+  );
+  res.json({ character: result.target, roll: result.roll, modifier: result.modifier, total: result.total, success: result.success });
 });
 
 charactersRouter.patch('/:id/exhaustion', async (req, res) => {

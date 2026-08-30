@@ -59,7 +59,13 @@ const sharedCharacterShape = {
 
 export const createCharacterSchema = z.object(sharedCharacterShape).extend({
   isPc: z.boolean().default(true),
-  speed: z.number().int().min(0).default(30),
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-2 — no default here (unlike
+  // hpTemp/exhaustionLevel/damage* below): a genuinely OMITTED speed lets
+  // insertCharacterRow fall back to the chosen race's catalog speed; a
+  // client that wants exactly 30 regardless of race can still send it
+  // explicitly. Losing the "always present" convenience for this one field
+  // is the point.
+  speed: z.number().int().min(0).optional(),
   hpTemp: z.number().int().min(0).default(0),
   exhaustionLevel: z.number().int().min(0).max(6).default(0),
   damageResistances: z.array(z.string().max(50)).default([]),
@@ -97,6 +103,18 @@ export const hpDeltaSchema = z.object({
   tempDelta: z.number().int().default(0),
 });
 export type HpDeltaInput = z.infer<typeof hpDeltaSchema>;
+
+// docs/rules/death-saving-throws.md §1.6/§2.3 — the Help action's DC 10
+// Wisdom (Medicine) check to stabilize a 0-HP creature. `modifier` is
+// client-supplied (the ability-modifier/proficiency math for a plain check,
+// same trust model as every other skill check in this app — see
+// schemas/diceRolls.ts's createDiceRollSchema); only the d20 itself is
+// server-rolled.
+export const stabilizeCharacterSchema = z.object({
+  helperCharacterId: z.string().uuid(),
+  modifier: z.number().int().default(0),
+});
+export type StabilizeCharacterInput = z.infer<typeof stabilizeCharacterSchema>;
 
 export const replaceClassesSchema = z.array(
   z.object({

@@ -21,6 +21,7 @@ import type {
   ReplaceClassesInput,
   ReplaceSavingThrowProficienciesInput,
   ReplaceSkillProficienciesInput,
+  StabilizeCharacterInput,
   UpdateArmorClassModeInput,
   UpdateCharacterInput,
 } from '../schemas/characters.js';
@@ -82,6 +83,42 @@ export async function authorizeCharacterMutation(
  * per the plan's explicit split: ownership gates the sheet, control gates
  * acting). Delegating control never grants sheet-edit rights.
  */
+// docs/rules/death-saving-throws.md §2.1/§2.3 — Unconscious IS a real
+// catalog condition (unlike "Stable", which isn't one of the 15 SRD
+// conditions in either edition and is tracked as a plain characters.is_stable
+// boolean instead). Applied/removed as a normal active_effects row, looked
+// up by name the same way advanceTurn's Dodge auto-clear does
+// (services/encounters.ts) rather than threading a condition/effect-
+// definition id through every call site. Runs inside the CALLER's own
+// transaction (client, not pool) — this state change must commit atomically
+// with the hp_current/is_alive write it accompanies.
+async function applyOrRemoveUnconsciousEffect(
+  client: PoolClient,
+  characterId: string,
+  encounterId: string | null,
+  apply: boolean,
+): Promise<void> {
+  const definitionRes = await client.query<{ id: string }>(
+    `SELECT id FROM effect_definitions WHERE name = 'Unconscious' AND is_homebrew = false LIMIT 1`,
+  );
+  const effectDefinitionId = definitionRes.rows[0]?.id;
+  if (!effectDefinitionId) return; // catalog not seeded — state machine columns remain the source of truth regardless
+
+  if (apply) {
+    await client.query(
+      `INSERT INTO active_effects (effect_definition_id, character_id, encounter_id, source_type, duration_type)
+       VALUES ($1, $2, $3, 'manual', 'until_removed')`,
+      [effectDefinitionId, characterId, encounterId],
+    );
+  } else {
+    await client.query(
+      `UPDATE active_effects SET removed_at = now()
+       WHERE character_id = $1 AND effect_definition_id = $2 AND removed_at IS NULL`,
+      [characterId, effectDefinitionId],
+    );
+  }
+}
+
 export async function authorizeCharacterAction(
   pool: Pool,
   actorId: string,
@@ -177,6 +214,123 @@ export async function getCharacter(pool: Pool, actorId: string, characterId: str
   return redactGmNotes(character, role);
 }
 
+type AbilityKey = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
+const ABILITY_KEYS: readonly AbilityKey[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+
+// Raw seed shape (db/seeds/catalog.ts's abilityBonusesOf, passed through
+// verbatim from the SRD JSON): [{ bonus: 2, ability_score: { index: 'con' } }, ...].
+function sumAbilityBonuses(entries: unknown): Partial<Record<AbilityKey, number>> {
+  const totals: Partial<Record<AbilityKey, number>> = {};
+  if (!Array.isArray(entries)) return totals;
+  for (const entry of entries as Array<{ bonus?: unknown; ability_score?: { index?: unknown } }>) {
+    const key = entry?.ability_score?.index;
+    const bonus = entry?.bonus;
+    if (typeof key === 'string' && (ABILITY_KEYS as readonly string[]).includes(key) && typeof bonus === 'number') {
+      const abilityKey = key as AbilityKey;
+      totals[abilityKey] = (totals[abilityKey] ?? 0) + bonus;
+    }
+  }
+  return totals;
+}
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-2 — the seed data encodes
+// darkvision as a trait INDEX, not a structured column: 2014 rows use a
+// bare 'darkvision' index (that edition's one uniform 60 ft radius);
+// 2024 rows suffix the actual feet value directly ('darkvision-60',
+// 'darkvision-120' for Dwarf/Orc's non-standard range) — confirmed against
+// the live seeded DB, not assumed from the schema alone.
+function darkvisionFeetFromTraits(traits: unknown): number | null {
+  if (!Array.isArray(traits)) return null;
+  for (const trait of traits as Array<{ index?: unknown }>) {
+    const index = trait?.index;
+    if (index === 'darkvision') return 60;
+    if (typeof index === 'string') {
+      const match = /^darkvision-(\d+)$/.exec(index);
+      if (match) return Number(match[1]);
+    }
+  }
+  return null;
+}
+
+interface SpeciesAndBackgroundGrants {
+  abilityBonuses: Partial<Record<AbilityKey, number>>;
+  speed: number | null;
+  senses: string | null;
+  skillProficiencyIds: string[];
+  grantedFeatId: string | null;
+}
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-2 (CC-02/CC-03) — derives what a
+// chosen race/subrace/background mechanically grant, so insertCharacterRow
+// can pre-fill them instead of trusting raw client input for values the
+// catalog already knows. Scoped narrowly to what the catalog can fully
+// answer without an unmodeled player choice or missing schema (confirmed
+// with the user before building, docs/roadmap/progress.md): ability-score
+// bonuses (2014 race/subrace only — fixed, no choice; 2024 moved this to a
+// background CHOICE — +2/+1 vs +1/+1/+1, which of the 3 listed abilities —
+// that this app has no field to collect yet, so a 2024 character gets none
+// from here, not a guessed default), speed, darkvision-derived senses text,
+// a background's skill proficiencies, and its granted feat. Deliberately
+// NOT doing: tool proficiencies (no schema exists for them at all,
+// catalog or character-side), starting gear/gold (dropped at seed time,
+// not merely unwired — a separate schema change), race-granted damage
+// resistances (several are themselves a player choice — Dragonborn's
+// ancestry, Tiefling's legacy — not worth doing only for the fixed-
+// resistance minority of species).
+async function computeSpeciesAndBackgroundGrants(
+  client: Pool | PoolClient,
+  input: CreateCharacterInput,
+): Promise<SpeciesAndBackgroundGrants> {
+  const abilityBonuses: Partial<Record<AbilityKey, number>> = {};
+  let speed: number | null = null;
+  let senses: string | null = null;
+
+  if (input.raceId) {
+    const raceRes = await client.query<{ speed: number; ability_bonuses: unknown; traits: unknown }>(
+      `SELECT speed, ability_bonuses, traits FROM races WHERE id = $1`,
+      [input.raceId],
+    );
+    const race = raceRes.rows[0];
+    if (race) {
+      speed = race.speed;
+      const darkvisionFt = darkvisionFeetFromTraits(race.traits);
+      if (darkvisionFt !== null) senses = `Darkvision ${darkvisionFt} ft.`;
+      for (const [key, bonus] of Object.entries(sumAbilityBonuses(race.ability_bonuses)) as Array<[AbilityKey, number]>) {
+        abilityBonuses[key] = (abilityBonuses[key] ?? 0) + bonus;
+      }
+    }
+  }
+
+  if (input.subraceId) {
+    const subraceRes = await client.query<{ ability_bonuses: unknown }>(
+      `SELECT ability_bonuses FROM subraces WHERE id = $1`,
+      [input.subraceId],
+    );
+    const subrace = subraceRes.rows[0];
+    if (subrace) {
+      for (const [key, bonus] of Object.entries(sumAbilityBonuses(subrace.ability_bonuses)) as Array<[AbilityKey, number]>) {
+        abilityBonuses[key] = (abilityBonuses[key] ?? 0) + bonus;
+      }
+    }
+  }
+
+  let skillProficiencyIds: string[] = [];
+  let grantedFeatId: string | null = null;
+  if (input.backgroundId) {
+    const backgroundRes = await client.query<{ skill_proficiency_ids: string[] | null; granted_feat_id: string | null }>(
+      `SELECT skill_proficiency_ids, granted_feat_id FROM backgrounds WHERE id = $1`,
+      [input.backgroundId],
+    );
+    const background = backgroundRes.rows[0];
+    if (background) {
+      skillProficiencyIds = background.skill_proficiency_ids ?? [];
+      grantedFeatId = background.granted_feat_id;
+    }
+  }
+
+  return { abilityBonuses, speed, senses, skillProficiencyIds, grantedFeatId };
+}
+
 async function insertCharacterRow(
   client: Pool | PoolClient,
   campaignId: string,
@@ -185,6 +339,27 @@ async function insertCharacterRow(
   actorId: string,
   input: CreateCharacterInput,
 ) {
+  const grants = await computeSpeciesAndBackgroundGrants(client, input);
+
+  // The race/subrace ability bonus is always added on top of the client's
+  // submitted (base) score, never offered as a skippable default: unlike
+  // speed/senses below, there's no legitimate "apply this race but not its
+  // ability bonus" case. 2024 rows contribute 0 here (see
+  // computeSpeciesAndBackgroundGrants's own comment on why), so this is a
+  // silent no-op for 2024 characters until this app can collect the
+  // background's ability-bonus CHOICE.
+  const str = input.str + (grants.abilityBonuses.str ?? 0);
+  const dex = input.dex + (grants.abilityBonuses.dex ?? 0);
+  const con = input.con + (grants.abilityBonuses.con ?? 0);
+  const int = input.int + (grants.abilityBonuses.int ?? 0);
+  const wis = input.wis + (grants.abilityBonuses.wis ?? 0);
+  const cha = input.cha + (grants.abilityBonuses.cha ?? 0);
+  // speed/senses: genuinely optional pre-fills — a client that already sent
+  // one wins outright (schemas/characters.ts dropped speed's create-time
+  // default to make "the client sent nothing" observable here).
+  const speed = input.speed ?? grants.speed ?? 30;
+  const senses = input.senses ?? grants.senses ?? null;
+
   try {
     const result = await client.query<CharacterRow>(
       `INSERT INTO characters
@@ -196,14 +371,39 @@ async function insertCharacterRow(
        RETURNING *`,
       [
         campaignId, isPc, ownerUserId, actorId, input.name, input.raceId ?? null, input.subraceId ?? null,
-        input.backgroundId ?? null, input.alignment ?? null, input.str, input.dex, input.con, input.int,
-        input.wis, input.cha, input.armorClass, input.speed, input.hpMax, input.hpCurrent ?? input.hpMax,
+        input.backgroundId ?? null, input.alignment ?? null, str, dex, con, int,
+        wis, cha, input.armorClass, speed, input.hpMax, input.hpCurrent ?? input.hpMax,
         input.hpTemp, input.hitDiceRemaining ? JSON.stringify(input.hitDiceRemaining) : null,
-        input.exhaustionLevel, input.senses ?? null, input.languages ?? null, input.notes ?? null,
+        input.exhaustionLevel, senses, input.languages ?? null, input.notes ?? null,
         input.damageResistances, input.damageVulnerabilities, input.damageImmunities,
       ],
     );
-    return result.rows[0]!;
+    const character = result.rows[0]!;
+
+    // docs/roadmap/dnd-2024-gap-analysis.md P1-2 — background grants applied
+    // in the same call as character creation, not a separate step the
+    // client has to remember to make. ON CONFLICT DO NOTHING covers the one
+    // SRD-silent edge case this doc's own rules lookup flagged: a
+    // background-granted skill a class ALSO grants (no SRD text anywhere
+    // resolves this overlap) — this app's choice is to let the duplicate
+    // silently no-op rather than error or grant a substitute, an explicit
+    // app-design call, not an SRD rule.
+    if (grants.skillProficiencyIds.length > 0) {
+      await client.query(
+        `INSERT INTO character_skill_proficiencies (character_id, skill_id, level)
+         SELECT $1, skill_id, 'proficient' FROM unnest($2::uuid[]) AS skill_id
+         ON CONFLICT (character_id, skill_id) DO NOTHING`,
+        [character.id, grants.skillProficiencyIds],
+      );
+    }
+    if (grants.grantedFeatId) {
+      await client.query(
+        `INSERT INTO character_feats (character_id, feat_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [character.id, grants.grantedFeatId],
+      );
+    }
+
+    return character;
   } catch (err) {
     if (isCheckViolation(err)) {
       throw new AppError('VALIDATION_ERROR', 'Character data violates a database constraint', { cause: String(err) });
@@ -572,21 +772,48 @@ export async function applyHpDelta(
   try {
     await client.query('BEGIN');
 
-    const locked = await client.query<HpState>(
-      `SELECT hp_current, hp_max, hp_temp FROM characters WHERE id = $1 FOR UPDATE`,
+    const locked = await client.query<HpState & { is_alive: boolean }>(
+      `SELECT hp_current, hp_max, hp_temp, is_alive FROM characters WHERE id = $1 FOR UPDATE`,
       [characterId],
     );
-    const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(locked.rows[0], input);
+    const row = locked.rows[0]!;
+
+    // docs/rules/death-saving-throws.md §1.10, edge case 13 — "a creature
+    // that has died can't regain hit points until magic such as the
+    // revivify spell has restored it to life." This plain heal/manual-
+    // correction path can't model that magic, so it rejects rather than
+    // silently reviving a dead character.
+    if (!row.is_alive && input.delta > 0) {
+      throw new AppError('CONFLICT', 'This character has died and cannot be healed by ordinary means');
+    }
+
+    const wasAtZero = row.hp_current === 0;
+    const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(row, input);
+
+    // docs/rules/death-saving-throws.md §1.1/§1.4, edge case 11 — regaining
+    // ANY real hit points (never temp HP alone, per edge case 9 — this only
+    // fires when hpCurrent itself rose above 0) resets the death-save
+    // counters and clears Stable, exactly as a natural-20 death save does
+    // (rollDeathSave below). This is a second code path implementing the
+    // same reset, easy to miss if only the damage path were patched.
+    const resetDeathSaveState = wasAtZero && hpCurrent > 0;
 
     const result = await client.query(
       `UPDATE characters
        SET hp_current = $1,
            hp_temp = $2,
+           death_save_successes = CASE WHEN $4 THEN 0 ELSE death_save_successes END,
+           death_save_failures  = CASE WHEN $4 THEN 0 ELSE death_save_failures  END,
+           is_stable             = CASE WHEN $4 THEN false ELSE is_stable END,
            updated_at = now()
        WHERE id = $3
        RETURNING *`,
-      [hpCurrent, hpTemp, characterId],
+      [hpCurrent, hpTemp, characterId, resetDeathSaveState],
     );
+
+    if (resetDeathSaveState) {
+      await applyOrRemoveUnconsciousEffect(client, characterId, null, false);
+    }
 
     const encounterSyncs = await client.query<EncounterHpSyncTarget>(
       `UPDATE encounters e
@@ -695,9 +922,18 @@ export async function applyDamage(
     await client.query('BEGIN');
 
     const locked = await client.query<
-      HpState & { damage_resistances: string[]; damage_vulnerabilities: string[]; damage_immunities: string[] }
+      HpState & {
+        damage_resistances: string[];
+        damage_vulnerabilities: string[];
+        damage_immunities: string[];
+        is_alive: boolean;
+        is_stable: boolean;
+        death_save_successes: number;
+        death_save_failures: number;
+      }
     >(
-      `SELECT hp_current, hp_max, hp_temp, damage_resistances, damage_vulnerabilities, damage_immunities
+      `SELECT hp_current, hp_max, hp_temp, damage_resistances, damage_vulnerabilities, damage_immunities,
+              is_alive, is_stable, death_save_successes, death_save_failures
        FROM characters WHERE id = $1 FOR UPDATE`,
       [characterId],
     );
@@ -717,16 +953,71 @@ export async function applyDamage(
 
     const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(row, { delta: -applied.appliedDamage, tempDelta: 0 });
 
+    // docs/rules/death-saving-throws.md §1.5/§2.3 — massive damage,
+    // damage-at-0-HP death-save failures, and the falling-unconscious
+    // transition, computed from the PRE-hit locked row. Uses the damage
+    // that actually reached hp_current (post temp-HP absorption, §2.3
+    // edge case 6) — a hit fully soaked by temp HP can never trigger
+    // instant death, since it never touched real HP.
+    const damageToHp = Math.max(0, applied.appliedDamage - row.hp_temp);
+    let newIsAlive = row.is_alive;
+    let newIsStable = row.is_stable;
+    let newFailures = row.death_save_failures;
+    let applyUnconscious = false;
+    let removeUnconscious = false;
+
+    if (row.is_alive) {
+      const overkill = damageToHp - Math.max(0, row.hp_current);
+      if (applied.appliedDamage > 0 && overkill >= row.hp_max) {
+        // Instant death (§1.5) — bypasses the failure counter entirely,
+        // whether this is the initial drop to 0 or a later hit while
+        // already down.
+        newIsAlive = false;
+        removeUnconscious = row.hp_current === 0;
+      } else if (row.hp_current === 0) {
+        // Damage at 0 HP (§1.5) — was already down before this hit.
+        if (row.is_stable) {
+          // §1.6: stability ends on ANY damage. This doc's flagged reading
+          // of the SRD's silence: the breaking hit itself does not also
+          // count as the new sequence's first failure (§2.3 step 4).
+          newIsStable = false;
+        } else if (applied.appliedDamage > 0) {
+          newFailures = Math.min(3, row.death_save_failures + (isCritical ? 2 : 1));
+          if (newFailures >= 3) {
+            newIsAlive = false;
+            removeUnconscious = true;
+          }
+        }
+      } else if (hpCurrent === 0) {
+        // Fresh transition to 0 HP (§1.1) — falls unconscious; counters
+        // stay at their already-zeroed defaults (a fresh entry, not a
+        // continuation).
+        applyUnconscious = true;
+      }
+    }
+
     // Phase 2 "HP/damage undo" — snapshot the PRE-damage values so
     // undoLastDamage can restore exactly this application, same "snapshot
     // before you overwrite" idiom as combat_participants.last_action_
-    // economy_snapshot (applyActionEconomy, above in this file).
+    // economy_snapshot (applyActionEconomy, above in this file). Note: undo
+    // only restores hp_current/hp_temp, not is_alive/death-save state — a
+    // DM undoing damage that killed a character must currently also
+    // manually revive them; a real gap, flagged rather than silently
+    // patched over (docs/roadmap/progress.md).
     const hpSnapshot = { hp_current: row.hp_current, hp_temp: row.hp_temp };
 
     const result = await client.query(
-      `UPDATE characters SET hp_current = $1, hp_temp = $2, last_hp_snapshot = $4::jsonb, updated_at = now() WHERE id = $3 RETURNING *`,
-      [hpCurrent, hpTemp, characterId, JSON.stringify(hpSnapshot)],
+      `UPDATE characters
+       SET hp_current = $1, hp_temp = $2, last_hp_snapshot = $4::jsonb,
+           death_save_failures = $5, is_stable = $6, is_alive = $7, updated_at = now()
+       WHERE id = $3
+       RETURNING *`,
+      [hpCurrent, hpTemp, characterId, JSON.stringify(hpSnapshot), newFailures, newIsStable, newIsAlive],
     );
+
+    if (applyUnconscious || removeUnconscious) {
+      await applyOrRemoveUnconsciousEffect(client, characterId, input.encounterId ?? null, applyUnconscious);
+    }
 
     const encounterSyncs = await client.query<EncounterHpSyncTarget>(
       `UPDATE encounters e
@@ -823,6 +1114,217 @@ export async function undoLastDamage(pool: Pool, actorId: string, characterId: s
 
     await client.query('COMMIT');
     return { character: redactGmNotes(result.rows[0], role), encounterSyncs: encounterSyncs.rows };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export interface RollDeathSaveResult {
+  character: Record<string, unknown>;
+  roll: number;
+  stabilized: boolean;
+  died: boolean;
+  encounterSyncs: EncounterHpSyncTarget[];
+}
+
+// docs/rules/death-saving-throws.md §1.1-§1.4/§2.3 — the death save itself
+// is a separate player/DM-initiated action from damage arriving at 0 HP
+// (applyDamage, above): rolled server-side only, no ability modifier ever
+// applies (finally giving dice_rolls.roll_type's long-unused 'death_save'
+// label a real writer). Authorized exactly like applyHpDelta/applyDamage
+// (character's own controller, or DM).
+export async function rollDeathSave(pool: Pool, actorId: string, characterId: string): Promise<RollDeathSaveResult> {
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  const role = await authorizeCharacterAction(pool, actorId, character);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<{
+      hp_current: number;
+      is_alive: boolean;
+      is_stable: boolean;
+      death_save_successes: number;
+      death_save_failures: number;
+    }>(
+      `SELECT hp_current, is_alive, is_stable, death_save_successes, death_save_failures
+       FROM characters WHERE id = $1 FOR UPDATE`,
+      [characterId],
+    );
+    const row = locked.rows[0]!;
+
+    // §1.1/§1.6 — hard preconditions, not soft UI hints: a death save is
+    // illegal to roll unless the character is actively dying right now.
+    if (row.hp_current !== 0 || !row.is_alive || row.is_stable) {
+      throw new AppError('CONFLICT', 'This character cannot make a death saving throw right now');
+    }
+
+    const roll = rollDie(20);
+    let hpCurrent = row.hp_current;
+    let successes = row.death_save_successes;
+    let failures = row.death_save_failures;
+    let isStable: boolean = row.is_stable;
+    let isAlive: boolean = row.is_alive;
+    let removeUnconscious = false;
+
+    if (roll === 20) {
+      // §1.3 — a nat 20 fully exits the state (regains 1 HP, which itself
+      // resets both counters per §1.1/§1.4), never merely "+1 success."
+      hpCurrent = 1;
+      successes = 0;
+      failures = 0;
+      isStable = false;
+      removeUnconscious = true;
+    } else if (roll === 1) {
+      // §1.3 — nat 1 counts as two failures, which can end the sequence in
+      // a single roll (e.g. from 2 existing failures straight to dead).
+      failures = Math.min(3, failures + 2);
+    } else if (roll >= 10) {
+      successes = Math.min(3, successes + 1);
+    } else {
+      failures = Math.min(3, failures + 1);
+    }
+
+    if (roll !== 20 && failures >= 3) {
+      isAlive = false;
+      removeUnconscious = true;
+    } else if (roll !== 20 && successes >= 3) {
+      // §1.4 — stabilizing resets BOTH counters, not just successes.
+      isStable = true;
+      successes = 0;
+      failures = 0;
+    }
+
+    const result = await client.query(
+      `UPDATE characters
+       SET hp_current = $1, death_save_successes = $2, death_save_failures = $3,
+           is_stable = $4, is_alive = $5, updated_at = now()
+       WHERE id = $6
+       RETURNING *`,
+      [hpCurrent, successes, failures, isStable, isAlive, characterId],
+    );
+
+    if (removeUnconscious) {
+      await applyOrRemoveUnconsciousEffect(client, characterId, null, false);
+    }
+
+    await client.query(
+      `INSERT INTO dice_rolls
+         (campaign_id, user_id, character_id, roll_type, roll_context, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+       VALUES ($1,$2,$3,'death_save','Death Saving Throw',$4,'normal',20,1,0,$5)`,
+      [character.campaign_id, actorId, characterId, [roll], roll],
+    );
+
+    const encounterSyncs = await client.query<EncounterHpSyncTarget>(
+      `UPDATE encounters e
+       SET sync_seq = sync_seq + 1
+       FROM combat_participants cp
+       WHERE cp.character_id = $1 AND cp.encounter_id = e.id
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
+      [characterId],
+    );
+
+    await client.query('COMMIT');
+    return {
+      character: redactGmNotes(result.rows[0], role),
+      roll,
+      stabilized: isStable && !row.is_stable,
+      died: !isAlive,
+      encounterSyncs: encounterSyncs.rows,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export interface StabilizeCharacterResult {
+  target: Record<string, unknown>;
+  roll: number;
+  modifier: number;
+  total: number;
+  success: boolean;
+  encounterSyncs: EncounterHpSyncTarget[];
+}
+
+// docs/rules/death-saving-throws.md §1.6/§2.3 — the Help action's DC 10
+// Wisdom (Medicine) check to stabilize a 0-HP creature. Authorized by
+// control of the HELPER (the one spending an action and rolling the check),
+// not the target — same "acting right now" gate as every other character-
+// action endpoint in this file. The modifier is client-supplied, the same
+// trust model this app already extends to every other ability/skill check
+// (services/diceRolls.ts's rollDice never re-derives ability-score/
+// proficiency math server-side either) — not a new gap, since the die
+// itself is still rolled here, server-side.
+export async function stabilizeCharacter(
+  pool: Pool,
+  actorId: string,
+  targetCharacterId: string,
+  input: StabilizeCharacterInput,
+): Promise<StabilizeCharacterResult> {
+  const target = await fetchCharacterOrThrow(pool, targetCharacterId);
+  const helper = await fetchCharacterOrThrow(pool, input.helperCharacterId);
+  if (helper.campaign_id !== target.campaign_id) throw notFound('Helper character in this campaign');
+  const role = await authorizeCharacterAction(pool, actorId, helper);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<{ hp_current: number; is_alive: boolean; is_stable: boolean }>(
+      `SELECT hp_current, is_alive, is_stable FROM characters WHERE id = $1 FOR UPDATE`,
+      [targetCharacterId],
+    );
+    const row = locked.rows[0]!;
+    if (row.hp_current !== 0 || !row.is_alive || row.is_stable) {
+      throw new AppError('CONFLICT', 'This character is not eligible to be stabilized right now');
+    }
+
+    const roll = rollDie(20);
+    const total = roll + input.modifier;
+    const success = total >= 10;
+
+    // §1.6 — a failed check leaves the target unchanged, free to try again
+    // (no "only once" restriction anywhere in the grounding text).
+    const targetResult = success
+      ? await client.query(
+          `UPDATE characters SET is_stable = true, death_save_successes = 0, death_save_failures = 0, updated_at = now()
+           WHERE id = $1 RETURNING *`,
+          [targetCharacterId],
+        )
+      : await client.query(`SELECT * FROM characters WHERE id = $1`, [targetCharacterId]);
+
+    await client.query(
+      `INSERT INTO dice_rolls
+         (campaign_id, user_id, character_id, roll_type, roll_context, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+       VALUES ($1,$2,$3,'skill_check','Medicine (Stabilize)',$4,'normal',20,1,$5,$6)`,
+      [target.campaign_id, actorId, input.helperCharacterId, [roll], input.modifier, total],
+    );
+
+    const encounterSyncs = await client.query<EncounterHpSyncTarget>(
+      `UPDATE encounters e
+       SET sync_seq = sync_seq + 1
+       FROM combat_participants cp
+       WHERE cp.character_id = $1 AND cp.encounter_id = e.id
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
+      [targetCharacterId],
+    );
+
+    await client.query('COMMIT');
+    return {
+      target: redactGmNotes(targetResult.rows[0], role),
+      roll,
+      modifier: input.modifier,
+      total,
+      success,
+      encounterSyncs: encounterSyncs.rows,
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

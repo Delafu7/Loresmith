@@ -2114,6 +2114,12 @@ export interface AdvanceTurnResult {
   // inside this same transaction either way; the route uses this to decide
   // whether to also broadcast LAIR_ACTION_AVAILABLE.
   roundAdvanced: boolean;
+  // docs/rules/death-saving-throws.md §2.4 — true when the participant whose
+  // turn just started is a character at 0 HP, alive, and not yet Stable (a
+  // death save is due, not yet rolled). Always false for a monster-instance
+  // participant this phase (monster_instances have no death-save opt-in
+  // yet, docs/roadmap/progress.md).
+  deathSaveDue: boolean;
 }
 
 export async function advanceTurn(pool: Pool, encounterId: string): Promise<AdvanceTurnResult> {
@@ -2178,6 +2184,24 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
     );
     const nextParticipantId = startingRes.rows[0]!.id;
 
+    // docs/rules/death-saving-throws.md §1.1/§2.4 — a death save is due
+    // "whenever you start your turn with 0 hit points," so this is the one
+    // place in the codebase that already knows whose turn is starting. Only
+    // a PROMPT: the actual roll stays a separate player/DM-initiated call to
+    // POST .../death-save (services/characters.ts's rollDeathSave), matching
+    // this app's existing pattern of prompting for player-driven rolls
+    // (e.g. CONCENTRATION_CHECK_PROMPTED) rather than auto-rolling for them.
+    let deathSaveDue = false;
+    const startingCharacterId = startingRes.rows[0]!.character_id;
+    if (startingCharacterId != null) {
+      const deathSaveRes = await client.query<{ hp_current: number; is_alive: boolean; is_stable: boolean }>(
+        `SELECT hp_current, is_alive, is_stable FROM characters WHERE id = $1`,
+        [startingCharacterId],
+      );
+      const deathSaveRow = deathSaveRes.rows[0];
+      deathSaveDue = deathSaveRow != null && deathSaveRow.hp_current === 0 && deathSaveRow.is_alive && !deathSaveRow.is_stable;
+    }
+
     const updatedRes = await client.query<EncounterRow>(
       `UPDATE encounters
        SET current_turn_index = $1, current_round = $2, active_participant_id = $3, sync_seq = sync_seq + 1
@@ -2240,7 +2264,7 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
 
     await client.query('COMMIT');
     const participants = await fetchParticipants(pool, encounterId);
-    return { encounter: updatedRes.rows[0]!, participants, expiredEffects, roundAdvanced };
+    return { encounter: updatedRes.rows[0]!, participants, expiredEffects, roundAdvanced, deathSaveDue };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
