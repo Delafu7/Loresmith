@@ -83,6 +83,45 @@ function abilityBonusesOf(entry: any): unknown[] {
   return entry.ability_bonuses ?? [];
 }
 
+// docs/roadmap/dnd-2024-gap-analysis.md P1-3 (SB-01/SB-02) — the third-party
+// community dataset this seed otherwise reads verbatim (`.opencode/skills/
+// dnd5e-srd/data/`) is missing Aasimar as a species entirely, and its 2024
+// Dragonborn entry lists only 2 of the 5 traits the official 2024 PHB text
+// names. Both gaps are fixed here by hand-authoring the missing content
+// directly from this repo's OWN authoritative source — `docs/players-
+// handbook-2024/Chapter 4- Character Origins/chapter4-characterOrigins.md`
+// (lines 465-550 for Aasimar/Dragonborn) — rather than editing the
+// third-party JSON file itself, which would blur its provenance as a
+// verifiable copy of that dataset. This is a deliberate, narrow exception
+// to the "seed data comes from the SRD JSON" rule for exactly these two
+// gaps; it does not resolve Open Question 1 (catalog provenance) more
+// broadly.
+//
+// 2024-only: Aasimar isn't a core species in the 2014 PHB's race list
+// either (it was a later supplement, not core SRD), so no 2014 entry exists
+// or is expected — matches this project's "2014 isn't independently
+// re-verified" convention (dnd-2024-gap-analysis.md "Not doing / out of
+// scope").
+const DRAGONBORN_2024_TRAIT_SUPPLEMENT = [
+  { name: 'Draconic Ancestry', index: 'draconic-ancestry' },
+  { name: 'Breath Weapon', index: 'breath-weapon' },
+  { name: 'Damage Resistance', index: 'damage-resistance' },
+];
+
+const AASIMAR_2024_SPECIES = {
+  index: 'aasimar',
+  name: 'Aasimar',
+  speedFt: 30,
+  size: 'Medium or Small',
+  traits: [
+    { name: 'Celestial Resistance', index: 'celestial-resistance' },
+    { name: 'Darkvision (60 ft.)', index: 'darkvision-60' },
+    { name: 'Healing Hands', index: 'healing-hands' },
+    { name: 'Light Bearer', index: 'light-bearer' },
+    { name: 'Celestial Revelation', index: 'celestial-revelation' },
+  ],
+};
+
 function prerequisiteTextOf(entry: any): string | null {
   if (typeof entry.prerequisite === 'string') return entry.prerequisite;
   if (Array.isArray(entry.prerequisites) && entry.prerequisites.length > 0) {
@@ -217,6 +256,14 @@ async function seedRacesAndSubraces(client: Client): Promise<Map<string, number>
   for (const edition of EDITIONS) {
     const rows = loadJson(edition, RACE_FILE[edition]);
     for (const r of rows) {
+      // P1-3/SB-02 — the third-party JSON's 2024 Dragonborn entry is missing
+      // 3 of its 5 official traits (see DRAGONBORN_2024_TRAIT_SUPPLEMENT's
+      // comment); merge them in here rather than trusting the source file
+      // alone for this one row.
+      const traits =
+        edition === '2024' && r.index === 'dragonborn'
+          ? [...traitsOf(r), ...DRAGONBORN_2024_TRAIT_SUPPLEMENT]
+          : traitsOf(r);
       const res = await client.query(
         `INSERT INTO races (index_key, name, edition_scope, speed, size, ability_bonuses, traits, source)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -226,13 +273,32 @@ async function seedRacesAndSubraces(client: Client): Promise<Map<string, number>
          RETURNING id`,
         [
           r.index, r.name, edition, metersToFeet(r.speed), sizeOf(r),
-          JSON.stringify(abilityBonusesOf(r)), JSON.stringify(traitsOf(r)),
+          JSON.stringify(abilityBonusesOf(r)), JSON.stringify(traits),
           edition === '2014' ? 'SRD 5.1 (2014 rules)' : 'SRD 5.2 (2024 rules)',
         ],
       );
       raceMap.set(`${edition}:${r.index}`, res.rows[0].id);
       raceCount++;
     }
+  }
+
+  // P1-3/SB-01 — Aasimar, entirely absent from the third-party dataset (see
+  // AASIMAR_2024_SPECIES's comment); same upsert statement as the loop
+  // above, so a reseed stays idempotent, just fed hand-authored PHB data
+  // instead of a JSON row.
+  {
+    const a = AASIMAR_2024_SPECIES;
+    const res = await client.query(
+      `INSERT INTO races (index_key, name, edition_scope, speed, size, ability_bonuses, traits, source)
+       VALUES ($1, $2, '2024', $3, $4, $5, $6, $7)
+       ON CONFLICT (index_key, edition_scope) DO UPDATE SET
+         name = EXCLUDED.name, speed = EXCLUDED.speed, size = EXCLUDED.size,
+         ability_bonuses = EXCLUDED.ability_bonuses, traits = EXCLUDED.traits
+       RETURNING id`,
+      [a.index, a.name, a.speedFt, a.size, JSON.stringify([]), JSON.stringify(a.traits), 'PHB 2024 (hand-authored, not in the SRD JSON dataset)'],
+    );
+    raceMap.set(`2024:${a.index}`, res.rows[0].id);
+    raceCount++;
   }
 
   for (const edition of EDITIONS) {
@@ -255,6 +321,701 @@ async function seedRacesAndSubraces(client: Client): Promise<Map<string, number>
   console.log(`  races: ${raceCount}, subraces: ${subraceCount}`);
   return raceMap;
 }
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-5 (CS-01, Open Question 1) — the
+// third-party SRD JSON dataset has exactly 1 subclass per class for ALL 12
+// classes (confirmed by direct inspection of 5e-SRD-Subclasses.json — this
+// isn't a seeding gap, the source data itself stops at 1 per class), against
+// an official 4-per-class structure. Scoped, per the user's explicit
+// decision (docs/roadmap/progress.md), to ONLY the 6 classes this repo can
+// actually verify against a real source — Barbarian/Bard/Cleric/Druid/
+// Fighter/Monk, whose full class+subclass text exists in docs/players-
+// handbook-2024/Chapter 3- Character Classes/chapter3-characterClasses.md
+// (confirmed by reading the file end-to-end: it ends immediately after
+// Monk's content, with no "continued" file anywhere in this repo). The
+// other 6 classes (Paladin/Ranger/Rogue/Sorcerer/Warlock/Wizard) have ZERO
+// source text in this project at all and are deliberately left at their
+// existing 1 subclass each — completing them would mean either accepting
+// unverified content or authoring from memory with no citable source,
+// both explicitly rejected.
+//
+// Each of these 6 classes' third-party-JSON subclass (Berserker, Lore,
+// Life, Land, Champion, Open Hand) is already one of the PHB's 4 canonical
+// options and is left untouched; only the 3 MISSING canonical subclasses
+// per class are hand-authored here, from the PHB text above. Same meters
+// convention as P1-3/P1-4 (5 ft = 1.5 m, 10 ft = 3 m, etc.) and the same
+// "You gain the following benefits." / `**Name.**` paragraph format.
+interface SupplementalSubclassFeature {
+  level: number;
+  name: string;
+  description: string;
+}
+
+interface SupplementalSubclass {
+  classIndex: string;
+  index: string;
+  name: string;
+  features: SupplementalSubclassFeature[];
+}
+
+const SUPPLEMENTAL_2024_SUBCLASSES: SupplementalSubclass[] = [
+  // ================= Barbarian (has Path of the Berserker) =================
+  {
+    classIndex: 'barbarian', index: 'path-of-the-wild-heart', name: 'Path of the Wild Heart',
+    features: [
+      {
+        level: 3, name: 'Animal Speaker',
+        description: 'You can cast the Beast Sense and Speak with Animals spells but only as Rituals. Wisdom is your spellcasting ability for them.',
+      },
+      {
+        level: 3, name: 'Rage of the Wilds',
+        description:
+          'Your Rage taps into the primal power of animals. Whenever you activate your Rage, you gain one of the following options of your choice.\n\n' +
+          '**Bear.** While your Rage is active, you have Resistance to every damage type except Force, Necrotic, Psychic, and Radiant.\n\n' +
+          '**Eagle.** When you activate your Rage, you can take the Disengage and Dash actions as part of that Bonus Action. While your Rage is active, you can take a Bonus Action to take both of those actions.\n\n' +
+          '**Wolf.** While your Rage is active, your allies have Advantage on attack rolls against any enemy of yours within 1.5 m of you.',
+      },
+      {
+        level: 6, name: 'Aspect of the Wilds',
+        description:
+          'You gain one of the following options of your choice. Whenever you finish a Long Rest, you can change your choice.\n\n' +
+          '**Owl.** You have Darkvision with a range of 18 m. If you already have Darkvision, its range increases by 18 m.\n\n' +
+          '**Panther.** You have a Climb Speed equal to your Speed.\n\n' +
+          '**Salmon.** You have a Swim Speed equal to your Speed.',
+      },
+      {
+        level: 10, name: 'Nature Speaker',
+        description: 'You can cast the Commune with Nature spell but only as a Ritual. Wisdom is your spellcasting ability for it.',
+      },
+      {
+        level: 14, name: 'Power of the Wilds',
+        description:
+          'Whenever you activate your Rage, you gain one of the following options of your choice.\n\n' +
+          "**Falcon.** While your Rage is active, you have a Fly Speed equal to your Speed if you aren't wearing any armor.\n\n" +
+          '**Lion.** While your Rage is active, any of your enemies within 1.5 m of you have Disadvantage on attack rolls against targets other than you or another Barbarian who has this option active.\n\n' +
+          '**Ram.** While your Rage is active, you can cause a Large or smaller creature to have the Prone condition when you hit it with a melee attack.',
+      },
+    ],
+  },
+  {
+    classIndex: 'barbarian', index: 'path-of-the-world-tree', name: 'Path of the World Tree',
+    features: [
+      {
+        level: 3, name: 'Vitality of the Tree',
+        description:
+          'Your Rage taps into the life force of the World Tree. You gain the following benefits.\n\n' +
+          '**Vitality Surge.** When you activate your Rage, you gain a number of Temporary Hit Points equal to your Barbarian level.\n\n' +
+          '**Life-Giving Force.** At the start of each of your turns while your Rage is active, you can choose another creature within 3 m of yourself to gain Temporary Hit Points. To determine the number of Temporary Hit Points, roll a number of d6s equal to your Rage Damage bonus, and add them together. If any of these Temporary Hit Points remain when your Rage ends, they vanish.',
+      },
+      {
+        level: 6, name: 'Branches of the Tree',
+        description:
+          'Whenever a creature you can see starts its turn within 9 m of you while your Rage is active, you can take a Reaction to summon spectral branches of the World Tree around it. The target must succeed on a Strength saving throw (DC 8 plus your Strength modifier and Proficiency Bonus) or be teleported to an unoccupied space you can see within 1.5 m of yourself or in the nearest unoccupied space you can see. After the target teleports, you can reduce its Speed to 0 until the end of the current turn.',
+      },
+      {
+        level: 10, name: 'Battering Roots',
+        description:
+          'During your turn, your reach is 3 m greater with any Melee weapon that has the Heavy or Versatile property, as tendrils of the World Tree extend from you. When you hit with such a weapon on your turn, you can activate the Push or Topple mastery property in addition to a different mastery property you’re using with that weapon.',
+      },
+      {
+        level: 14, name: 'Travel along the Tree',
+        description:
+          'When you activate your Rage and as a Bonus Action while your Rage is active, you can teleport up to 18 m to an unoccupied space you can see.\n\n' +
+          'In addition, once per Rage, you can increase the range of that teleport to 45 m. When you do so, you can also bring up to six willing creatures who are within 3 m of you. Each creature teleports to an unoccupied space of your choice within 3 m of your destination space.',
+      },
+    ],
+  },
+  {
+    classIndex: 'barbarian', index: 'path-of-the-zealot', name: 'Path of the Zealot',
+    features: [
+      {
+        level: 3, name: 'Divine Fury',
+        description:
+          'You can channel divine power into your strikes. On each of your turns while your Rage is active, the first creature you hit with a weapon or an Unarmed Strike takes extra damage equal to 1d6 plus half your Barbarian level (round down). The extra damage is Necrotic or Radiant; you choose the type each time you deal the damage.',
+      },
+      {
+        level: 3, name: 'Warrior of the Gods',
+        description:
+          'A divine entity helps ensure you can continue the fight. You have a pool of four d12s that you can spend to heal yourself. As a Bonus Action, you can expend dice from the pool, roll them, and regain a number of Hit Points equal to the roll’s total.\n\n' +
+          'Your pool regains all expended dice when you finish a Long Rest.\n\n' +
+          'The pool’s maximum number of dice increases by one when you reach Barbarian levels 6 (5 dice), 12 (6 dice), and 17 (7 dice).',
+      },
+      {
+        level: 6, name: 'Fanatical Focus',
+        description:
+          'Once per active Rage, if you fail a saving throw, you can reroll it with a bonus equal to your Rage Damage bonus, and you must use the new roll.',
+      },
+      {
+        level: 10, name: 'Zealous Presence',
+        description:
+          'As a Bonus Action, you unleash a battle cry infused with divine energy. Up to ten other creatures of your choice within 18 m of you gain Advantage on attack rolls and saving throws until the start of your next turn.\n\n' +
+          "Once you use this feature, you can't use it again until you finish a Long Rest unless you expend a use of your Rage (no action required) to restore your use of it.",
+      },
+      {
+        level: 14, name: 'Rage of the Gods',
+        description:
+          "When you activate your Rage, you can assume the form of a divine warrior. This form lasts for 1 minute or until you drop to 0 Hit Points. Once you use this feature, you can't do so again until you finish a Long Rest.\n\n" +
+          'While in this form, you gain the benefits below.\n\n' +
+          '**Flight.** You have a Fly Speed equal to your Speed and can hover.\n\n' +
+          '**Resistance.** You have Resistance to Necrotic, Psychic, and Radiant damage.\n\n' +
+          '**Revivification.** When a creature within 9 m of you would drop to 0 Hit Points, you can take a Reaction to expend a use of your Rage to instead change the target’s Hit Points to a number equal to your Barbarian level.',
+      },
+    ],
+  },
+
+  // ================= Bard (has College of Lore) =================
+  {
+    classIndex: 'bard', index: 'college-of-dance', name: 'College of Dance',
+    features: [
+      {
+        level: 3, name: 'Dazzling Footwork',
+        description:
+          "While you aren't wearing armor or wielding a Shield, you gain the following benefits.\n\n" +
+          '**Dance Virtuoso.** You have Advantage on any Charisma (Performance) check you make that involves you dancing.\n\n' +
+          '**Unarmored Defense.** Your base Armor Class equals 10 plus your Dexterity and Charisma modifiers.\n\n' +
+          '**Agile Strikes.** When you expend a use of your Bardic Inspiration as part of an action, a Bonus Action, or a Reaction, you can make one Unarmed Strike as part of that action, Bonus Action, or Reaction.\n\n' +
+          "**Bardic Damage.** You can use Dexterity instead of Strength for the attack rolls of your Unarmed Strikes. When you deal damage with an Unarmed Strike, you can deal Bludgeoning damage equal to a roll of your Bardic Inspiration die plus your Dexterity modifier, instead of the strike's normal damage. This roll doesn't expend the die.",
+      },
+      {
+        level: 6, name: 'Inspiring Movement',
+        description:
+          'When an enemy you can see ends its turn within 1.5 m of you, you can take a Reaction and expend one use of your Bardic Inspiration to move up to half your Speed. Then one ally of your choice within 9 m of you can also move up to half their Speed using their Reaction.\n\n' +
+          "None of this feature's movement provokes Opportunity Attacks.",
+      },
+      {
+        level: 6, name: 'Tandem Footwork',
+        description:
+          "When you roll Initiative, you can expend one use of your Bardic Inspiration if you don't have the Incapacitated condition. When you do so, roll your Bardic Inspiration die; you and each ally within 9 m of you who can see or hear you gains a bonus to Initiative equal to the number rolled.",
+      },
+      {
+        level: 14, name: 'Leading Evasion',
+        description:
+          'When you are subjected to an effect that allows you to make a Dexterity saving throw to take only half damage, you instead take no damage if you succeed on the saving throw and only half damage if you fail. If any creatures within 1.5 m of you are making the same Dexterity saving throw, you can share this benefit with them for that save.\n\n' +
+          "You can't use this feature if you have the Incapacitated condition.",
+      },
+    ],
+  },
+  {
+    classIndex: 'bard', index: 'college-of-glamour', name: 'College of Glamour',
+    features: [
+      {
+        level: 3, name: 'Beguiling Magic',
+        description:
+          'You always have the Charm Person and Mirror Image spells prepared.\n\n' +
+          'In addition, immediately after you cast an Enchantment or Illusion spell using a spell slot, you can cause a creature you can see within 18 m of yourself to make a Wisdom saving throw against your spell save DC. On a failed save, the target has the Charmed or Frightened condition (your choice) for 1 minute. The target repeats the save at the end of each of its turns, ending the effect on itself on a success.\n\n' +
+          "Once you use this benefit, you can't use it again until you finish a Long Rest. You can also restore your use of it by expending one use of your Bardic Inspiration (no action required).",
+      },
+      {
+        level: 3, name: 'Mantle of Inspiration',
+        description:
+          'You can weave fey magic into a song or dance to fill others with vigor. As a Bonus Action, you can expend a use of Bardic Inspiration, rolling a Bardic Inspiration die. When you do so, choose a number of other creatures within 18 m of yourself, up to a number equal to your Charisma modifier (minimum of one creature). Each of those creatures gains a number of Temporary Hit Points equal to two times the number rolled on the Bardic Inspiration die, and then each can use its Reaction to move up to its Speed without provoking Opportunity Attacks.',
+      },
+      {
+        level: 6, name: 'Mantle of Majesty',
+        description:
+          'You always have the Command spell prepared.\n\n' +
+          "As a Bonus Action, you cast Command without expending a spell slot, and you take on an unearthly appearance for 1 minute or until your Concentration ends. During this time, you can cast Command as a Bonus Action without expending a spell slot.\n\n" +
+          'Any creature Charmed by you automatically fails its saving throw against the Command you cast with this feature.\n\n' +
+          "Once you use this feature, you can't use it again until you finish a Long Rest. You can also restore your use of it by expending a level 3+ spell slot (no action required).",
+      },
+      {
+        level: 14, name: 'Unbreakable Majesty',
+        description:
+          'As a Bonus Action, you can assume a magically majestic presence for 1 minute or until you have the Incapacitated condition. For the duration, whenever any creature hits you with an attack roll for the first time on a turn, the attacker must succeed on a Charisma saving throw against your spell save DC, or the attack misses instead, as the creature recoils from your majesty.\n\n' +
+          "Once you assume this majestic presence, you can't do so again until you finish a Short or Long Rest.",
+      },
+    ],
+  },
+  {
+    classIndex: 'bard', index: 'college-of-valor', name: 'College of Valor',
+    features: [
+      {
+        level: 3, name: 'Combat Inspiration',
+        description:
+          'You can use your wit to turn the tide of battle. A creature that has a Bardic Inspiration die from you can use it for one of the following effects.\n\n' +
+          '**Defense.** When the creature is hit by an attack roll, that creature can use its Reaction to roll the Bardic Inspiration die and add the number rolled to its AC against that attack, potentially causing the attack to miss.\n\n' +
+          '**Offense.** Immediately after the creature hits a target with an attack roll, the creature can roll the Bardic Inspiration die and add the number rolled to the attack’s damage against the target.',
+      },
+      {
+        level: 3, name: 'Martial Training',
+        description:
+          'You gain proficiency with Martial weapons and training with Medium armor and Shields.\n\n' +
+          'In addition, you can use a Simple or Martial weapon as a Spellcasting Focus to cast spells from your Bard spell list.',
+      },
+      {
+        level: 6, name: 'Extra Attack',
+        description:
+          'You can attack twice instead of once whenever you take the Attack action on your turn.\n\n' +
+          'In addition, you can cast one of your cantrips that has a casting time of an action in place of one of those attacks.',
+      },
+      {
+        level: 14, name: 'Battle Magic',
+        description: 'After you cast a spell that has a casting time of an action, you can make one attack with a weapon as a Bonus Action.',
+      },
+    ],
+  },
+
+  // ================= Cleric (has Life Domain) =================
+  {
+    classIndex: 'cleric', index: 'light-domain', name: 'Light Domain',
+    features: [
+      {
+        level: 3, name: 'Light Domain Spells',
+        description:
+          'Your connection to this divine domain ensures you always have certain spells ready, once you reach the needed Cleric level: level 3 — Burning Hands, Faerie Fire, Scorching Ray, See Invisibility; level 5 — Daylight, Fireball; level 7 — Arcane Eye, Wall of Fire; level 9 — Flame Strike, Scrying.',
+      },
+      {
+        level: 3, name: 'Radiance of the Dawn',
+        description:
+          'As a Magic action, you present your Holy Symbol and expend a use of your Channel Divinity to emit a flash of light in a 9 m Emanation originating from yourself. Any magical Darkness—such as that created by the Darkness spell—in that area is dispelled. Additionally, each creature of your choice in that area must make a Constitution saving throw, taking Radiant damage equal to 2d10 plus your Cleric level on a failed save or half as much damage on a successful one.',
+      },
+      {
+        level: 3, name: 'Warding Flare',
+        description:
+          'When a creature that you can see within 9 m of yourself makes an attack roll, you can take a Reaction to impose Disadvantage on the attack roll, causing light to flare before it hits or misses.\n\n' +
+          'You can use this feature a number of times equal to your Wisdom modifier (minimum of once). You regain all expended uses when you finish a Long Rest.',
+      },
+      {
+        level: 6, name: 'Improved Warding Flare',
+        description:
+          'You regain all expended uses of your Warding Flare when you finish a Short or Long Rest.\n\n' +
+          'In addition, whenever you use Warding Flare, you can give the target of the triggering attack a number of Temporary Hit Points equal to 2d6 plus your Wisdom modifier.',
+      },
+      {
+        level: 17, name: 'Corona of Light',
+        description:
+          'As a Magic action, you cause yourself to emit an aura of sunlight that lasts for 1 minute or until you dismiss it (no action required). You emit Bright Light in an 18 m radius and Dim Light for an additional 9 m. Your enemies in the Bright Light have Disadvantage on saving throws against your Radiance of the Dawn and any spell that deals Fire or Radiant damage.\n\n' +
+          'You can use this feature a number of times equal to your Wisdom modifier (minimum of once), and you regain all expended uses when you finish a Long Rest.',
+      },
+    ],
+  },
+  {
+    classIndex: 'cleric', index: 'trickery-domain', name: 'Trickery Domain',
+    features: [
+      {
+        level: 3, name: 'Blessing of the Trickster',
+        description:
+          'As a Magic action, you can choose yourself or a willing creature within 9 m of yourself to have Advantage on Dexterity (Stealth) checks. This blessing lasts until you finish a Long Rest or you use this feature again.',
+      },
+      {
+        level: 3, name: 'Trickery Domain Spells',
+        description:
+          'Your connection to this divine domain ensures you always have certain spells ready, once you reach the needed Cleric level: level 3 — Charm Person, Disguise Self, Invisibility, Pass without Trace; level 5 — Hypnotic Pattern, Nondetection; level 7 — Confusion, Dimension Door; level 9 — Dominate Person, Modify Memory.',
+      },
+      {
+        level: 3, name: 'Invoke Duplicity',
+        description:
+          "As a Bonus Action, you can expend one use of your Channel Divinity to create a perfect visual illusion of yourself in an unoccupied space you can see within 9 m of yourself. The illusion is intangible and doesn't occupy its space. It lasts for 1 minute, but it ends early if you dismiss it (no action required) or have the Incapacitated condition. The illusion is animated and mimics your expressions and gestures. While it persists, you gain the following benefits.\n\n" +
+          '**Cast Spells.** You can cast spells as though you were in the illusion’s space, but you must use your own senses.\n\n' +
+          '**Distract.** When both you and your illusion are within 1.5 m of a creature that can see the illusion, you have Advantage on attack rolls against that creature, given how distracting the illusion is to the target.\n\n' +
+          '**Move.** As a Bonus Action, you can move the illusion up to 9 m to an unoccupied space you can see that is within 36 m of yourself.',
+      },
+      {
+        level: 6, name: 'Trickster’s Transposition',
+        description:
+          'Whenever you take the Bonus Action to create or move the illusion of your Invoke Duplicity, you can teleport, swapping places with the illusion.',
+      },
+      {
+        level: 17, name: 'Improved Duplicity',
+        description:
+          'The illusion of your Invoke Duplicity has grown more powerful in the following ways.\n\n' +
+          '**Shared Distraction.** When you and your allies make attack rolls against a creature within 1.5 m of the illusion, the attack rolls have Advantage.\n\n' +
+          '**Healing Illusion.** When the illusion ends, you or a creature of your choice within 1.5 m of it regains a number of Hit Points equal to your Cleric level.',
+      },
+    ],
+  },
+  {
+    classIndex: 'cleric', index: 'war-domain', name: 'War Domain',
+    features: [
+      {
+        level: 3, name: 'Guided Strike',
+        description:
+          'When you or a creature within 9 m of you misses with an attack roll, you can expend one use of your Channel Divinity and give that roll a +10 bonus, potentially causing it to hit. When you use this feature to benefit another creature’s attack roll, you must take a Reaction to do so.',
+      },
+      {
+        level: 3, name: 'War Domain Spells',
+        description:
+          'Your connection to this divine domain ensures you always have certain spells ready, once you reach the needed Cleric level: level 3 — Guiding Bolt, Magic Weapon, Shield of Faith, Spiritual Weapon; level 5 — Crusader’s Mantle, Spirit Guardians; level 7 — Fire Shield, Freedom of Movement; level 9 — Hold Monster, Steel Wind Strike.',
+      },
+      {
+        level: 3, name: 'War Priest',
+        description:
+          'As a Bonus Action, you can make one attack with a weapon or an Unarmed Strike. You can use this Bonus Action a number of times equal to your Wisdom modifier (minimum of once). You regain all expended uses when you finish a Short or Long Rest.',
+      },
+      {
+        level: 6, name: 'War God’s Blessing',
+        description:
+          "You can expend a use of your Channel Divinity to cast Shield of Faith or Spiritual Weapon rather than expending a spell slot. When you cast either spell in this way, the spell doesn't require Concentration. Instead the spell lasts for 1 minute, but it ends early if you cast that spell again, have the Incapacitated condition, or die.",
+      },
+      {
+        level: 17, name: 'Avatar of Battle',
+        description: 'You gain Resistance to Bludgeoning, Piercing, and Slashing damage.',
+      },
+    ],
+  },
+
+  // ================= Druid (has Circle of the Land) =================
+  {
+    classIndex: 'druid', index: 'circle-of-the-moon', name: 'Circle of the Moon',
+    features: [
+      {
+        level: 3, name: 'Circle Forms',
+        description:
+          'You can channel lunar magic when you assume a Wild Shape form, granting you the benefits below.\n\n' +
+          '**Challenge Rating.** The maximum Challenge Rating for the form equals your Druid level divided by 3 (round down).\n\n' +
+          '**Armor Class.** Until you leave the form, your AC equals 13 plus your Wisdom modifier if that total is higher than the Beast’s AC.\n\n' +
+          '**Temporary Hit Points.** You gain a number of Temporary Hit Points equal to three times your Druid level.',
+      },
+      {
+        level: 3, name: 'Circle of the Moon Spells',
+        description:
+          'When you reach a Druid level specified here, you thereafter always have the listed spells prepared: level 3 — Cure Wounds, Moonbeam, Starry Wisp; level 5 — Conjure Animals; level 7 — Fount of Moonlight; level 9 — Mass Cure Wounds.\n\n' +
+          'In addition, you can cast the spells from this feature while you’re in a Wild Shape form.',
+      },
+      {
+        level: 6, name: 'Improved Circle Forms',
+        description:
+          'While in a Wild Shape form, you gain the following benefits.\n\n' +
+          '**Lunar Radiance.** Each of your attacks in a Wild Shape form can deal its normal damage type or Radiant damage. You make this choice each time you hit with those attacks.\n\n' +
+          '**Increased Toughness.** You can add your Wisdom modifier to your Constitution saving throws.',
+      },
+      {
+        level: 10, name: 'Moonlight Step',
+        description:
+          'You magically transport yourself, reappearing amid a burst of moonlight. As a Bonus Action, you teleport up to 9 m to an unoccupied space you can see, and you have Advantage on the next attack roll you make before the end of this turn.\n\n' +
+          'You can use this feature a number of times equal to your Wisdom modifier (minimum of once), and you regain all expended uses when you finish a Long Rest. You can also regain uses by expending a level 2+ spell slot for each use you want to restore (no action required).',
+      },
+      {
+        level: 14, name: 'Lunar Form',
+        description:
+          'The power of the moon suffuses you, granting you the following benefits.\n\n' +
+          '**Improved Lunar Radiance.** Once per turn, you can deal an extra 2d10 Radiant damage to a target you hit with a Wild Shape form’s attack.\n\n' +
+          '**Shared Moonlight.** Whenever you use Moonlight Step, you can also teleport one willing creature. That creature must be within 3 m of you, and you teleport it to an unoccupied space you can see within 3 m of your destination space.',
+      },
+    ],
+  },
+  {
+    classIndex: 'druid', index: 'circle-of-the-sea', name: 'Circle of the Sea',
+    features: [
+      {
+        level: 3, name: 'Circle of the Sea Spells',
+        description:
+          'When you reach a Druid level specified here, you thereafter always have the listed spells prepared: level 3 — Fog Cloud, Gust of Wind, Ray of Frost, Shatter, Thunderwave; level 5 — Lightning Bolt, Water Breathing; level 7 — Control Water, Ice Storm; level 9 — Conjure Elemental, Hold Monster.',
+      },
+      {
+        level: 3, name: 'Wrath of the Sea',
+        description:
+          'As a Bonus Action, you can expend a use of your Wild Shape to manifest a 1.5 m Emanation that takes the form of ocean spray that surrounds you for 10 minutes. It ends early if you dismiss it (no action required), manifest it again, or have the Incapacitated condition.\n\n' +
+          'When you manifest the Emanation and as a Bonus Action on your subsequent turns, you can choose another creature you can see in the Emanation. The target must succeed on a Constitution saving throw against your spell save DC or take Cold damage and, if the creature is Large or smaller, be pushed up to 4.5 m away from you. To determine this damage, roll a number of d6s equal to your Wisdom modifier (minimum of one die).',
+      },
+      {
+        level: 6, name: 'Aquatic Affinity',
+        description:
+          'The size of the Emanation created by your Wrath of the Sea increases to 3 m.\n\n' +
+          'In addition, you gain a Swim Speed equal to your Speed.',
+      },
+      {
+        level: 10, name: 'Stormborn',
+        description:
+          'Your Wrath of the Sea confers two more benefits while active, as detailed below.\n\n' +
+          '**Flight.** You gain a Fly Speed equal to your Speed.\n\n' +
+          '**Resistance.** You have Resistance to Cold, Lightning, and Thunder damage.',
+      },
+      {
+        level: 14, name: 'Oceanic Gift',
+        description:
+          'Instead of manifesting the Emanation of Wrath of the Sea around yourself, you can manifest it around one willing creature within 18 m of yourself. That creature gains all the benefits of the Emanation and uses your spell save DC and Wisdom modifier for it.\n\n' +
+          'In addition, you can manifest the Emanation around both the other creature and yourself if you expend two uses of your Wild Shape instead of one when manifesting it.',
+      },
+    ],
+  },
+  {
+    classIndex: 'druid', index: 'circle-of-the-stars', name: 'Circle of the Stars',
+    features: [
+      {
+        level: 3, name: 'Star Map',
+        description:
+          "You've created a star chart as part of your heavenly studies. It is a Tiny object, and you can use it as a Spellcasting Focus for your Druid spells. You determine its form by rolling on a 1d6 table (scroll, stone tablet, owlbear hide, maps bound in ebony, engraved crystal, or etched glass disk) or by choosing one.\n\n" +
+          'While holding the map, you have the Guidance and Guiding Bolt spells prepared, and you can cast Guiding Bolt without expending a spell slot. You can cast it in that way a number of times equal to your Wisdom modifier (minimum of once), and you regain all expended uses when you finish a Long Rest.\n\n' +
+          'If you lose the map, you can perform a 1-hour ceremony to magically create a replacement. This ceremony can be performed during a Short or Long Rest, and it destroys the previous map.',
+      },
+      {
+        level: 3, name: 'Starry Form',
+        description:
+          'As a Bonus Action, you can expend a use of your Wild Shape feature to take on a starry form rather than shape-shifting.\n\n' +
+          'While in your starry form, you retain your game statistics, but your body becomes luminous, and glowing lines connect your joints as on a star chart. This form sheds Bright Light in a 3 m radius and Dim Light for an additional 3 m. The form lasts for 10 minutes. It ends early if you dismiss it (no action required), have the Incapacitated condition, or use this feature again.\n\n' +
+          'Whenever you assume your starry form, choose which of the following constellations glimmers on your body; your choice gives you certain benefits while in the form.\n\n' +
+          '**Archer.** When you activate this form and as a Bonus Action on your subsequent turns while it lasts, you can make a ranged spell attack, hurling a luminous arrow that targets one creature within 18 m of yourself. On a hit, the attack deals Radiant damage equal to 1d8 plus your Wisdom modifier.\n\n' +
+          '**Chalice.** Whenever you cast a spell using a spell slot that restores Hit Points to a creature, you or another creature within 9 m of you can regain Hit Points equal to 1d8 plus your Wisdom modifier.\n\n' +
+          '**Dragon.** When you make an Intelligence or a Wisdom check or a Constitution saving throw to maintain Concentration, you can treat a roll of 9 or lower on the d20 as a 10.',
+      },
+      {
+        level: 6, name: 'Cosmic Omen',
+        description:
+          'Whenever you finish a Long Rest, you can consult your Star Map for omens and roll a die. Until you finish your next Long Rest, you gain access to a special Reaction based on whether you rolled an even or an odd number on the die:\n\n' +
+          '**Weal (Even).** Whenever a creature you can see within 9 m of you is about to make a D20 Test, you can take a Reaction to roll 1d6 and add the number rolled to the total.\n\n' +
+          '**Woe (Odd).** Whenever a creature you can see within 9 m of you is about to make a D20 Test, you can take a Reaction to roll 1d6 and subtract the number rolled from the total.\n\n' +
+          'You can use this Reaction a number of times equal to your Wisdom modifier (minimum of once), and you regain all expended uses when you finish a Long Rest.',
+      },
+      {
+        level: 10, name: 'Twinkling Constellations',
+        description:
+          'The constellations of your Starry Form improve. The 1d8 of the Archer and the Chalice becomes 2d8, and while the Dragon is active, you have a Fly Speed of 6 m and can hover.\n\n' +
+          'Moreover, at the start of each of your turns while in your Starry Form, you can change which constellation glimmers on your body.',
+      },
+      {
+        level: 14, name: 'Full of Stars',
+        description: 'While in your Starry Form, you become partially incorporeal, giving you Resistance to Bludgeoning, Piercing, and Slashing damage.',
+      },
+    ],
+  },
+
+  // ================= Fighter (has Champion) =================
+  {
+    classIndex: 'fighter', index: 'battle-master', name: 'Battle Master',
+    features: [
+      {
+        level: 3, name: 'Combat Superiority',
+        description:
+          'Your experience on the battlefield has refined your fighting techniques. You learn maneuvers that are fueled by special dice called Superiority Dice.\n\n' +
+          '**Maneuvers.** You learn three maneuvers of your choice from this subclass’s Maneuver Options feature. Many maneuvers enhance an attack in some way. You can use only one maneuver per attack.\n\n' +
+          'You learn two additional maneuvers of your choice when you reach Fighter levels 7, 10, and 15. Each time you learn new maneuvers, you can also replace one maneuver you know with a different one.\n\n' +
+          '**Superiority Dice.** You have four Superiority Dice, which are d8s. A Superiority Die is expended when you use it. You regain all expended Superiority Dice when you finish a Short or Long Rest.\n\n' +
+          'You gain an additional Superiority Die when you reach Fighter levels 7 (five dice total) and 15 (six dice total).\n\n' +
+          '**Saving Throws.** If a maneuver requires a saving throw, the DC equals 8 plus your Strength or Dexterity modifier (your choice) and Proficiency Bonus.',
+      },
+      {
+        level: 3, name: 'Student of War',
+        description:
+          "You gain proficiency with one type of Artisan's Tools of your choice, and you gain proficiency in one skill of your choice from the skills available to Fighters at level 1.",
+      },
+      {
+        level: 3, name: 'Maneuver Options',
+        description:
+          'The maneuvers you can learn for Combat Superiority, presented in alphabetical order.\n\n' +
+          "**Ambush.** When you make a Dexterity (Stealth) check or an Initiative roll, you can expend one Superiority Die and add the die to the roll, unless you have the Incapacitated condition.\n\n" +
+          '**Bait and Switch.** When you’re within 1.5 m of a creature on your turn, you can expend one Superiority Die and switch places with that creature, provided you spend at least 1.5 m of movement and the creature is willing and doesn’t have the Incapacitated condition. This movement doesn’t provoke Opportunity Attacks. Roll the Superiority Die. Until the start of your next turn, you or the other creature (your choice) gains a bonus to AC equal to the number rolled.\n\n' +
+          '**Commander’s Strike.** When you take the Attack action on your turn, you can replace one of your attacks to direct one of your companions to strike. When you do so, choose a willing creature who can see or hear you and expend one Superiority Die. That creature can immediately use its Reaction to make one attack with a weapon or an Unarmed Strike, adding the Superiority Die to the attack’s damage roll on a hit.\n\n' +
+          '**Commanding Presence.** When you make a Charisma (Intimidation, Performance, or Persuasion) check, you can expend one Superiority Die and add that die to the roll.\n\n' +
+          '**Disarming Attack.** When you hit a creature with an attack roll, you can expend one Superiority Die to attempt to disarm the target. Add the Superiority Die roll to the attack’s damage roll. The target must succeed on a Strength saving throw or drop one object of your choice that it’s holding, with the object landing in its space.\n\n' +
+          '**Distracting Strike.** When you hit a creature with an attack roll, you can expend one Superiority Die to distract the target. Add the Superiority Die roll to the attack’s damage roll. The next attack roll against the target by an attacker other than you has Advantage if the attack is made before the start of your next turn.\n\n' +
+          '**Evasive Footwork.** As a Bonus Action, you can expend one Superiority Die and take the Disengage action. You also roll the die and add the number rolled to your AC until the start of your next turn.\n\n' +
+          '**Feinting Attack.** As a Bonus Action, you can expend one Superiority Die to feint, choosing one creature within 1.5 m of yourself as your target. You have Advantage on your next attack roll against that target this turn. If that attack hits, add the Superiority Die to the attack’s damage roll.\n\n' +
+          '**Goading Attack.** When you hit a creature with an attack roll, you can expend one Superiority Die to attempt to goad the target into attacking you. Add the Superiority Die to the attack’s damage roll. The target must succeed on a Wisdom saving throw or have Disadvantage on attack rolls against targets other than you until the end of your next turn.\n\n' +
+          '**Lunging Attack.** As a Bonus Action, you can expend one Superiority Die and take the Dash action. If you move at least 1.5 m in a straight line immediately before hitting with a melee attack as part of the Attack action on this turn, you can add the Superiority Die to the attack’s damage roll.\n\n' +
+          '**Maneuvering Attack.** When you hit a creature with an attack roll, you can expend one Superiority Die to maneuver one of your comrades into another position. Add the Superiority Die roll to the attack’s damage roll, and choose a willing creature who can see or hear you. That creature can use its Reaction to move up to half its Speed without provoking an Opportunity Attack from the target of your attack.\n\n' +
+          '**Menacing Attack.** When you hit a creature with an attack roll, you can expend one Superiority Die to attempt to frighten the target. Add the Superiority Die to the attack’s damage roll. The target must succeed on a Wisdom saving throw or have the Frightened condition until the end of your next turn.\n\n' +
+          '**Parry.** When another creature damages you with a melee attack roll, you can take a Reaction and expend one Superiority Die to reduce the damage by the number you roll on your Superiority Die plus your Strength or Dexterity modifier (your choice).\n\n' +
+          '**Precision Attack.** When you miss with an attack roll, you can expend one Superiority Die, roll that die, and add it to the attack roll, potentially causing the attack to hit.\n\n' +
+          '**Pushing Attack.** When you hit a creature with an attack roll using a weapon or an Unarmed Strike, you can expend one Superiority Die to attempt to drive the target back. Add the Superiority Die to the attack’s damage roll. If the target is Large or smaller, it must succeed on a Strength saving throw or be pushed up to 4.5 m directly away from you.\n\n' +
+          '**Rally.** As a Bonus Action, you can expend one Superiority Die to bolster the resolve of a companion. Choose an ally of yours within 9 m of yourself who can see or hear you. That creature gains Temporary Hit Points equal to the Superiority Die roll plus half your Fighter level (round down).\n\n' +
+          '**Riposte.** When a creature misses you with a melee attack roll, you can take a Reaction and expend one Superiority Die to make a melee attack roll with a weapon or an Unarmed Strike against the creature. If you hit, add the Superiority Die to the attack’s damage.\n\n' +
+          '**Sweeping Attack.** When you hit a creature with a melee attack roll using a weapon or an Unarmed Strike, you can expend one Superiority Die to attempt to damage another creature. Choose another creature within 1.5 m of the original target and within your reach. If the original attack roll would hit the second creature, it takes damage equal to the number you roll on your Superiority Die. The damage is of the same type dealt by the original attack.\n\n' +
+          '**Tactical Assessment.** When you make an Intelligence (History or Investigation) check or a Wisdom (Insight) check, you can expend one Superiority Die and add that die to the ability check.\n\n' +
+          '**Trip Attack.** When you hit a creature with an attack roll using a weapon or an Unarmed Strike, you can expend one Superiority Die and add the die to the attack’s damage roll. If the target is Large or smaller, it must succeed on a Strength saving throw or have the Prone condition.',
+      },
+      {
+        level: 7, name: 'Know Your Enemy',
+        description:
+          'As a Bonus Action, you can discern certain strengths and weaknesses of a creature you can see within 9 m of yourself; you know whether that creature has any Immunities, Resistances, or Vulnerabilities, and if the creature has any, you know what they are.\n\n' +
+          "Once you use this feature, you can't do so again until you finish a Long Rest. You can also restore a use of the feature by expending one Superiority Die (no action required).",
+      },
+      { level: 10, name: 'Improved Combat Superiority', description: 'Your Superiority Die becomes a d10.' },
+      {
+        level: 15, name: 'Relentless',
+        description: 'Once per turn, when you use a maneuver, you can roll 1d8 and use the number rolled instead of expending a Superiority Die.',
+      },
+      { level: 18, name: 'Ultimate Combat Superiority', description: 'Your Superiority Die becomes a d12.' },
+    ],
+  },
+  {
+    classIndex: 'fighter', index: 'eldritch-knight', name: 'Eldritch Knight',
+    features: [
+      {
+        level: 3, name: 'Spellcasting',
+        description:
+          'You have learned to cast spells, using the standard rules for spellcasting.\n\n' +
+          '**Cantrips.** You know two cantrips of your choice from the Wizard spell list (Ray of Frost and Shocking Grasp are recommended). Whenever you gain a Fighter level, you can replace one of these cantrips with another cantrip of your choice from the Wizard spell list. When you reach Fighter level 10, you learn another Wizard cantrip of your choice.\n\n' +
+          "**Spell Slots.** The Eldritch Knight Spellcasting table gives your spells-prepared and spell-slot totals by Fighter level: you gain your first level 1 slots at level 3 (growing from 2 to 4 as you level), level 2 slots at level 7, level 3 slots at level 13, and level 4 slots at level 19. You regain all expended slots when you finish a Long Rest.\n\n" +
+          '**Prepared Spells of Level 1+.** You prepare a list of level 1+ spells available for you to cast with this feature. To start, choose three level 1 spells from the Wizard spell list (Burning Hands, Jump, and Shield are recommended). The number of spells on your list increases as you gain Fighter levels (up to 13 at level 20), per the Eldritch Knight Spellcasting table; whenever it increases, choose additional spells from the Wizard spell list of a level for which you have spell slots.\n\n' +
+          '**Changing Your Prepared Spells.** Whenever you gain a Fighter level, you can replace one spell on your list with another Wizard spell for which you have spell slots.\n\n' +
+          '**Spellcasting Ability.** Intelligence is your spellcasting ability for your Wizard spells.\n\n' +
+          '**Spellcasting Focus.** You can use an Arcane Focus as a Spellcasting Focus for your Wizard spells.',
+      },
+      {
+        level: 3, name: 'War Bond',
+        description:
+          'You learn a ritual that creates a magical bond between yourself and one weapon. You perform the ritual over the course of 1 hour, which can be done during a Short Rest. The weapon must be within your reach throughout the ritual, at the conclusion of which you touch the weapon and forge the bond. The bond fails if another Fighter is bonded to the weapon or if the weapon is a magic item to which someone else is attuned.\n\n' +
+          "Once you have bonded a weapon to yourself, you can't be disarmed of that weapon unless you have the Incapacitated condition. If it is on the same plane of existence, you can summon that weapon as a Bonus Action, causing it to teleport instantly to your hand.\n\n" +
+          'You can have up to two bonded weapons, but you can summon only one at a time with a Bonus Action. If you attempt to bond with a third weapon, you must break the bond with one of the other two.',
+      },
+      {
+        level: 7, name: 'War Magic',
+        description:
+          'When you take the Attack action on your turn, you can replace one of the attacks with a casting of one of your Wizard cantrips that has a casting time of an action.',
+      },
+      {
+        level: 10, name: 'Eldritch Strike',
+        description:
+          'You learn how to make your weapon strikes undercut a creature’s ability to withstand your spells. When you hit a creature with an attack using a weapon, that creature has Disadvantage on the next saving throw it makes against a spell you cast before the end of your next turn.',
+      },
+      {
+        level: 15, name: 'Arcane Charge',
+        description:
+          'When you use your Action Surge, you can teleport up to 9 m to an unoccupied space you can see. You can teleport before or after the additional action.',
+      },
+      {
+        level: 18, name: 'Improved War Magic',
+        description:
+          'When you take the Attack action on your turn, you can replace two of the attacks with a casting of one of your level 1 or level 2 Wizard spells that has a casting time of an action.',
+      },
+    ],
+  },
+  {
+    classIndex: 'fighter', index: 'psi-warrior', name: 'Psi Warrior',
+    features: [
+      {
+        level: 3, name: 'Psionic Power',
+        description:
+          'You harbor a wellspring of psionic energy within yourself, represented by your Psionic Energy Dice. You have these dice/sizes by Fighter level: level 3 — four d6s; level 5 — six d8s; level 9 — eight d8s; level 11 — eight d10s; level 13 — ten d10s; level 17 — twelve d12s. You regain one expended die on a Short Rest, and all of them on a Long Rest.\n\n' +
+          '**Protective Field.** When you or another creature you can see within 9 m of you takes damage, you can take a Reaction to expend one Psionic Energy Die, roll the die, and reduce the damage taken by the number rolled plus your Intelligence modifier (minimum reduction of 1).\n\n' +
+          '**Psionic Strike.** Once on each of your turns, immediately after you hit a target within 9 m of yourself with an attack and deal damage to it with a weapon, you can expend one Psionic Energy Die, rolling it and dealing Force damage to the target equal to the number rolled plus your Intelligence modifier.\n\n' +
+          '**Telekinetic Movement.** As a Magic action, choose one target you can see within 9 m of yourself — a loose object that is Large or smaller, or one willing creature other than you — and transport it up to 9 m to an unoccupied space you can see (a Tiny object can instead move to or from your hand). Once you take this action, you can’t do so again until you finish a Short or Long Rest unless you expend a Psionic Energy Die (no action required) to restore your use of it.',
+      },
+      {
+        level: 7, name: 'Telekinetic Adept',
+        description:
+          'You have mastered new ways to use your telekinetic abilities, detailed below.\n\n' +
+          "**Psi-Powered Leap.** As a Bonus Action, you gain a Fly Speed equal to twice your Speed until the end of the current turn. Once you take this Bonus Action, you can't do so again until you finish a Short or Long Rest unless you expend a Psionic Energy Die (no action required) to restore your use of it.\n\n" +
+          '**Telekinetic Thrust.** When you deal damage to a target with your Psionic Strike, you can force the target to make a Strength saving throw (DC 8 plus your Intelligence modifier and Proficiency Bonus). On a failed save, you can give the target the Prone condition or transport it up to 3 m horizontally.',
+      },
+      {
+        level: 10, name: 'Guarded Mind',
+        description:
+          'You have Resistance to Psychic damage. Moreover, if you start your turn with the Charmed or Frightened condition, you can expend a Psionic Energy Die (no action required) and end every effect on yourself giving you those conditions.',
+      },
+      {
+        level: 15, name: 'Bulwark of Force',
+        description:
+          'You can shield yourself and others with telekinetic force. As a Bonus Action, you can choose creatures, including yourself, within 9 m of yourself, up to a number of creatures equal to your Intelligence modifier (minimum of one creature). Each of the chosen creatures has Half Cover for 1 minute or until you have the Incapacitated condition.\n\n' +
+          "Once you use this feature, you can't do so again until you finish a Long Rest unless you expend a Psionic Energy Die (no action required) to restore your use of it.",
+      },
+      {
+        level: 18, name: 'Telekinetic Master',
+        description:
+          'You always have the Telekinesis spell prepared. With this feature, you can cast it without a spell slot or components, and your spellcasting ability for it is Intelligence. On each of your turns while you maintain Concentration on it, including the turn when you cast it, you can make one attack with a weapon as a Bonus Action.\n\n' +
+          "Once you cast the spell with this feature, you can't do so in this way again until you finish a Long Rest unless you expend a Psionic Energy Die (no action required) to restore your use of it.",
+      },
+    ],
+  },
+
+  // ================= Monk (has Warrior of the Open Hand) =================
+  {
+    classIndex: 'monk', index: 'warrior-of-mercy', name: 'Warrior of Mercy',
+    features: [
+      {
+        level: 3, name: 'Hand of Harm',
+        description:
+          'Once per turn when you hit a creature with an Unarmed Strike and deal damage, you can expend 1 Focus Point to deal extra Necrotic damage equal to one roll of your Martial Arts die plus your Wisdom modifier.',
+      },
+      {
+        level: 3, name: 'Hand of Healing',
+        description:
+          'As a Magic action, you can expend 1 Focus Point to touch a creature and restore a number of Hit Points equal to a roll of your Martial Arts die plus your Wisdom modifier.\n\n' +
+          'When you use your Flurry of Blows, you can replace one of the Unarmed Strikes with a use of this feature without expending a Focus Point for the healing.',
+      },
+      {
+        level: 3, name: 'Implements of Mercy',
+        description: 'You gain proficiency in the Insight and Medicine skills and proficiency with the Herbalism Kit.',
+      },
+      {
+        level: 6, name: 'Physician’s Touch',
+        description:
+          'Your Hand of Harm and Hand of Healing improve, as detailed below.\n\n' +
+          '**Hand of Harm.** When you use Hand of Harm on a creature, you can also give that creature the Poisoned condition until the end of your next turn.\n\n' +
+          '**Hand of Healing.** When you use Hand of Healing, you can also end one of the following conditions on the creature you heal: Blinded, Deafened, Paralyzed, Poisoned, or Stunned.',
+      },
+      {
+        level: 11, name: 'Flurry of Healing and Harm',
+        description:
+          'When you use Flurry of Blows, you can replace each of the Unarmed Strikes with a use of Hand of Healing without expending Focus Points for the healing.\n\n' +
+          'In addition, when you make an Unarmed Strike with Flurry of Blows and deal damage, you can use Hand of Harm with that strike without expending a Focus Point for Hand of Harm. You can still use Hand of Harm only once per turn.\n\n' +
+          'You can use these benefits a total number of times equal to your Wisdom modifier (minimum of once). You regain all expended uses when you finish a Long Rest.',
+      },
+      {
+        level: 17, name: 'Hand of Ultimate Mercy',
+        description:
+          'Your mastery of life energy opens the door to the ultimate mercy. As a Magic action, you can touch the corpse of a creature that died within the past 24 hours and expend 5 Focus Points. The creature then returns to life with a number of Hit Points equal to 4d10 plus your Wisdom modifier. If the creature died with any of the following conditions, the creature revives with the conditions removed: Blinded, Deafened, Paralyzed, Poisoned, and Stunned.\n\n' +
+          "Once you use this feature, you can't use it again until you finish a Long Rest.",
+      },
+    ],
+  },
+  {
+    classIndex: 'monk', index: 'warrior-of-shadow', name: 'Warrior of Shadow',
+    features: [
+      {
+        level: 3, name: 'Shadow Arts',
+        description:
+          'You have learned to draw on the power of the Shadowfell, gaining the following benefits.\n\n' +
+          '**Darkness.** You can expend 1 Focus Point to cast the Darkness spell without spell components. You can see within the spell’s area when you cast it with this feature. While the spell persists, you can move its area of Darkness to a space within 18 m of yourself at the start of each of your turns.\n\n' +
+          '**Darkvision.** You gain Darkvision with a range of 18 m. If you already have Darkvision, its range increases by 18 m.\n\n' +
+          '**Shadowy Figments.** You know the Minor Illusion spell. Wisdom is your spellcasting ability for it.',
+      },
+      {
+        level: 6, name: 'Shadow Step',
+        description:
+          'While entirely within Dim Light or Darkness, you can use a Bonus Action to teleport up to 18 m to an unoccupied space you can see that is also in Dim Light or Darkness. You then have Advantage on the next melee attack you make before the end of the current turn.',
+      },
+      {
+        level: 11, name: 'Improved Shadow Step',
+        description:
+          'You can draw on your Shadowfell connection to empower your teleportation. When you use your Shadow Step, you can expend 1 Focus Point to remove the requirement that you must start and end in Dim Light or Darkness for that use of the feature. As part of this Bonus Action, you can make an Unarmed Strike immediately after you teleport.',
+      },
+      {
+        level: 17, name: 'Cloak of Shadows',
+        description:
+          'As a Magic action while entirely within Dim Light or Darkness, you can expend 3 Focus Points to shroud yourself with shadows for 1 minute, until you have the Incapacitated condition, or until you end your turn in Bright Light. While shrouded by these shadows, you gain the following benefits.\n\n' +
+          '**Invisibility.** You have the Invisible condition.\n\n' +
+          '**Partially Incorporeal.** You can move through occupied spaces as if they were Difficult Terrain. If you end your turn in such a space, you are shunted to the last unoccupied space you were in.\n\n' +
+          '**Shadow Flurry.** You can use your Flurry of Blows without expending any Focus Points.',
+      },
+    ],
+  },
+  {
+    classIndex: 'monk', index: 'warrior-of-the-elements', name: 'Warrior of the Elements',
+    features: [
+      {
+        level: 3, name: 'Elemental Attunement',
+        description:
+          'At the start of your turn, you can expend 1 Focus Point to imbue yourself with elemental energy. The energy lasts for 10 minutes or until you have the Incapacitated condition. You gain the following benefits while this feature is active.\n\n' +
+          '**Reach.** When you make an Unarmed Strike, your reach is 3 m greater than normal, as elemental energy extends from you.\n\n' +
+          '**Elemental Strikes.** Whenever you hit with your Unarmed Strike, you can cause it to deal your choice of Acid, Cold, Fire, Lightning, or Thunder damage rather than its normal damage type. When you deal one of these types with it, you can also force the target to make a Strength saving throw. On a failed save, you can move the target up to 3 m toward or away from you.',
+      },
+      {
+        level: 3, name: 'Manipulate Elements',
+        description: 'You know the Elementalism spell. Wisdom is your spellcasting ability for it.',
+      },
+      {
+        level: 6, name: 'Elemental Burst',
+        description:
+          'As a Magic action, you can expend 2 Focus Points to cause elemental energy to burst in a 6 m radius Sphere centered on a point within 36 m of yourself. Choose a damage type: Acid, Cold, Fire, Lightning, or Thunder.\n\n' +
+          'Each creature in the Sphere must make a Dexterity saving throw. On a failed save, a creature takes damage of the chosen type equal to three rolls of your Martial Arts die. On a successful save, a creature takes half as much damage.',
+      },
+      {
+        level: 11, name: 'Stride of the Elements',
+        description: 'While your Elemental Attunement is active, you also have a Fly Speed and a Swim Speed equal to your Speed.',
+      },
+      {
+        level: 17, name: 'Elemental Epitome',
+        description:
+          'While your Elemental Attunement is active, you also gain the following benefits.\n\n' +
+          '**Damage Resistance.** You gain Resistance to one of the following damage types of your choice: Acid, Cold, Fire, Lightning, or Thunder. At the start of each of your turns, you can change this choice.\n\n' +
+          '**Destructive Stride.** When you use your Step of the Wind, your Speed increases by 6 m until the end of the turn. For that duration, any creature of your choice takes damage equal to one roll of your Martial Arts die when you enter a space within 1.5 m of it. The damage type is your choice of Acid, Cold, Fire, Lightning, or Thunder. A creature can take this damage only once per turn.\n\n' +
+          '**Empowered Strikes.** Once on each of your turns, you can deal extra damage to a target equal to one roll of your Martial Arts die when you hit it with an Unarmed Strike. The extra damage is the same type dealt by that strike.',
+      },
+    ],
+  },
+];
 
 async function seedClassesAndSubclasses(
   client: Client,
@@ -305,6 +1066,24 @@ async function seedClassesAndSubclasses(
       subclassMap.set(`${edition}:${r.class.index}:${r.index}`, res.rows[0].id);
       subclassCount++;
     }
+  }
+
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-5 — the 18 subclasses missing
+  // from the third-party JSON for the 6 classes this repo can verify (see
+  // SUPPLEMENTAL_2024_SUBCLASSES's own comment for the full rationale and
+  // scope boundary). Same upsert statement as the JSON-driven loop above.
+  for (const s of SUPPLEMENTAL_2024_SUBCLASSES) {
+    const classId = classMap.get(`2024:${s.classIndex}`);
+    if (!classId) throw new Error(`Unknown class '${s.classIndex}' for supplemental subclass '${s.index}'`);
+    const res = await client.query(
+      `INSERT INTO subclasses (class_id, index_key, name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (class_id, index_key) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+      [classId, s.index, s.name],
+    );
+    subclassMap.set(`2024:${s.classIndex}:${s.index}`, res.rows[0].id);
+    subclassCount++;
   }
 
   console.log(`  classes: ${classCount}, subclasses: ${subclassCount}`);
@@ -370,8 +1149,516 @@ async function seedClassFeatures(
       count++;
     }
   }
+
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-5 — feature rows for the 18
+  // supplemental subclasses above. Must live in THIS function (not just
+  // seedClassesAndSubclasses) because this table is fully wiped and
+  // repopulated on every seed run (see this function's own comment above) —
+  // adding these rows anywhere else would have them survive the first seed
+  // but vanish on the next one.
+  for (const s of SUPPLEMENTAL_2024_SUBCLASSES) {
+    const classId = classMap.get(`2024:${s.classIndex}`);
+    const subclassId = subclassMap.get(`2024:${s.classIndex}:${s.index}`);
+    if (!classId || !subclassId) throw new Error(`Unknown class/subclass '${s.classIndex}/${s.index}' for supplemental features`);
+    for (const f of s.features) {
+      await client.query(
+        `INSERT INTO class_features (class_id, subclass_id, level, name, description)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [classId, subclassId, f.level, f.name, f.description],
+      );
+      count++;
+    }
+  }
+
   console.log(`  class_features: ${count}`);
 }
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-4 (FT-01) — the third-party SRD
+// JSON dataset carries only 17 of the 75 official 2024 feats (10 Origin +
+// 43 General + 10 Fighting Style + 12 Epic Boon per docs/players-handbook-
+// 2024/Chapter 5- Feats — NOT the 69/37-General the gap analysis originally
+// estimated; corrected here against the actual PHB text rather than
+// propagating a stale count) and carries no type/category at all. Both gaps
+// are fixed the same way P1-3 fixed Aasimar/Dragonborn: hand-authored
+// directly from that chapter, kept OUT of the third-party JSON file itself
+// to preserve its value as a verifiable upstream copy.
+//
+// Distances are written in meters, matching this catalog's own established
+// convention (every other seeded description — spells, conditions, race
+// traits — already uses meters, converted from the SRD JSON's own feet-to-
+// meters authoring; see this file's other seed functions and CLAUDE.md's
+// "5 ft. = 1.5 m" note). Descriptions use the same "You gain the following
+// benefits." + `**Trait Name.** ...` paragraph format the JSON-sourced
+// feats already use (confirmed against the live seeded `alert`/
+// `boon-of-truesight` rows), so a feat's provenance is invisible to anyone
+// just reading the catalog.
+//
+// type backfill for the 17 JSON-sourced feats (their source file has no
+// category field at all): 2014's lone `grappler` row is deliberately left
+// unmapped (null) — 2014 predates this categorization entirely, per the
+// migration's own comment.
+const FEAT_TYPE_BY_INDEX: Record<string, 'origin' | 'general' | 'fighting_style' | 'epic_boon'> = {
+  alert: 'origin', 'magic-initiate': 'origin', 'savage-attacker': 'origin', skilled: 'origin',
+  'ability-score-improvement': 'general', grappler: 'general',
+  archery: 'fighting_style', defense: 'fighting_style', 'great-weapon-fighting': 'fighting_style', 'two-weapon-fighting': 'fighting_style',
+  'boon-of-combat-prowess': 'epic_boon', 'boon-of-dimensional-travel': 'epic_boon', 'boon-of-fate': 'epic_boon',
+  'boon-of-irresistible-offense': 'epic_boon', 'boon-of-spell-recall': 'epic_boon', 'boon-of-the-night-spirit': 'epic_boon',
+  'boon-of-truesight': 'epic_boon',
+};
+
+interface SupplementalFeat {
+  index: string;
+  name: string;
+  type: 'origin' | 'general' | 'fighting_style' | 'epic_boon';
+  prerequisite: string | null;
+  description: string;
+}
+
+const SUPPLEMENTAL_2024_FEATS: SupplementalFeat[] = [
+  // ---- Origin (6 missing: alert/magic-initiate/savage-attacker/skilled already seeded) ----
+  {
+    index: 'crafter', name: 'Crafter', type: 'origin', prerequisite: null,
+    description:
+      'You gain the following benefits.\n\n' +
+      "**Tool Proficiency.** You gain proficiency with three different Artisan's Tools of your choice.\n\n" +
+      '**Discount.** Whenever you buy a nonmagical item, you receive a 20 percent discount on it.\n\n' +
+      "**Fast Crafting.** When you finish a Long Rest, you can craft one piece of gear (a Ladder, Torch, Crossbow Bolt Case, Map or Scroll Case, Pouch, Block and Tackle, Jug, Lamp, Ball Bearings, Bucket, Caltrops, Grappling Hook, Iron Pot, Bell, Shovel, Tinderbox, Basket, Rope, Net, Tent, Club, Greatclub, or Quarterstaff), provided you have the Artisan's Tools associated with that item and proficiency with those tools. The item lasts until you finish another Long Rest, at which point it falls apart.",
+  },
+  {
+    index: 'healer', name: 'Healer', type: 'origin', prerequisite: null,
+    description:
+      'You gain the following benefits.\n\n' +
+      "**Battle Medic.** If you have a Healer's Kit, you can expend one use of it and tend to a creature within 1.5 m of yourself as a Utilize action. That creature can expend one of its Hit Point Dice, and you then roll that die. The creature regains a number of Hit Points equal to the roll plus your Proficiency Bonus.\n\n" +
+      "**Healing Rerolls.** Whenever you roll a die to determine the number of Hit Points you restore with a spell or with this feat's Battle Medic benefit, you can reroll the die if it rolls a 1, and you must use the new roll.",
+  },
+  {
+    index: 'lucky', name: 'Lucky', type: 'origin', prerequisite: null,
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Luck Points.** You have a number of Luck Points equal to your Proficiency Bonus and can spend the points on the benefits below. You regain your expended Luck Points when you finish a Long Rest.\n\n' +
+      '**Advantage.** When you roll a d20 for a D20 Test, you can spend 1 Luck Point to give yourself Advantage on the roll.\n\n' +
+      '**Disadvantage.** When a creature rolls a d20 for an attack roll against you, you can spend 1 Luck Point to impose Disadvantage on that roll.',
+  },
+  {
+    index: 'musician', name: 'Musician', type: 'origin', prerequisite: null,
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Instrument Training.** You gain proficiency with three Musical Instruments of your choice.\n\n' +
+      '**Encouraging Song.** As you finish a Short or Long Rest, you can play a song on a Musical Instrument with which you have proficiency and give Heroic Inspiration to allies who hear the song. The number of allies you can affect in this way equals your Proficiency Bonus.',
+  },
+  {
+    index: 'tavern-brawler', name: 'Tavern Brawler', type: 'origin', prerequisite: null,
+    description:
+      'You gain the following benefits.\n\n' +
+      "**Enhanced Unarmed Strike.** When you hit with your Unarmed Strike and deal damage, you can deal Bludgeoning damage equal to 1d4 plus your Strength modifier instead of the normal damage of an Unarmed Strike.\n\n" +
+      "**Damage Rerolls.** Whenever you roll a damage die for your Unarmed Strike, you can reroll the die if it rolls a 1, and you must use the new roll.\n\n" +
+      '**Improvised Weaponry.** You have proficiency with improvised weapons.\n\n' +
+      '**Push.** When you hit a creature with an Unarmed Strike as part of the Attack action on your turn, you can deal damage to the target and also push it 1.5 m away from you. You can use this benefit only once per turn.',
+  },
+  {
+    index: 'tough', name: 'Tough', type: 'origin', prerequisite: null,
+    description:
+      'Your Hit Point maximum increases by an amount equal to twice your character level when you gain this feat. Whenever you gain a character level thereafter, your Hit Point maximum increases by an additional 2 Hit Points.',
+  },
+
+  // ---- General (41 missing: ability-score-improvement/grappler already seeded) ----
+  {
+    index: 'actor', name: 'Actor', type: 'general', prerequisite: 'Level 4+, Charisma 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Charisma score by 1, to a maximum of 20.\n\n' +
+      "**Impersonation.** While you're disguised as a real or fictional person, you have Advantage on Charisma (Deception or Performance) checks to convince others that you are that person.\n\n" +
+      '**Mimicry.** You can mimic the sounds of other creatures, including speech. A creature that hears the mimicry must succeed on a Wisdom (Insight) check to determine the effect is faked (DC 8 plus your Charisma modifier and Proficiency Bonus).',
+  },
+  {
+    index: 'athlete', name: 'Athlete', type: 'general', prerequisite: 'Level 4+, Strength or Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Climb Speed.** You gain a Climb Speed equal to your Speed.\n\n' +
+      '**Hop Up.** When you have the Prone condition, you can right yourself with only 1.5 m of movement.\n\n' +
+      '**Jumping.** You can make a running Long or High Jump after moving only 1.5 m.',
+  },
+  {
+    index: 'charger', name: 'Charger', type: 'general', prerequisite: 'Level 4+, Strength or Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Improved Dash.** When you take the Dash action, your Speed increases by 3 m for that action.\n\n' +
+      "**Charge Attack.** If you move at least 3 m in a straight line toward a target immediately before hitting it with a melee attack roll as part of the Attack action, choose one of the following effects: gain a 1d8 bonus to the attack's damage roll, or push the target up to 3 m away if it is no more than one size larger than you. You can use this benefit only once on each of your turns.",
+  },
+  {
+    index: 'chef', name: 'Chef', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Constitution or Wisdom score by 1, to a maximum of 20.\n\n' +
+      "**Cook's Utensils.** You gain proficiency with Cook's Utensils if you don't already have it.\n\n" +
+      "**Replenishing Meal.** As part of a Short Rest, you can cook special food if you have ingredients and Cook's Utensils on hand. You can prepare enough of this food for a number of creatures equal to 4 plus your Proficiency Bonus. At the end of the Short Rest, any creature who eats the food and spends one or more Hit Dice to regain Hit Points regains an extra 1d8 Hit Points.\n\n" +
+      "**Bolstering Treats.** With 1 hour of work or when you finish a Long Rest, you can cook a number of treats equal to your Proficiency Bonus if you have ingredients and Cook's Utensils on hand. These special treats last 8 hours after being made. A creature can use a Bonus Action to eat one of those treats to gain a number of Temporary Hit Points equal to your Proficiency Bonus.",
+  },
+  {
+    index: 'crossbow-expert', name: 'Crossbow Expert', type: 'general', prerequisite: 'Level 4+, Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Dexterity score by 1, to a maximum of 20.\n\n' +
+      "**Ignore Loading.** You ignore the Loading property of the Hand Crossbow, Heavy Crossbow, and Light Crossbow. If you're holding one of them, you can load a piece of ammunition into it even if you lack a free hand.\n\n" +
+      "**Firing in Melee.** Being within 1.5 m of an enemy doesn't impose Disadvantage on your attack rolls with crossbows.\n\n" +
+      "**Dual Wielding.** When you make the extra attack of the Light property, you can add your ability modifier to the damage of the extra attack if that attack is with a crossbow that has the Light property and you aren't already adding that modifier to the damage.",
+  },
+  {
+    index: 'crusher', name: 'Crusher', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Constitution score by 1, to a maximum of 20.\n\n' +
+      '**Push.** Once per turn, when you hit a creature with an attack that deals Bludgeoning damage, you can move it 1.5 m to an unoccupied space if the target is no more than one size larger than you.\n\n' +
+      '**Enhanced Critical.** When you score a Critical Hit that deals Bludgeoning damage to a creature, attack rolls against that creature have Advantage until the start of your next turn.',
+  },
+  {
+    index: 'defensive-duelist', name: 'Defensive Duelist', type: 'general', prerequisite: 'Level 4+, Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Dexterity score by 1, to a maximum of 20.\n\n' +
+      "**Parry.** If you're holding a Finesse weapon and another creature hits you with a melee attack, you can take a Reaction to add your Proficiency Bonus to your Armor Class, potentially causing the attack to miss you. You gain this bonus to your AC against melee attacks until the start of your next turn.",
+  },
+  {
+    index: 'dual-wielder', name: 'Dual Wielder', type: 'general', prerequisite: 'Level 4+, Strength or Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      "**Enhanced Dual Wielding.** When you take the Attack action on your turn and attack with a weapon that has the Light property, you can make one extra attack as a Bonus Action later on the same turn with a different weapon, which must be a Melee weapon that lacks the Two-Handed property. You don't add your ability modifier to the extra attack's damage unless that modifier is negative.\n\n" +
+      '**Quick Draw.** You can draw or stow two weapons that lack the Two-Handed property when you would normally be able to draw or stow only one.',
+  },
+  {
+    index: 'durable', name: 'Durable', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Constitution score by 1, to a maximum of 20.\n\n' +
+      '**Defy Death.** You have Advantage on Death Saving Throws.\n\n' +
+      '**Speedy Recovery.** As a Bonus Action, you can expend one of your Hit Point Dice, roll the die, and regain a number of Hit Points equal to the roll.',
+  },
+  {
+    index: 'elemental-adept', name: 'Elemental Adept', type: 'general', prerequisite: 'Level 4+, Spellcasting or Pact Magic Feature',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.\n\n' +
+      '**Energy Mastery.** Choose one of the following damage types: Acid, Cold, Fire, Lightning, or Thunder. Spells you cast ignore Resistance to damage of the chosen type. In addition, when you roll damage for a spell you cast that deals damage of that type, you can treat any 1 on a damage die as a 2.\n\n' +
+      '**Repeatable.** You can take this feat more than once, but you must choose a different damage type each time for Energy Mastery.',
+  },
+  {
+    index: 'fey-touched', name: 'Fey Touched', type: 'general', prerequisite: 'Level 4+',
+    description:
+      "Your exposure to the Feywild's magic grants you the following benefits.\n\n" +
+      '**Ability Score Increase.** Increase your Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.\n\n' +
+      "**Fey Magic.** Choose one level 1 spell from the Divination or Enchantment school of magic. You always have that spell and the Misty Step spell prepared. You can cast each of these spells without expending a spell slot. Once you cast either spell in this way, you can't cast that spell in this way again until you finish a Long Rest. You can also cast these spells using spell slots you have of the appropriate level. The spells' spellcasting ability is the ability increased by this feat.",
+  },
+  {
+    index: 'great-weapon-master', name: 'Great Weapon Master', type: 'general', prerequisite: 'Level 4+, Strength 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength score by 1, to a maximum of 20.\n\n' +
+      '**Heavy Weapon Mastery.** When you hit a creature with a weapon that has the Heavy property as part of the Attack action on your turn, you can cause the weapon to deal extra damage to the target. The extra damage equals your Proficiency Bonus.\n\n' +
+      '**Hew.** Immediately after you score a Critical Hit with a Melee weapon or reduce a creature to 0 Hit Points with one, you can make one attack with the same weapon as a Bonus Action.',
+  },
+  {
+    index: 'heavily-armored', name: 'Heavily Armored', type: 'general', prerequisite: 'Level 4+, Medium Armor Training',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Constitution or Strength score by 1, to a maximum of 20.\n\n' +
+      '**Armor Training.** You gain training with Heavy armor.',
+  },
+  {
+    index: 'heavy-armor-master', name: 'Heavy Armor Master', type: 'general', prerequisite: 'Level 4+, Heavy Armor Training',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Constitution or Strength score by 1, to a maximum of 20.\n\n' +
+      "**Damage Reduction.** When you're hit by an attack while you're wearing Heavy armor, any Bludgeoning, Piercing, and Slashing damage dealt to you by that attack is reduced by an amount equal to your Proficiency Bonus.",
+  },
+  {
+    index: 'inspiring-leader', name: 'Inspiring Leader', type: 'general', prerequisite: 'Level 4+, Wisdom or Charisma 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Wisdom or Charisma score by 1, to a maximum of 20.\n\n' +
+      '**Bolstering Performance.** When you finish a Short or Long Rest, you can give an inspiring performance: a speech, song, or dance. When you do so, choose up to six allies (which can include yourself) within 9 m of yourself who witness the performance. The chosen creatures each gain Temporary Hit Points equal to your character level plus the modifier of the ability you increased with this feat.',
+  },
+  {
+    index: 'keen-mind', name: 'Keen Mind', type: 'general', prerequisite: 'Level 4+, Intelligence 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Intelligence score by 1, to a maximum of 20.\n\n' +
+      '**Lore Knowledge.** Choose one of the following skills: Arcana, History, Investigation, Nature, or Religion. If you lack proficiency in the chosen skill, you gain proficiency in it, and if you already have proficiency in it, you gain Expertise in it.\n\n' +
+      '**Quick Study.** You can take the Study action as a Bonus Action.',
+  },
+  {
+    index: 'lightly-armored', name: 'Lightly Armored', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Armor Training.** You gain training with Light armor and Shields.',
+  },
+  {
+    index: 'mage-slayer', name: 'Mage Slayer', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Concentration Breaker.** When you damage a creature that is concentrating, it has Disadvantage on the saving throw it makes to maintain Concentration.\n\n' +
+      "**Guarded Mind.** If you fail an Intelligence, a Wisdom, or a Charisma saving throw, you can cause yourself to succeed instead. Once you use this benefit, you can't use it again until you finish a Short or Long Rest.",
+  },
+  {
+    index: 'martial-weapon-training', name: 'Martial Weapon Training', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Weapon Proficiency.** You gain proficiency with Martial weapons.',
+  },
+  {
+    index: 'medium-armor-master', name: 'Medium Armor Master', type: 'general', prerequisite: 'Level 4+, Medium Armor Training',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      "**Dexterous Wearer.** While you're wearing Medium armor, you can add 3, rather than 2, to your AC if you have a Dexterity score of 16 or higher.",
+  },
+  {
+    index: 'moderately-armored', name: 'Moderately Armored', type: 'general', prerequisite: 'Level 4+, Light Armor Training',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Armor Training.** You gain training with Medium armor.',
+  },
+  {
+    index: 'mounted-combatant', name: 'Mounted Combatant', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength, Dexterity, or Wisdom score by 1, to a maximum of 20.\n\n' +
+      '**Mounted Strike.** While mounted, you have Advantage on attack rolls against any unmounted creature within 1.5 m of your mount that is at least one size smaller than the mount.\n\n' +
+      '**Leap Aside.** If your mount is subjected to an effect that allows it to make a Dexterity saving throw to take only half damage, it instead takes no damage if it succeeds on the saving throw and only half damage if it fails. For your mount to gain this benefit, you must be riding it, and neither of you can have the Incapacitated condition.\n\n' +
+      "**Veer.** While mounted, you can force an attack that hits your mount to hit you instead if you don't have the Incapacitated condition.",
+  },
+  {
+    index: 'observant', name: 'Observant', type: 'general', prerequisite: 'Level 4+, Intelligence or Wisdom 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Intelligence or Wisdom score by 1, to a maximum of 20.\n\n' +
+      '**Keen Observer.** Choose one of the following skills: Insight, Investigation, or Perception. If you lack proficiency with the chosen skill, you gain proficiency in it, and if you already have proficiency in it, you gain Expertise in it.\n\n' +
+      '**Quick Search.** You can take the Search action as a Bonus Action.',
+  },
+  {
+    index: 'piercer', name: 'Piercer', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity by 1, to a maximum of 20.\n\n' +
+      '**Puncture.** Once per turn, when you hit a creature with an attack that deals Piercing damage, you can reroll one of the attack’s damage dice, and you must use the new roll.\n\n' +
+      '**Enhanced Critical.** When you score a Critical Hit that deals Piercing damage to a creature, you can roll one additional damage die when determining the extra Piercing damage the target takes.',
+  },
+  {
+    index: 'poisoner', name: 'Poisoner', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Dexterity or Intelligence score by 1, to a maximum of 20.\n\n' +
+      '**Potent Poison.** When you make a damage roll that deals Poison damage, it ignores Resistance to Poison damage.\n\n' +
+      "**Brew Poison.** You gain proficiency with the Poisoner's Kit. With 1 hour of work using such a kit and expending 50 GP worth of materials, you can create a number of poison doses equal to your Proficiency Bonus. As a Bonus Action, you can apply a poison dose to a weapon or piece of ammunition. Once applied, the poison retains its potency for 1 minute or until you deal damage with the poisoned item, whichever is shorter. When a creature takes damage from the poisoned item, that creature must succeed on a Constitution saving throw (DC 8 plus the modifier of the ability increased by this feat and your Proficiency Bonus) or take 2d8 Poison damage and have the Poisoned condition until the end of your next turn.",
+  },
+  {
+    index: 'polearm-master', name: 'Polearm Master', type: 'general', prerequisite: 'Level 4+, Strength or Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Dexterity or Strength score by 1, to a maximum of 20.\n\n' +
+      '**Pole Strike.** Immediately after you take the Attack action and attack with a Quarterstaff, a Spear, or a weapon that has the Heavy and Reach properties, you can use a Bonus Action to make a melee attack with the opposite end of the weapon. The weapon deals Bludgeoning damage, and the weapon’s damage die for this attack is a d4.\n\n' +
+      "**Reactive Strike.** While you're holding a Quarterstaff, a Spear, or a weapon that has the Heavy and Reach properties, you can take a Reaction to make one melee attack against a creature that enters the reach you have with that weapon.",
+  },
+  {
+    index: 'resilient', name: 'Resilient', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Choose one ability in which you lack saving throw proficiency. Increase the chosen ability score by 1, to a maximum of 20.\n\n' +
+      '**Saving Throw Proficiency.** You gain saving throw proficiency with the chosen ability.',
+  },
+  {
+    index: 'ritual-caster', name: 'Ritual Caster', type: 'general', prerequisite: 'Level 4+; Intelligence, Wisdom, or Charisma 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.\n\n' +
+      "**Ritual Spells.** Choose a number of level 1 spells equal to your Proficiency Bonus that have the Ritual tag. You always have those spells prepared, and you can cast them with any spell slots you have. The spells' spellcasting ability is the ability increased by this feat. Whenever your Proficiency Bonus increases thereafter, you can add an additional level 1 spell with the Ritual tag to the spells always prepared with this feature.\n\n" +
+      "**Quick Ritual.** With this benefit, you can cast a Ritual spell that you have prepared using its regular casting time rather than the extended time for a Ritual. Doing so doesn't require a spell slot. Once you cast the spell in this way, you can't use this benefit again until you finish a Long Rest.",
+  },
+  {
+    index: 'sentinel', name: 'Sentinel', type: 'general', prerequisite: 'Level 4+, Strength or Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Guardian.** Immediately after a creature within 1.5 m of you takes the Disengage action or hits a target other than you with an attack, you can make an Opportunity Attack against that creature.\n\n' +
+      "**Halt.** When you hit a creature with an Opportunity Attack, the creature's Speed becomes 0 for the rest of the current turn.",
+  },
+  {
+    index: 'shadow-touched', name: 'Shadow Touched', type: 'general', prerequisite: 'Level 4+',
+    description:
+      "Your exposure to the Shadowfell's magic grants you the following benefits.\n\n" +
+      '**Ability Score Increase.** Increase your Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.\n\n' +
+      "**Shadow Magic.** Choose one level 1 spell from the Illusion or Necromancy school of magic. You always have that spell and the Invisibility spell prepared. You can cast each of these spells without expending a spell slot. Once you cast either spell in this way, you can't cast that spell in this way again until you finish a Long Rest. You can also cast these spells using spell slots you have of the appropriate level. The spells' spellcasting ability is the ability increased by this feat.",
+  },
+  {
+    index: 'sharpshooter', name: 'Sharpshooter', type: 'general', prerequisite: 'Level 4+, Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Bypass Cover.** Your ranged attacks with weapons ignore Half Cover and Three-Quarters Cover.\n\n' +
+      "**Firing in Melee.** Being within 1.5 m of an enemy doesn't impose Disadvantage on your attack rolls with Ranged weapons.\n\n" +
+      "**Long Shots.** Attacking at long range doesn't impose Disadvantage on your attack rolls with Ranged weapons.",
+  },
+  {
+    index: 'shield-master', name: 'Shield Master', type: 'general', prerequisite: 'Level 4+, Shield Training',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength score by 1, to a maximum of 20.\n\n' +
+      "**Shield Bash.** If you attack a creature within 1.5 m of you as part of the Attack action and hit with a Melee weapon, you can immediately bash the target with your Shield if it's equipped, forcing the target to make a Strength saving throw (DC 8 plus your Strength modifier and Proficiency Bonus). On a failed save, you either push the target 1.5 m from you or cause it to have the Prone condition (your choice). You can use this benefit only once on each of your turns.\n\n" +
+      "**Interpose Shield.** If you're subjected to an effect that allows you to make a Dexterity saving throw to take only half damage, you can take a Reaction to take no damage if you succeed on the saving throw and are holding a Shield.",
+  },
+  {
+    index: 'skill-expert', name: 'Skill Expert', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase one ability score of your choice by 1, to a maximum of 20.\n\n' +
+      '**Skill Proficiency.** You gain proficiency in one skill of your choice.\n\n' +
+      '**Expertise.** Choose one skill in which you have proficiency but lack Expertise. You gain Expertise with that skill.',
+  },
+  {
+    index: 'skulker', name: 'Skulker', type: 'general', prerequisite: 'Level 4+, Dexterity 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Blindsight.** You have Blindsight with a range of 3 m.\n\n' +
+      '**Fog of War.** You exploit the distractions of battle, gaining Advantage on any Dexterity (Stealth) check you make as part of the Hide action during combat.\n\n' +
+      "**Sniper.** If you make an attack roll while hidden and the roll misses, making the attack roll doesn't reveal your location.",
+  },
+  {
+    index: 'slasher', name: 'Slasher', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Hamstring.** Once per turn when you hit a creature with an attack that deals Slashing damage, you can reduce the Speed of that creature by 3 m until the start of your next turn.\n\n' +
+      '**Enhanced Critical.** When you score a Critical Hit that deals Slashing damage to a creature, it has Disadvantage on attack rolls until the start of your next turn.',
+  },
+  {
+    index: 'speedy', name: 'Speedy', type: 'general', prerequisite: 'Level 4+, Dexterity or Constitution 13+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Dexterity or Constitution score by 1, to a maximum of 20.\n\n' +
+      '**Speed Increase.** Your Speed increases by 3 m.\n\n' +
+      "**Dash over Difficult Terrain.** When you take the Dash action on your turn, Difficult Terrain doesn't cost you extra movement for the rest of that turn.\n\n" +
+      '**Agile Movement.** Opportunity Attacks have Disadvantage against you.',
+  },
+  {
+    index: 'spell-sniper', name: 'Spell Sniper', type: 'general', prerequisite: 'Level 4+, Spellcasting or Pact Magic Feature',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.\n\n' +
+      '**Bypass Cover.** Your attack rolls for spells ignore Half Cover and Three-Quarters Cover.\n\n' +
+      "**Casting in Melee.** Being within 1.5 m of an enemy doesn't impose Disadvantage on your attack rolls with spells.\n\n" +
+      '**Increased Range.** When you cast a spell that has a range of at least 3 m and requires you to make an attack roll, you can increase the spell’s range by 18 m.',
+  },
+  {
+    index: 'telekinetic', name: 'Telekinetic', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.\n\n' +
+      "**Minor Telekinesis.** You learn the Mage Hand spell. You can cast it without Verbal or Somatic components, you can make the spectral hand Invisible, and its range and the distance it can be away from you both increase by 9 m when you cast it. The spell's spellcasting ability is the ability increased by this feat.\n\n" +
+      '**Telekinetic Shove.** As a Bonus Action, you can telekinetically shove one creature you can see within 9 m of yourself. When you do so, the target must succeed on a Strength saving throw (DC 8 plus the ability modifier of the score increased by this feat and your Proficiency Bonus) or be moved 1.5 m toward or away from you.',
+  },
+  {
+    index: 'telepathic', name: 'Telepathic', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.\n\n' +
+      "**Telepathic Utterance.** You can speak telepathically to any creature you can see within 18 m of yourself. Your telepathic utterances are in a language you know, and the creature understands you only if it knows that language. Your communication doesn't give the creature the ability to respond to you telepathically.\n\n" +
+      '**Detect Thoughts.** You always have the Detect Thoughts spell prepared. You can cast it without a spell slot or spell components, and you must finish a Long Rest before you can cast it in this way again. You can also cast it using spell slots you have of the appropriate level. Your spellcasting ability for the spell is the ability increased by this feat.',
+  },
+  {
+    index: 'war-caster', name: 'War Caster', type: 'general', prerequisite: 'Level 4+, Spellcasting or Pact Magic Feature',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.\n\n' +
+      '**Concentration.** You have Advantage on Constitution saving throws that you make to maintain Concentration.\n\n' +
+      '**Reactive Spell.** When a creature provokes an Opportunity Attack from you by leaving your reach, you can take a Reaction to cast a spell at the creature rather than making an Opportunity Attack. The spell must have a casting time of one action and must target only that creature.\n\n' +
+      '**Somatic Components.** You can perform the Somatic components of spells even when you have weapons or a Shield in one or both hands.',
+  },
+  {
+    index: 'weapon-master', name: 'Weapon Master', type: 'general', prerequisite: 'Level 4+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase your Strength or Dexterity score by 1, to a maximum of 20.\n\n' +
+      '**Mastery Property.** Your training with weapons allows you to use the mastery property of one kind of Simple or Martial weapon of your choice, provided you have proficiency with it. Whenever you finish a Long Rest, you can change the kind of weapon to another eligible kind.',
+  },
+
+  // ---- Fighting Style (6 missing: archery/defense/great-weapon-fighting/two-weapon-fighting already seeded) ----
+  {
+    index: 'blind-fighting', name: 'Blind Fighting', type: 'fighting_style', prerequisite: 'Fighting Style Feature',
+    description: 'You have Blindsight with a range of 3 m.',
+  },
+  {
+    index: 'dueling', name: 'Dueling', type: 'fighting_style', prerequisite: 'Fighting Style Feature',
+    description: "When you're holding a Melee weapon in one hand and no other weapons, you gain a +2 bonus to damage rolls with that weapon.",
+  },
+  {
+    index: 'interception', name: 'Interception', type: 'fighting_style', prerequisite: 'Fighting Style Feature',
+    description:
+      'When a creature you can see hits another creature within 1.5 m of you with an attack roll, you can take a Reaction to reduce the damage dealt to the target by 1d10 plus your Proficiency Bonus. You must be holding a Shield or a Simple or Martial weapon to use this Reaction.',
+  },
+  {
+    index: 'protection', name: 'Protection', type: 'fighting_style', prerequisite: 'Fighting Style Feature',
+    description:
+      "When a creature you can see attacks a target other than you that is within 1.5 m of you, you can take a Reaction to interpose your Shield if you're holding one. You impose Disadvantage on the triggering attack roll and all other attack rolls against the target until the start of your next turn if you remain within 1.5 m of the target.",
+  },
+  {
+    index: 'thrown-weapon-fighting', name: 'Thrown Weapon Fighting', type: 'fighting_style', prerequisite: 'Fighting Style Feature',
+    description: 'When you hit with a ranged attack roll using a weapon that has the Thrown property, you gain a +2 bonus to the damage roll.',
+  },
+  {
+    index: 'unarmed-fighting', name: 'Unarmed Fighting', type: 'fighting_style', prerequisite: 'Fighting Style Feature',
+    description:
+      "When you hit with your Unarmed Strike and deal damage, you can deal Bludgeoning damage equal to 1d6 plus your Strength modifier instead of the normal damage of an Unarmed Strike. If you aren't holding any weapons or a Shield when you make the attack roll, the d6 becomes a d8.\n\n" +
+      'At the start of each of your turns, you can deal 1d4 Bludgeoning damage to one creature Grappled by you.',
+  },
+
+  // ---- Epic Boon (5 missing: combat-prowess/dimensional-travel/fate/irresistible-offense/spell-recall/the-night-spirit/truesight already seeded) ----
+  {
+    index: 'boon-of-energy-resistance', name: 'Boon of Energy Resistance', type: 'epic_boon', prerequisite: 'Level 19+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase one ability score of your choice by 1, to a maximum of 30.\n\n' +
+      '**Energy Resistances.** You gain Resistance to two of the following damage types of your choice: Acid, Cold, Fire, Lightning, Necrotic, Poison, Psychic, Radiant, or Thunder. Whenever you finish a Long Rest, you can change your choices.\n\n' +
+      "**Energy Redirection.** When you take damage of one of the types chosen for the Energy Resistances benefit, you can take a Reaction to direct damage of the same type toward another creature you can see within 18 m of yourself that isn't behind Total Cover. If you do so, that creature must succeed on a Dexterity saving throw (DC 8 plus your Constitution modifier and Proficiency Bonus) or take damage equal to 2d12 plus your Constitution modifier.",
+  },
+  {
+    index: 'boon-of-fortitude', name: 'Boon of Fortitude', type: 'epic_boon', prerequisite: 'Level 19+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase one ability score of your choice by 1, to a maximum of 30.\n\n' +
+      "**Fortified Health.** Your Hit Point maximum increases by 40. In addition, whenever you regain Hit Points, you can regain additional Hit Points equal to your Constitution modifier. Once you've regained these additional Hit Points, you can't do so again until the start of your next turn.",
+  },
+  {
+    index: 'boon-of-recovery', name: 'Boon of Recovery', type: 'epic_boon', prerequisite: 'Level 19+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase one ability score of your choice by 1, to a maximum of 30.\n\n' +
+      "**Last Stand.** When you would be reduced to 0 Hit Points, you can drop to 1 Hit Point instead and regain a number of Hit Points equal to half your Hit Point maximum. Once you use this benefit, you can't use it again until you finish a Long Rest.\n\n" +
+      '**Recover Vitality.** You have a pool of ten d10s. As a Bonus Action, you can expend dice from the pool, roll those dice, and regain a number of Hit Points equal to the roll’s total. You regain all the expended dice when you finish a Long Rest.',
+  },
+  {
+    index: 'boon-of-skill', name: 'Boon of Skill', type: 'epic_boon', prerequisite: 'Level 19+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase one ability score of your choice by 1, to a maximum of 30.\n\n' +
+      '**All-Around Adept.** You gain proficiency in all skills.\n\n' +
+      '**Expertise.** Choose one skill in which you lack Expertise. You gain Expertise in that skill.',
+  },
+  {
+    index: 'boon-of-speed', name: 'Boon of Speed', type: 'epic_boon', prerequisite: 'Level 19+',
+    description:
+      'You gain the following benefits.\n\n' +
+      '**Ability Score Increase.** Increase one ability score of your choice by 1, to a maximum of 30.\n\n' +
+      '**Escape Artist.** As a Bonus Action, you can take the Disengage action, which also ends the Grappled condition on you.\n\n' +
+      '**Quickness.** Your Speed increases by 9 m.',
+  },
+];
 
 async function seedFeats(client: Client): Promise<Map<string, number>> {
   const featMap = new Map<string, number>(); // `${edition}:${feat_index}` -> id
@@ -381,21 +1668,37 @@ async function seedFeats(client: Client): Promise<Map<string, number>> {
     for (const r of rows) {
       const description = typeof r.description === 'string' ? r.description : (r.desc ?? []).join('\n\n');
       const res = await client.query(
-        `INSERT INTO feats (index_key, name, edition_scope, prerequisite, description)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO feats (index_key, name, edition_scope, prerequisite, description, type)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (index_key, edition_scope) DO UPDATE SET
-           name = EXCLUDED.name, prerequisite = EXCLUDED.prerequisite, description = EXCLUDED.description
+           name = EXCLUDED.name, prerequisite = EXCLUDED.prerequisite, description = EXCLUDED.description, type = EXCLUDED.type
          RETURNING id`,
-        [r.index, r.name, edition, prerequisiteTextOf(r), description],
+        [r.index, r.name, edition, prerequisiteTextOf(r), description, edition === '2024' ? (FEAT_TYPE_BY_INDEX[r.index] ?? null) : null],
       );
       featMap.set(`${edition}:${r.index}`, res.rows[0].id);
       count++;
     }
   }
-  // Documented, not a bug: 2014 SRD has essentially no general feats (the
-  // dnd5e-srd skill ships exactly one, Grappler) — feats were an optional
-  // PHB variant rule in 2014, not core SRD content. 2024 has 17.
-  console.log(`  feats: ${count} (2014 is expected to be minimal per the SRD skill's own notes)`);
+
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-4 (FT-01) — the 58 feats the
+  // third-party JSON dataset is missing entirely, hand-authored from
+  // docs/players-handbook-2024/Chapter 5- Feats (see
+  // SUPPLEMENTAL_2024_FEATS's own comment). Same upsert statement as the
+  // JSON-driven loop above, so a reseed stays idempotent.
+  for (const f of SUPPLEMENTAL_2024_FEATS) {
+    const res = await client.query(
+      `INSERT INTO feats (index_key, name, edition_scope, prerequisite, description, type)
+       VALUES ($1, $2, '2024', $3, $4, $5)
+       ON CONFLICT (index_key, edition_scope) DO UPDATE SET
+         name = EXCLUDED.name, prerequisite = EXCLUDED.prerequisite, description = EXCLUDED.description, type = EXCLUDED.type
+       RETURNING id`,
+      [f.index, f.name, f.prerequisite, f.description, f.type],
+    );
+    featMap.set(`2024:${f.index}`, res.rows[0].id);
+    count++;
+  }
+
+  console.log(`  feats: ${count} (75 official 2024 feats + 2014's minimal Grappler-only set)`);
   return featMap;
 }
 
