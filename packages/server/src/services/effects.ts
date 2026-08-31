@@ -116,7 +116,14 @@ export interface EffectMutationResult {
   replacedEffect: { effect: ActiveEffectRow; effectDefinitionName: string } | null;
 }
 
-interface InsertActiveEffectParams {
+// Exported for services/weaponMastery.ts (docs/roadmap/dnd-2024-gap-analysis.md
+// P1-6) — Sap/Vex/Slowed effects are written by a PLAYER-authorized action
+// (the attacking character's controller resolving their own attack's
+// mastery trigger), not the DM-only path applyCharacterEffect/
+// applyMonsterInstanceEffect enforce via requireDm. Reusing this one
+// transactional writer (replace-on-concentration, encounter-sync bump, and
+// all) avoids duplicating that logic under a different authorization rule.
+export interface InsertActiveEffectParams {
   effectDefinitionId: string;
   characterId: string | null;
   monsterInstanceId: string | null;
@@ -162,7 +169,7 @@ interface InsertActiveEffectParams {
  * committed DB state (same discipline as addParticipant/removeParticipant
  * in services/encounters.ts).
  */
-async function insertActiveEffect(pool: Pool, params: InsertActiveEffectParams): Promise<EffectMutationResult> {
+export async function insertActiveEffect(pool: Pool, params: InsertActiveEffectParams): Promise<EffectMutationResult> {
   const definition = await fetchEffectDefinitionOrThrow(pool, params.effectDefinitionId);
   const durationType = params.durationType ?? definition.default_duration_type;
   const durationValue = params.durationValue !== undefined ? params.durationValue : definition.default_duration_value;

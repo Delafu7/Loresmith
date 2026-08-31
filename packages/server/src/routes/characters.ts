@@ -11,6 +11,7 @@ import {
   replaceClassesSchema,
   replaceSavingThrowProficienciesSchema,
   replaceSkillProficienciesSchema,
+  spendHitDiceSchema,
   stabilizeCharacterSchema,
   updateArmorClassModeSchema,
   updateCharacterSchema,
@@ -23,12 +24,14 @@ import { applyTargetEffectSchema } from '../schemas/effects.js';
 import { resourceAmountSchema } from '../schemas/resources.js';
 import { updateCharacterCurrencySchema } from '../schemas/characterCurrency.js';
 import { applyDamageSchema } from '../schemas/damage.js';
+import { setCharacterWeaponMasteriesSchema, weaponMasteryTriggerSchema } from '../schemas/weaponMastery.js';
 import * as charactersService from '../services/characters.js';
 import * as characterControlService from '../services/characterControl.js';
 import * as characterItemsService from '../services/characterItems.js';
 import * as characterAttacksService from '../services/characterAttacks.js';
 import * as characterSpellsService from '../services/characterSpells.js';
 import * as characterFeatsService from '../services/characterFeats.js';
+import * as weaponMasteryService from '../services/weaponMastery.js';
 import * as effectsService from '../services/effects.js';
 import * as resourcePoolsService from '../services/resourcePools.js';
 import * as characterCurrencyService from '../services/characterCurrency.js';
@@ -220,6 +223,32 @@ charactersRouter.patch('/:id/hp', async (req, res) => {
     ),
   );
   res.json({ character });
+});
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-8 — sibling to PATCH .../hp, same
+// broadcast shape, but the heal amount is server-rolled (services/
+// characters.ts's spendHitDice) rather than caller-supplied.
+charactersRouter.post('/:id/spend-hit-dice', async (req, res) => {
+  const input = spendHitDiceSchema.parse(req.body);
+  const result = await charactersService.spendHitDice(pool, req.user!.id, (req.params.id as string), input);
+  const io = getIo(req.app);
+  await Promise.all(
+    result.encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: sync.participant_id,
+        characterId: (req.params.id as string),
+        monsterInstanceId: null,
+        hpCurrent: result.character.hp_current as number,
+        hpMax: result.character.hp_max as number,
+        hpTemp: result.character.hp_temp as number,
+        delta: result.totalHealed,
+      }),
+    ),
+  );
+  res.status(201).json(result);
 });
 
 // REFACTOR-PLAN.md §6: sibling to PATCH .../hp — rolls the damage dice
@@ -443,6 +472,31 @@ charactersRouter.patch('/:id/attacks/:attackId', async (req, res) => {
 charactersRouter.delete('/:id/attacks/:attackId', async (req, res) => {
   await characterAttacksService.removeCharacterAttack(pool, req.user!.id, (req.params.id as string), (req.params.attackId as string));
   res.status(204).send();
+});
+
+// ---- Weapon Mastery (docs/roadmap/dnd-2024-gap-analysis.md P1-6) ----
+
+charactersRouter.get('/:id/weapon-masteries', async (req, res) => {
+  const result = await weaponMasteryService.listCharacterWeaponMasteries(pool, req.user!.id, (req.params.id as string));
+  res.json(result);
+});
+
+charactersRouter.put('/:id/weapon-masteries', async (req, res) => {
+  const input = setCharacterWeaponMasteriesSchema.parse(req.body);
+  const result = await weaponMasteryService.setCharacterWeaponMasteries(pool, req.user!.id, (req.params.id as string), input);
+  res.json(result);
+});
+
+charactersRouter.post('/:id/weapon-mastery-trigger', async (req, res) => {
+  const input = weaponMasteryTriggerSchema.parse(req.body);
+  const result = await weaponMasteryService.resolveWeaponMasteryTrigger(pool, req.user!.id, (req.params.id as string), input);
+  if (result.applied && result.effect) {
+    const io = getIo(req.app);
+    for (const sync of result.effect.encounterSyncs) {
+      await broadcastEffectApplied(io, sync, result.effect.effect, result.effect.effectDefinitionName);
+    }
+  }
+  res.status(result.applied ? 201 : 200).json(result);
 });
 
 charactersRouter.get('/:id/items', async (req, res) => {

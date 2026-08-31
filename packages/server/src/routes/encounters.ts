@@ -15,6 +15,7 @@ import {
   setEncounterModeSchema,
   setInitiativeSchema,
   setMapLightingSchema,
+  setParticipantCoverSchema,
   setParticipantFactionSchema,
   setParticipantHpVisibilitySchema,
   setParticipantPositionSchema,
@@ -22,6 +23,7 @@ import {
   setParticipantVisionSchema,
   spendLegendaryActionSchema,
   spawnParticipantsSchema,
+  startCombatSchema,
   transitionDispositionSchema,
   updateEncounterSchema,
   upsertCellOverrideSchema,
@@ -237,7 +239,10 @@ encountersRouter.post('/:id/end', requireEncounterDm, async (req, res) => {
 // reconciling three partial patches for something that's really one state
 // transition.
 encountersRouter.post('/:id/start-combat', requireEncounterDm, async (req, res) => {
-  const { encounter, participants } = await encountersService.startCombat(pool, (req.params.id as string));
+  const input = startCombatSchema.parse(req.body ?? {});
+  const { encounter, participants } = await encountersService.startCombat(
+    pool, (req.params.id as string), input.surprisedParticipantIds,
+  );
   await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
   res.json({ encounter, participants });
 });
@@ -615,6 +620,18 @@ encountersRouter.patch('/:id/participants/visibility/batch', requireEncounterDm,
 encountersRouter.patch('/:id/participants/:pid/hp-visibility', requireEncounterDm, async (req, res) => {
   const input = setParticipantHpVisibilitySchema.parse(req.body);
   const { encounter, participant } = await encountersService.setParticipantHpVisibility(
+    pool, (req.params.id as string), (req.params.pid as string), input,
+  );
+  await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
+  res.json({ participant });
+});
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-10 — DM-only, same resync shape
+// as /hp-visibility just above (changes armor_class_effective/cover_
+// blocks_targeting in the snapshot every viewer reads).
+encountersRouter.patch('/:id/participants/:pid/cover', requireEncounterDm, async (req, res) => {
+  const input = setParticipantCoverSchema.parse(req.body);
+  const { encounter, participant } = await encountersService.setParticipantCover(
     pool, (req.params.id as string), (req.params.pid as string), input,
   );
   await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);

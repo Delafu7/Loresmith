@@ -22,19 +22,33 @@ export async function listCharacterAttacks(pool: Pool, actorId: string, characte
   return result.rows;
 }
 
+// docs/roadmap/dnd-2024-gap-analysis.md P1-6 — itemId, when provided, must
+// reference a real catalog weapon (not e.g. a potion or a suit of armor).
+// Doesn't require item_type = 'weapon' to also carry a mastery property —
+// most seeded items don't, and that's fine (attackBonus/damageDice already
+// work with no mastery at all); this just rejects an obviously-wrong link.
+async function assertItemIsWeapon(pool: Pool, itemId: string): Promise<void> {
+  const result = await pool.query<{ item_type: string }>(`SELECT item_type FROM items WHERE id = $1`, [itemId]);
+  const row = result.rows[0];
+  if (!row) throw new AppError('VALIDATION_ERROR', 'itemId does not reference an existing item');
+  if (row.item_type !== 'weapon') throw new AppError('VALIDATION_ERROR', 'itemId must reference a weapon item');
+}
+
 export async function addCharacterAttack(pool: Pool, actorId: string, characterId: string, input: CreateCharacterAttackInput) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);
+  if (input.itemId) await assertItemIsWeapon(pool, input.itemId);
 
   try {
     const result = await pool.query(
       `INSERT INTO character_attacks
-         (character_id, name, attack_bonus, damage_dice, damage_type, save_dc, save_ability_index, half_on_save, notes, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         (character_id, name, attack_bonus, damage_dice, damage_type, save_dc, save_ability_index, half_on_save, notes, sort_order, item_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
       [
         characterId, input.name, input.attackBonus ?? null, input.damageDice ?? null, input.damageType ?? null,
         input.saveDc ?? null, input.saveAbilityIndex ?? null, input.halfOnSave, input.notes ?? null, input.sortOrder,
+        input.itemId ?? null,
       ],
     );
     return result.rows[0];
@@ -56,6 +70,7 @@ const UPDATABLE_COLUMNS: Record<string, string> = {
   halfOnSave: 'half_on_save',
   notes: 'notes',
   sortOrder: 'sort_order',
+  itemId: 'item_id',
 };
 
 export async function updateCharacterAttack(
@@ -67,6 +82,7 @@ export async function updateCharacterAttack(
 ) {
   const character = await fetchCharacterOrThrow(pool, characterId);
   await authorizeCharacterMutation(pool, actorId, character);
+  if (input.itemId) await assertItemIsWeapon(pool, input.itemId);
 
   const sets: string[] = [];
   const values: unknown[] = [];

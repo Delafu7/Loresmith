@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm, type CampaignRole } from './authz.js';
 import { authorizeAttackerOnTurn } from './encounters.js';
@@ -344,6 +344,25 @@ export async function applyMonsterInstanceHpDelta(
   }
 }
 
+// docs/roadmap/dnd-2024-gap-analysis.md P1-11 (CB-02) — Rage-style
+// TEMPORARY resistance, monster-instance side. See services/characters.ts's
+// identical fetchActiveGrantedResistances for the full rationale (a
+// monster instance can carry a temporary resistance too — e.g. a
+// Resistance-granting buff spell cast on it — not just PC Rage).
+// Self-contained per service file rather than a shared import, same
+// precedent that sibling cites.
+async function fetchActiveGrantedResistances(client: PoolClient, monsterInstanceId: string): Promise<string[]> {
+  const result = await client.query<{ grants_resistance: string[] }>(
+    `SELECT ed.grants_resistance FROM active_effects ae
+     JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
+     WHERE ae.monster_instance_id = $1 AND ae.removed_at IS NULL`,
+    [monsterInstanceId],
+  );
+  const union = new Set<string>();
+  for (const row of result.rows) for (const type of row.grants_resistance) union.add(type);
+  return [...union];
+}
+
 // REFACTOR-PLAN.md §6 / docs/rules/attacks-and-damage.md §2.3 — a sibling to
 // applyMonsterInstanceHpDelta above (see services/characters.ts's
 // applyDamage for the fuller rationale: this is the one that reads the
@@ -457,10 +476,15 @@ export async function applyMonsterInstanceDamage(
     const rolls = Array.from({ length: diceCount }, () => rollDie(input.diceSides));
     const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
 
+    // P1-11 — Rage-style TEMPORARY resistance (e.g. a buff spell on this
+    // monster instance), read fresh every application, unioned with the
+    // permanent columns — see fetchActiveGrantedResistances's own comment.
+    const grantedResistances = await fetchActiveGrantedResistances(client, instanceId);
+
     const applied = computeAppliedDamage(
       { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical },
       {
-        resistances: row.damage_resistances ?? [],
+        resistances: [...new Set([...(row.damage_resistances ?? []), ...grantedResistances])],
         vulnerabilities: row.damage_vulnerabilities ?? [],
         immunities: row.damage_immunities ?? [],
       },

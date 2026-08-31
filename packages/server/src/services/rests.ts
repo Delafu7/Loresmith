@@ -72,7 +72,12 @@ function mergeProgressionByDieType(progression: HitDieTypeProgression[]): HitDie
   return [...byType.entries()].map(([dieType, maxForType]) => ({ dieType, maxForType }));
 }
 
-async function fetchHitDieProgression(db: Pool | PoolClient, characterId: string): Promise<HitDieTypeProgression[]> {
+// Exported for services/characters.ts's spendHitDice (P1-8) — the player-
+// facing "spend a hit die during a short rest" action needs the same
+// per-die-type max a long rest's restore does, to validate both `dieType`
+// (must be one this character actually has) and that a spend never needs to
+// exceed what character_classes actually grants.
+export async function fetchHitDieProgression(db: Pool | PoolClient, characterId: string): Promise<HitDieTypeProgression[]> {
   const result = await db.query<{ level: number; hit_die: number }>(
     `SELECT cc.level, c.hit_die FROM character_classes cc JOIN classes c ON c.id = cc.class_id WHERE cc.character_id = $1`,
     [characterId],

@@ -17,6 +17,12 @@ const sharedCharacterAttackShape = {
   halfOnSave: z.boolean().optional(),
   notes: z.string().max(2000).optional().nullable(),
   sortOrder: z.number().int().optional(),
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-6 — link to the catalog weapon
+  // this attack represents, so its Weapon Mastery property (items.properties
+  // .mastery) can be resolved server-side. Optional/nullable: spell attacks,
+  // monster-flavor entries, and homebrew rows with no catalog weapon behind
+  // them keep this null, same as every other optional field here.
+  itemId: z.string().uuid().optional().nullable(),
 };
 
 export const createCharacterAttackSchema = z

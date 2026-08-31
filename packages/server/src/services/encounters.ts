@@ -32,6 +32,7 @@ import type {
   CreateEncounterInput,
   SetEncounterModeInput,
   SetInitiativeInput,
+  SetParticipantCoverInput,
   SetParticipantFactionInput,
   SetParticipantHpVisibilityInput,
   SetParticipantPositionInput,
@@ -109,6 +110,8 @@ interface ParticipantRow {
   vision_enabled: boolean;
   vision_radius_ft: number;
   darkvision_radius_ft: number;
+  is_surprised: boolean;
+  cover: CoverLevel;
   [key: string]: unknown;
 }
 
@@ -764,7 +767,13 @@ async function computeValidatedMoveCost(
   if (participant.pos_x === null || participant.pos_y === null) return null; // initial placement
   if (encounter.mode === 'exploration') return null; // free roam, DM or player
   if (encounter.status !== 'active') return null;
-  if (actorRole !== 'dm') requireCurrentTurn(encounter, participant);
+  if (actorRole !== 'dm') {
+    requireCurrentTurn(encounter, participant);
+    // P1-9 — DM override already exempts the DM above; a surprised player
+    // can't move their own token on their surprised first turn (2014 only).
+    const srdEdition = await fetchCampaignEdition(client, encounter.campaign_id);
+    requireNotSurprised(srdEdition, participant, 'move');
+  }
 
   const ctx = await loadMovementContext(client, encounter, participant);
   if (!ctx) return null;
@@ -1071,6 +1080,43 @@ export async function setParticipantHpVisibility(
   }
 }
 
+// P1-10 — DM-only toggle for a participant's current Cover degree, same
+// shape as setParticipantHpVisibility just above (this genuinely changes
+// what getEncounterCombatSnapshot's armor_class_effective/
+// cover_blocks_targeting report, not just a display detail, so the route
+// resyncs both roles the same way).
+export async function setParticipantCover(
+  pool: Pool,
+  encounterId: string,
+  participantId: string,
+  input: SetParticipantCoverInput,
+): Promise<ParticipantMutationResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET cover = $1 WHERE id = $2 AND encounter_id = $3 RETURNING *`,
+      [input.cover, participantId, encounterId],
+    );
+    const participant = updated.rows[0];
+    if (!participant) throw notFound('Participant');
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participant };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Phase 2 "legendary actions per-round counters" — DM-only (monsters have
 // no player controller to defer to, unlike action economy below). Spends
 // against the live legendary_actions_remaining counter advanceTurn resets
@@ -1216,9 +1262,17 @@ export async function applyActionEconomy(
     // Reactions are the one legitimate off-turn spend (an opportunity attack,
     // a readied response) — every other spend (action, bonus action, object
     // interaction, or bare movement) must happen on the spender's own turn.
+    const encounter = await fetchEncounterById(client, encounterId);
+    const srdEdition = await fetchCampaignEdition(client, encounter.campaign_id);
     if (input.spend !== 'reaction') {
-      const encounter = await fetchEncounterById(client, encounterId);
       requireCurrentTurn(encounter, current);
+      // P1-9 — surprised on their own first turn (2014 only): can't spend
+      // an action/bonus action/object interaction, or add movement, yet.
+      requireNotSurprised(srdEdition, current, 'act');
+    } else {
+      // P1-9 — 2014: can't take a reaction at all until this participant's
+      // own first turn ends, regardless of whose turn it is right now.
+      requireNotSurprised(srdEdition, current, 'react');
     }
 
     const sets: string[] = [];
@@ -1433,6 +1487,19 @@ export interface CombatSnapshotParticipant {
   // (no call site needs a player to learn who owns what beyond what faction
   // already implies).
   character_owner_user_id: string | null;
+  // P1-10 — DM-set Cover degree (only the best applicable degree, per this
+  // project's own verified rules reference — see coverAcBonus/
+  // coverBlocksTargeting above). armor_class_effective/cover_blocks_
+  // targeting are DERIVED here (computed in JS after the query, not
+  // stored) so every consumer of this snapshot sees the same suggest-a-
+  // value figures without recomputing them — same "never server-enforced,
+  // suggest a value" precedent as diceEngine.ts's computeSaveDc. The same
+  // cover_ac_bonus number is also the correct Dex-save bonus (this
+  // project's own source confirms both use the identical value).
+  cover: CoverLevel;
+  armor_class_effective: number;
+  cover_ac_bonus: number;
+  cover_blocks_targeting: boolean;
 }
 
 export interface CombatSnapshot {
@@ -1461,7 +1528,8 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             COALESCE(ca_char.file_url, ca_monster.file_url, m.image_url) AS image_url,
             cp.visible_to_players, cp.hp_visibility, cp.legendary_actions_remaining,
             cp.vision_enabled, cp.vision_radius_ft, cp.darkvision_radius_ft,
-            c.owner_user_id AS character_owner_user_id
+            c.owner_user_id AS character_owner_user_id,
+            cp.cover
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id
      LEFT JOIN campaign_assets ca_char ON ca_char.id = c.portrait_asset_id
@@ -1472,7 +1540,18 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
      ORDER BY cp.turn_order ASC`,
     [encounterId],
   );
-  return { encounter, participants: result.rows };
+  // P1-10 — derive armor_class_effective/cover_ac_bonus/cover_blocks_
+  // targeting here, once, rather than at every consumer.
+  const participants = result.rows.map((row) => {
+    const coverAcBonusValue = coverAcBonus(row.cover);
+    return {
+      ...row,
+      cover_ac_bonus: coverAcBonusValue,
+      armor_class_effective: row.armor_class + coverAcBonusValue,
+      cover_blocks_targeting: coverBlocksTargeting(row.cover),
+    };
+  });
+  return { encounter, participants };
 }
 
 export async function createEncounter(pool: Pool, campaignId: string, input: CreateEncounterInput) {
@@ -1742,7 +1821,12 @@ export async function addParticipant(
     // Skipped when the caller supplied an explicit initiativeRoll (DM
     // override) — that participant isn't "unrolled" so there's nothing to do.
     if (input.initiativeRoll === undefined && encounter.mode === 'combat' && encounter.status === 'active') {
-      await rollAndReorderInitiative(client, encounterId, false);
+      // A latecomer joining mid-combat is never surprised by this app's own
+      // action (is_surprised defaults false on insert above) — the edition
+      // lookup here only exists to satisfy rollAndReorderInitiative's
+      // signature, it can't actually change this roll's outcome.
+      const srdEdition = await fetchCampaignEdition(client, encounter.campaign_id);
+      await rollAndReorderInitiative(client, encounterId, false, srdEdition);
       await syncActiveParticipantTurnIndex(client, encounterId);
       const refreshed = await client.query<ParticipantRow>(`SELECT * FROM combat_participants WHERE id = $1`, [participant.id]);
       participant = refreshed.rows[0]!;
@@ -1886,6 +1970,24 @@ export function dexModifier(dexScore: number): number {
   return Math.floor((dexScore - 10) / 2);
 }
 
+export type CoverLevel = 'none' | 'half' | 'three_quarters' | 'total';
+
+// P1-10 — this project's own verified rules reference confirms the SAME
+// bonus applies to both AC and Dex saves (combat.md line 48 / rules-
+// glossary.md line 40), so this is one number, not two identically-valued
+// fields. 'total' returns 0 here deliberately — it isn't a "+X" bonus at
+// all, it's an absolute can't-be-targeted block, which coverBlocksTargeting
+// below is the actual signal for.
+export function coverAcBonus(cover: CoverLevel): number {
+  if (cover === 'half') return 2;
+  if (cover === 'three_quarters') return 5;
+  return 0;
+}
+
+export function coverBlocksTargeting(cover: CoverLevel): boolean {
+  return cover === 'total';
+}
+
 // Round-robin turn advancement: given every remaining participant's
 // turn_order (ascending, need not be dense/contiguous) and whichever
 // turn_order value is currently active, finds the next one strictly greater
@@ -1928,6 +2030,41 @@ export function requireCurrentTurn(
   }
 }
 
+async function fetchCampaignEdition(client: Pool | PoolClient, campaignId: string): Promise<'2014' | '2024'> {
+  const result = await client.query<{ srd_edition: '2014' | '2024' }>(
+    `SELECT srd_edition FROM campaigns WHERE id = $1`,
+    [campaignId],
+  );
+  const edition = result.rows[0]?.srd_edition;
+  if (!edition) throw notFound('Campaign');
+  return edition;
+}
+
+// P1-9 — 2014's Surprise lockout: "you can't move or take an action on
+// your first turn of combat, and you can't take a reaction until that turn
+// ends" (2014 SRD). 2024 has no such rule at all (see
+// rollAndReorderInitiative's own comment for where 2024's Surprise effect
+// lives instead — the Initiative roll, not here), so this is a pure no-op
+// outside srd_edition='2014'.
+//
+// is_surprised is cleared the moment a participant's own first turn ends
+// (advanceTurn) and never set again afterward, so "is_surprised still true"
+// by itself already means "this participant's first turn hasn't fully
+// elapsed yet" — no separate first-turn marker is needed. Combined with
+// requireCurrentTurn (which the 'move'/'act' callers already run first),
+// that's exactly the 2014 rule's own two-part timing: blocked on their own
+// first turn (move/act), blocked from the start of combat until that turn
+// ends regardless of whose turn it is (react).
+export function requireNotSurprised(
+  srdEdition: '2014' | '2024',
+  participant: Pick<ParticipantRow, 'is_surprised'>,
+  action: 'move' | 'act' | 'react',
+): void {
+  if (srdEdition !== '2014' || !participant.is_surprised) return;
+  const verb = action === 'react' ? 'react' : action === 'move' ? 'move' : 'take an action';
+  throw new AppError('CONFLICT', `This participant is surprised and can't ${verb} yet`, { reason: 'SURPRISED' });
+}
+
 // Shared roll-and-resequence core, used by both the standalone /roll-initiative
 // route (rollInitiative below) and startCombat: rolls a d20+dex-mod for every
 // participant that needs one (force=true re-rolls everyone; force=false only
@@ -1935,7 +2072,19 @@ export function requireCurrentTurn(
 // turn_order to match the resulting initiative ranking. Throws CONFLICT if
 // there's nobody to roll for. Runs on an already-open transaction — callers
 // own BEGIN/COMMIT/ROLLBACK.
-async function rollAndReorderInitiative(client: PoolClient, encounterId: string, force: boolean): Promise<void> {
+//
+// P1-9 — `srdEdition` decides whether a surprised participant's roll is
+// affected at all: per this project's own verified 2024 rules reference,
+// the 2024 PHB's *sole* mechanical effect of Surprise is Disadvantage on
+// this exact roll (2d20, keep the lower); 2014 has no such effect on
+// Initiative (its Surprise mechanic is the turn-lockout enforced elsewhere,
+// in applyActionEconomy).
+async function rollAndReorderInitiative(
+  client: PoolClient,
+  encounterId: string,
+  force: boolean,
+  srdEdition: '2014' | '2024',
+): Promise<void> {
   // Dex modifiers for every participant, sourced from characters.dex or
   // (via the monster catalog) monsters.dex for monster instances.
   const dexRes = await client.query<{ id: string; dex: number }>(
@@ -1958,7 +2107,9 @@ async function rollAndReorderInitiative(client: PoolClient, encounterId: string,
     const needsRoll = force || participant.initiative_roll === UNROLLED_INITIATIVE;
     if (!needsRoll) continue;
     const mod = dexModifier(dexById.get(participant.id) ?? 10);
-    const d20 = 1 + Math.floor(Math.random() * 20);
+    const rollD20 = () => 1 + Math.floor(Math.random() * 20);
+    const surprisedWithDisadvantage = srdEdition === '2024' && participant.is_surprised;
+    const d20 = surprisedWithDisadvantage ? Math.min(rollD20(), rollD20()) : rollD20();
     await client.query(
       `UPDATE combat_participants SET initiative_roll = $1, initiative_tiebreak = $2 WHERE id = $3`,
       [d20 + mod, mod, participant.id],
@@ -2012,7 +2163,10 @@ export async function rollInitiative(pool: Pool, encounterId: string, force: boo
   try {
     await client.query('BEGIN');
 
-    await rollAndReorderInitiative(client, encounterId, force);
+    const encounterForEdition = await fetchEncounterById(client, encounterId);
+    const srdEdition = await fetchCampaignEdition(client, encounterForEdition.campaign_id);
+
+    await rollAndReorderInitiative(client, encounterId, force, srdEdition);
     await syncActiveParticipantTurnIndex(client, encounterId);
 
     const encounterRes = await client.query<EncounterRow>(
@@ -2041,7 +2195,17 @@ export async function rollInitiative(pool: Pool, encounterId: string, force: boo
 // two-click "toggle mode, then separately roll initiative" flow. Rejects
 // with the same zero-participants CONFLICT rollAndReorderInitiative already
 // throws (nothing DM-added means nothing to fight with).
-export async function startCombat(pool: Pool, encounterId: string) {
+//
+// P1-9 — `surprisedParticipantIds` is this project's chosen entry point for
+// marking Surprise: this app doesn't automate surprise DETECTION (Stealth
+// vs. passive Perception — a DM call, made with the existing dice-roll
+// tools before clicking this button), and by the time combat starts the DM
+// already knows who's surprised. is_surprised is reset for EVERY
+// participant first (not just set for the named ones) — same "fresh state
+// each time combat (re)starts" rule current_round already follows, so
+// re-starting combat in the same encounter never carries stale surprise
+// from a previous fight.
+export async function startCombat(pool: Pool, encounterId: string, surprisedParticipantIds: string[] = []) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -2053,7 +2217,14 @@ export async function startCombat(pool: Pool, encounterId: string) {
       throw new AppError('CONFLICT', `Cannot start combat on an encounter in status '${encounter.status}' (must be 'active')`);
     }
 
-    await rollAndReorderInitiative(client, encounterId, false);
+    const srdEdition = await fetchCampaignEdition(client, encounter.campaign_id);
+
+    await client.query(
+      `UPDATE combat_participants SET is_surprised = (id = ANY($2::uuid[])) WHERE encounter_id = $1`,
+      [encounterId, surprisedParticipantIds],
+    );
+
+    await rollAndReorderInitiative(client, encounterId, false, srdEdition);
 
     const firstRes = await client.query<{ id: string }>(
       `SELECT id FROM combat_participants WHERE encounter_id = $1 ORDER BY turn_order ASC LIMIT 1`,
@@ -2169,6 +2340,20 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
         [encounterId],
       );
     }
+
+    // P1-9 — "you can't take a reaction until that turn ends": clear
+    // is_surprised for whoever's turn is ENDING right now (encounter's
+    // pre-advance current_turn_index, captured above before this UPDATE
+    // overwrites it) — the participant whose turn_order matches it is the
+    // one finishing their turn. A harmless no-op for a participant who
+    // wasn't surprised, and for 2024 (never mechanically re-read after the
+    // Initiative roll, but clearing it is still the semantically correct
+    // "no longer surprised" state once their first turn has passed).
+    await client.query(
+      `UPDATE combat_participants SET is_surprised = false
+       WHERE encounter_id = $1 AND turn_order = $2 AND is_surprised = true`,
+      [encounterId, encounter.current_turn_index],
+    );
 
     // Fresh action economy for whoever's turn is starting. turn_order need
     // not be dense anymore (see computeNextTurn's header comment), so

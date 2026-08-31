@@ -159,6 +159,7 @@ export async function seedCatalog(client: Client): Promise<void> {
   const raceMap = await seedRacesAndSubraces(client);
   const { classMap, subclassMap } = await seedClassesAndSubclasses(client, abilityMap);
   await seedClassLevels(client, classMap);
+  await seedWeaponMasteryCounts(client, classMap);
   await seedClassFeatures(client, classMap, subclassMap);
   const featMap = await seedFeats(client);
   await seedBackgrounds(client, skillMap, featMap);
@@ -1033,16 +1034,25 @@ async function seedClassesAndSubclasses(
       const primaryAbilityId = primaryAbilityIndex ? abilityMap.get(primaryAbilityIndex) ?? null : null;
       const savingThrowIds = (r.saving_throws ?? []).map((s: any) => abilityMap.get(s.index)).filter(Boolean);
       const spellcastingType = SPELLCASTING_TYPE[r.index] ?? 'none';
+      // P1-7 (SP-03) — distinct from primary_ability_id (the multiclass
+      // PREREQUISITE ability, e.g. Paladin's is STR-or-CHA): this is the
+      // ability that class's Spellcasting feature actually keys off (e.g.
+      // Paladin: CHA alone). Straight from this class's own SRD data, same
+      // source as spellcastingType above. Absent (null) for every
+      // non-caster class.
+      const spellcastingAbilityIndex = r.spellcasting?.spellcasting_ability?.index;
+      const spellcastingAbilityId = spellcastingAbilityIndex ? abilityMap.get(spellcastingAbilityIndex) ?? null : null;
 
       const res = await client.query(
-        `INSERT INTO classes (index_key, name, edition_scope, hit_die, primary_ability_id, spellcasting_type, saving_throw_proficiency_ids, source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO classes (index_key, name, edition_scope, hit_die, primary_ability_id, spellcasting_type, spellcasting_ability_id, saving_throw_proficiency_ids, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (index_key, edition_scope) DO UPDATE SET
            name = EXCLUDED.name, hit_die = EXCLUDED.hit_die, primary_ability_id = EXCLUDED.primary_ability_id,
-           spellcasting_type = EXCLUDED.spellcasting_type, saving_throw_proficiency_ids = EXCLUDED.saving_throw_proficiency_ids
+           spellcasting_type = EXCLUDED.spellcasting_type, spellcasting_ability_id = EXCLUDED.spellcasting_ability_id,
+           saving_throw_proficiency_ids = EXCLUDED.saving_throw_proficiency_ids
          RETURNING id`,
         [
-          r.index, r.name, edition, r.hit_die, primaryAbilityId, spellcastingType, savingThrowIds,
+          r.index, r.name, edition, r.hit_die, primaryAbilityId, spellcastingType, spellcastingAbilityId, savingThrowIds,
           edition === '2014' ? 'SRD 5.1 (2014 rules)' : 'SRD 5.2 (2024 rules)',
         ],
       );
@@ -1121,6 +1131,65 @@ async function seedClassLevels(client: Client, classMap: Map<string, number>): P
     }
   }
   console.log(`  class_levels: ${count}`);
+}
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-6 — `class_levels.weapon_mastery_count`:
+// how many kinds of weapon a character can use the mastery property of,
+// per class per level. 2024-only mechanic (2014 has no Weapon Mastery), and
+// only 5 of the 12 classes ever get the feature at all — Barbarian, Fighter,
+// Paladin, Ranger, Rogue (the other 7 classes' rows are left NULL, which is
+// the mechanically correct answer for them, not a placeholder for missing
+// data).
+//
+// PROVENANCE, split by class (flagged per this project's own established
+// "don't blur a source's provenance" convention — see the Aasimar/feat/
+// subclass supplements above):
+//   - Barbarian, Fighter: sourced directly from this repo's own
+//     `docs/players-handbook-2024/Chapter 3- Character Classes/
+//     chapter3-characterClasses.md` (Barbarian Features table lines 510-513
+//     + Weapon Mastery feature text 563-567; Fighter Features table
+//     510-513/2517-2520 + feature text 2554-2558) — the two classes this
+//     project's own PHB doc set actually covers for this feature.
+//   - Paladin, Ranger, Rogue: this project's PHB doc set has ZERO source
+//     text for these 3 classes' Weapon Mastery feature (confirmed absent,
+//     same gap noted by P1-5 for their subclasses). Scoped with the user to
+//     include them anyway rather than leave 3 more classes at "not
+//     automatable" — sourced from general knowledge and cross-checked
+//     against a live web search (2024-08-30) corroborating multiple
+//     independent secondary sources (dndbeyond.com/posts/1742, the D&D
+//     Beyond forums, pages.roll20.net/dnd/2024-weapon-mastery): all three
+//     grant exactly 2 weapon kinds at level 1, STATIC — unlike Barbarian/
+//     Fighter, none of the three ever increases this count by leveling up.
+//     Confidence: moderate, NOT verified against the physical/PDF book the
+//     way every other catalog entry in this file is. If this project's own
+//     PHB doc set ever gains Paladin/Ranger/Rogue chapters, re-verify
+//     against that text and correct this comment/table.
+const WEAPON_MASTERY_THRESHOLDS: Record<string, Array<[minLevel: number, count: number]>> = {
+  barbarian: [[1, 2], [4, 3], [10, 4]],
+  fighter: [[1, 3], [4, 4], [10, 5], [16, 6]],
+  paladin: [[1, 2]],
+  ranger: [[1, 2]],
+  rogue: [[1, 2]],
+};
+
+async function seedWeaponMasteryCounts(client: Client, classMap: Map<string, number>): Promise<void> {
+  let count = 0;
+  for (const [classIndex, thresholds] of Object.entries(WEAPON_MASTERY_THRESHOLDS)) {
+    const classId = classMap.get(`2024:${classIndex}`);
+    if (!classId) throw new Error(`Unknown 2024 class '${classIndex}' for weapon mastery counts`);
+    for (let level = 1; level <= 20; level++) {
+      let masteryCount = 0;
+      for (const [minLevel, thresholdCount] of thresholds) {
+        if (level >= minLevel) masteryCount = thresholdCount;
+      }
+      const result = await client.query(
+        `UPDATE class_levels SET weapon_mastery_count = $3 WHERE class_id = $1 AND level = $2`,
+        [classId, level, masteryCount],
+      );
+      count += result.rowCount ?? 0;
+    }
+  }
+  console.log(`  class_levels.weapon_mastery_count: ${count} rows updated`);
 }
 
 async function seedClassFeatures(
@@ -2028,19 +2097,24 @@ interface ItemSeed {
 
 // Phase 2 "weapon mastery (2024)" — `properties.mastery` (a
 // weapon_mastery_properties.index_key) added to all 5 seeded weapons below.
-// UNLIKE every other field in this file, this mapping is NOT sourced from
-// the dnd5e-srd skill's JSON data (which has the 8 mastery properties
-// themselves but no per-weapon assignment table) — it's transcribed from
-// this assistant's training-data recollection of the 2024 PHB's weapon
-// table and has NOT been checked against the physical/PDF book. Verify
-// dagger/shortsword/longsword/mace/shortbow's mastery against the real
-// table before relying on it for anything more than "probably right."
+// UNLIKE every other field in this file, this mapping was NOT originally
+// sourced from the dnd5e-srd skill's JSON data (which has the 8 mastery
+// properties themselves but no per-weapon assignment table) — it was
+// transcribed from training-data recollection and had NOT been checked
+// against the real book.
+//
+// docs/roadmap/dnd-2024-gap-analysis.md P1-6 — now cross-checked against
+// the verified weapon->mastery table in `.claude/skills/dnd-2024-rules/
+// references/equipment-and-weapon-mastery.md` (sourced from this project's
+// own docs/players-handbook-2024/Chapter 6, lines 241-281). dagger=Nick,
+// shortsword=Vex, longsword=Sap, mace=Sap all matched; shortbow was wrong
+// (seeded as 'slow', verified table says 'vex') — fixed below.
 const ITEMS: ItemSeed[] = [
   { slug: 'dagger', name: 'Dagger', itemType: 'weapon', rarity: 'mundane', weightLb: 1, costCp: 200, damageDice: '1d4', damageType: 'piercing', properties: { finesse: true, light: true, thrown: { normal: 20, long: 60 }, mastery: 'nick' }, description: 'A simple, easily concealed blade.' },
   { slug: 'shortsword', name: 'Shortsword', itemType: 'weapon', rarity: 'mundane', weightLb: 2, costCp: 1000, damageDice: '1d6', damageType: 'piercing', properties: { finesse: true, light: true, mastery: 'vex' }, description: 'A light, quick martial melee weapon.' },
   { slug: 'longsword', name: 'Longsword', itemType: 'weapon', rarity: 'mundane', weightLb: 3, costCp: 1500, damageDice: '1d8', damageType: 'slashing', properties: { versatile: '1d10', mastery: 'sap' }, description: 'A versatile martial melee weapon; can be wielded with one or two hands.' },
   { slug: 'mace', name: 'Mace', itemType: 'weapon', rarity: 'mundane', weightLb: 4, costCp: 500, damageDice: '1d6', damageType: 'bludgeoning', properties: { mastery: 'sap' }, description: 'A simple bludgeoning weapon favored by clerics who forgo edged weapons.' },
-  { slug: 'shortbow', name: 'Shortbow', itemType: 'weapon', rarity: 'mundane', weightLb: 2, costCp: 2500, damageDice: '1d6', damageType: 'piercing', properties: { ammunition: { normal: 80, long: 320 }, two_handed: true, mastery: 'slow' }, description: 'A simple ranged weapon requiring arrows.' },
+  { slug: 'shortbow', name: 'Shortbow', itemType: 'weapon', rarity: 'mundane', weightLb: 2, costCp: 2500, damageDice: '1d6', damageType: 'piercing', properties: { ammunition: { normal: 80, long: 320 }, two_handed: true, mastery: 'vex' }, description: 'A simple ranged weapon requiring arrows.' },
   // armorClassBase is set on ALL FIVE rows below (not just Shield) —
   // computeArmorClass (services/armorClass.ts) reads armor_class_base
   // unconditionally, so light/medium armor needs a real numeric base too,
@@ -2227,6 +2301,11 @@ const CONDITION_EFFECT_DURATIONS: Record<string, { durationType: string; duratio
 const SPELL_EFFECT_DEFINITIONS: Array<{
   name: string; description: string; durationType: string; durationValue: number | null;
   concentration: boolean; stackingRule: 'none' | 'stack' | 'refresh';
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-11 — see grantsResistance's own
+  // Raging entry below for the full rationale. Omitted (undefined) for
+  // every template that doesn't grant a temporary resistance; the seed
+  // function defaults it to '{}' either way.
+  grantsResistance?: string[];
 }> = [
   { name: 'Bless', description: 'Target adds 1d4 to attack rolls and saving throws.', durationType: 'minutes', durationValue: 1, concentration: true, stackingRule: 'refresh' },
   { name: 'Hex', description: 'Extra 1d6 necrotic damage on hit, plus disadvantage on ability checks with a chosen ability.', durationType: 'hours', durationValue: 1, concentration: true, stackingRule: 'refresh' },
@@ -2240,6 +2319,61 @@ const SPELL_EFFECT_DEFINITIONS: Array<{
   // removes it manually via the existing effect-remove flow, same as every
   // other until_removed condition without a mechanical end trigger.
   { name: 'Hidden', description: "Advantage on this creature's attacks against creatures that can't see it; disadvantage on their attacks against it. Ends when it's seen or heard, or when it attacks.", durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'refresh' },
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-6 — Weapon Mastery templates
+  // for the 3 properties that create real lingering state (Sap/Vex/Slow).
+  // The other 5 properties (Cleave/Graze/Nick/Push/Topple) don't get a
+  // template here: Cleave/Graze/Push are "you may immediately do X" and
+  // resolve through existing endpoints (a second applyDamage call, a normal
+  // token move) with no state to track; Topple's result IS the existing
+  // Prone condition (applied via the effects endpoints exactly as any other
+  // Prone source would be), not a new template. See services/
+  // weaponMastery.ts for how these three are actually triggered — deliberately
+  // "track state, don't auto-consult it" per this project's own established
+  // philosophy (movement.ts/rests.ts): the advantage/disadvantage/speed
+  // reduction these grant is NOT read back into rollDice or movement
+  // calculations automatically, only recorded as a visible, DM/player-
+  // adjudicated active_effects row. `until_removed` (not a round countdown)
+  // for all three, matching Dodge/Hidden above — none of PHB's "before the
+  // start/end of your next turn" windows map onto this app's existing
+  // rounds-countdown duration type without a turn-boundary trigger this
+  // phase doesn't build (same gap already flagged for Dodge/Hidden).
+  {
+    name: 'Sap (Weapon Mastery)',
+    description: 'Disadvantage on this creature\'s next attack roll, before the start of the attacker\'s next turn.',
+    durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'refresh',
+  },
+  {
+    name: 'Vex (Weapon Mastery)',
+    description: 'Advantage on this creature\'s next attack roll against the target named in this effect\'s notes, before the end of its next turn.',
+    durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'refresh',
+  },
+  {
+    name: 'Slowed (Weapon Mastery)',
+    description: 'Speed reduced by 3 m (10 ft) until the start of the attacker\'s next turn. Multiple Slow hits before then don\'t reduce Speed further.',
+    durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'none',
+  },
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-11 (CB-02) — the temporary-
+  // resistance side of Rage: `grantsResistance` here is unioned with a
+  // character's permanent `damage_resistances` at read time (services/
+  // characters.ts's applyDamage / services/monsters.ts's
+  // applyMonsterInstanceDamage), never written into those permanent
+  // columns — exactly the design docs/rules/attacks-and-damage.md §2.4
+  // recommended. Text verbatim from this project's own seeded Barbarian
+  // "Rage" class_features row (2024, "Damage Resistance" sub-heading):
+  // "You have Resistance to Bludgeoning, Piercing, and Slashing damage."
+  // `until_removed` (not a round/minute countdown) matches this app's
+  // existing precedent for every other class-feature-driven toggle
+  // (Dodge/Hidden/the Weapon Mastery templates above) — Rage's real
+  // duration rules (ends after 1 minute of inactivity, or early on
+  // Unconscious/donning Heavy armor) require turn-boundary tracking this
+  // phase doesn't build; the player/DM ends it manually via the existing
+  // effect-remove flow, same "track state, DM adjudicates" treatment.
+  {
+    name: 'Raging',
+    description: 'Resistance to Bludgeoning, Piercing, and Slashing damage while this Rage is active.',
+    durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'none',
+    grantsResistance: ['bludgeoning', 'piercing', 'slashing'],
+  },
 ];
 
 async function seedEffectDefinitions(client: Client): Promise<void> {
@@ -2273,6 +2407,7 @@ async function seedEffectDefinitions(client: Client): Promise<void> {
   }
 
   for (const s of SPELL_EFFECT_DEFINITIONS) {
+    const grantsResistance = s.grantsResistance ?? [];
     const existing = await client.query(
       `SELECT id FROM effect_definitions WHERE name = $1 AND condition_id IS NULL AND is_homebrew = false`,
       [s.name],
@@ -2280,15 +2415,15 @@ async function seedEffectDefinitions(client: Client): Promise<void> {
     if (existing.rows.length > 0) {
       await client.query(
         `UPDATE effect_definitions SET description = $2, default_duration_type = $3, default_duration_value = $4,
-           concentration = $5, stacking_rule = $6 WHERE id = $1`,
-        [existing.rows[0].id, s.description, s.durationType, s.durationValue, s.concentration, s.stackingRule],
+           concentration = $5, stacking_rule = $6, grants_resistance = $7 WHERE id = $1`,
+        [existing.rows[0].id, s.description, s.durationType, s.durationValue, s.concentration, s.stackingRule, grantsResistance],
       );
     } else {
       await client.query(
         `INSERT INTO effect_definitions
-           (condition_id, name, description, default_duration_type, default_duration_value, concentration, stacking_rule)
-         VALUES (NULL, $1, $2, $3, $4, $5, $6)`,
-        [s.name, s.description, s.durationType, s.durationValue, s.concentration, s.stackingRule],
+           (condition_id, name, description, default_duration_type, default_duration_value, concentration, stacking_rule, grants_resistance)
+         VALUES (NULL, $1, $2, $3, $4, $5, $6, $7)`,
+        [s.name, s.description, s.durationType, s.durationValue, s.concentration, s.stackingRule, grantsResistance],
       );
     }
     count++;

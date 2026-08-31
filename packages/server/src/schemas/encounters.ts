@@ -77,6 +77,19 @@ export const rollInitiativeSchema = z.object({
 });
 export type RollInitiativeInput = z.infer<typeof rollInitiativeSchema>;
 
+// docs/roadmap/dnd-2024-gap-analysis.md P1-9 — "an encounter can mark
+// specific participants Surprised at combat start." Bundled into the same
+// atomic start-combat call rather than a separate pre-step endpoint: this
+// project doesn't automate surprise DETECTION (Stealth vs. passive
+// Perception) — the DM adjudicates that with the existing dice-roll tools —
+// so by the time the DM clicks "Start combat" they already know who's
+// surprised, and 2024's Disadvantage-on-Initiative effect needs to apply to
+// THIS SAME initiative roll, not a later one.
+export const startCombatSchema = z.object({
+  surprisedParticipantIds: z.array(z.string().uuid()).max(50).default([]),
+});
+export type StartCombatInput = z.infer<typeof startCombatSchema>;
+
 export const setInitiativeSchema = z.object({
   initiativeRoll: z.number().int(),
   initiativeTiebreak: z.number().int().optional().nullable(),
@@ -112,6 +125,16 @@ export const setParticipantHpVisibilitySchema = z.object({
   hpVisibility: z.enum(['exact', 'banded', 'hidden']),
 });
 export type SetParticipantHpVisibilityInput = z.infer<typeof setParticipantHpVisibilitySchema>;
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-10 — DM-only toggle for a
+// participant's current Cover degree, same "one small DM knob" shape as
+// setParticipantFactionSchema. Only the best applicable degree ever
+// applies (this project's own verified rules reference), so one value per
+// participant, not a set of cover sources.
+export const setParticipantCoverSchema = z.object({
+  cover: z.enum(['none', 'half', 'three_quarters', 'total']),
+});
+export type SetParticipantCoverInput = z.infer<typeof setParticipantCoverSchema>;
 
 // DM battle-map vision feature — see 1784269817666_add-participant-vision.ts.
 // Encounter-scoped (not a character/monster-instance property), DM-tunable

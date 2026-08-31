@@ -8,7 +8,13 @@ import { diceSidesEnum } from './diceRolls.js';
 // the server never parses expression strings).
 export const applyDamageSchema = z.object({
   diceSides: diceSidesEnum,
-  diceCount: z.number().int().min(1).max(20),
+  // min(0), not min(1): docs/roadmap/dnd-2024-gap-analysis.md P1-6's Graze
+  // mastery property deals flat ability-modifier damage on a MISS, no dice
+  // at all — computeAppliedDamage (services/damage.ts) already handles a
+  // 0-length rolled-dice array correctly (rawTotal falls through to just
+  // `modifier`), so this endpoint doubles as Graze's damage-application
+  // path with diceCount: 0 rather than needing a second damage function.
+  diceCount: z.number().int().min(0).max(20),
   modifier: z.number().int().default(0),
   // null/omitted = untyped damage, never resisted/vulnerable/immune.
   damageType: z.string().max(50).optional().nullable(),

@@ -104,6 +104,19 @@ export const hpDeltaSchema = z.object({
 });
 export type HpDeltaInput = z.infer<typeof hpDeltaSchema>;
 
+// docs/roadmap/dnd-2024-gap-analysis.md P1-8 — spending Hit Dice during a
+// Short Rest, one or more dice of the SAME type per call (the service rolls
+// each independently, min 1 HP each — the "one at a time" of the acceptance
+// criteria describes the per-die roll, not a one-die-per-request limit).
+// `dieType` is validated against this character's own hit-die progression
+// server-side (services/rests.ts's fetchHitDieProgression), not trusted as
+// free text beyond this shape check.
+export const spendHitDiceSchema = z.object({
+  dieType: z.string().regex(/^d\d+$/, 'dieType must look like "d10"'),
+  count: z.number().int().min(1).max(20),
+});
+export type SpendHitDiceInput = z.infer<typeof spendHitDiceSchema>;
+
 // docs/rules/death-saving-throws.md §1.6/§2.3 — the Help action's DC 10
 // Wisdom (Medicine) check to stabilize a 0-HP creature. `modifier` is
 // client-supplied (the ability-modifier/proficiency math for a plain check,

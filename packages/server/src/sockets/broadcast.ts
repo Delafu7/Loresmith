@@ -1058,6 +1058,16 @@ export async function buildFullStateSyncPayload(
     faction: p.faction,
     imageUrl: p.image_url,
     armorClass: p.armor_class,
+    // P1-10 — Cover: DM-set degree, plus the derived AC bonus (also the
+    // correct Dex-save bonus, per this project's own verified rules
+    // reference) and effective AC, and whether it blocks targeting
+    // entirely (Total Cover). Never server-enforced (no attack hit/miss
+    // resolution exists in this app to hang enforcement off), see
+    // getEncounterCombatSnapshot's own comment.
+    cover: p.cover,
+    coverAcBonus: p.cover_ac_bonus,
+    armorClassEffective: p.armor_class_effective,
+    coverBlocksTargeting: p.cover_blocks_targeting,
     hp: resolveHpForViewer(
       { hpCurrent: p.hp_current, hpMax: p.hp_max, hpTemp: p.hp_temp, hpVisibility: p.hp_visibility },
       viewerRole,

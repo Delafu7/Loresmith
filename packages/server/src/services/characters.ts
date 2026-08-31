@@ -6,6 +6,7 @@ import { authorizeAttackerOnTurn } from './encounters.js';
 import { createPendingAction, type PendingActionCreated } from './pendingActions.js';
 import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
+import { fetchHitDieProgression } from './rests.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
 import { computeAppliedDamage } from './damage.js';
 import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
@@ -21,6 +22,7 @@ import type {
   ReplaceClassesInput,
   ReplaceSavingThrowProficienciesInput,
   ReplaceSkillProficienciesInput,
+  SpendHitDiceInput,
   StabilizeCharacterInput,
   UpdateArmorClassModeInput,
   UpdateCharacterInput,
@@ -834,6 +836,167 @@ export async function applyHpDelta(
   }
 }
 
+// docs/roadmap/dnd-2024-gap-analysis.md P1-8 (SP-... hit dice) — the player
+// half of Hit Dice, deliberately left out of services/rests.ts's DM-driven
+// performRest (see that file's own header comment: "A real short rest lets a
+// player optionally SPEND hit dice to heal, which is a player choice/action,
+// not a bulk DM effect"). Modeled directly on applyHpDelta just above:
+// same authorization (control-gated, "acting right now"), same FOR UPDATE
+// lock, same hp_max clamp (via applyHpDeltaWithTempAbsorption) and
+// death-save-reset-on-regaining-HP logic, same per-encounter sync_seq bump
+// for the socket broadcast. What's different is where the heal amount comes
+// from: instead of a caller-supplied delta, each die spent is rolled
+// server-side (rollDie — "the RNG lives here and only here", same as every
+// other roll in this app) and heals roll + CON modifier, minimum 1 HP —
+// PER DIE, not once for the whole spend (docs/players-handbook-2024/Rules
+// Glossary "Hit Dice" — spending N dice rolls N times, not once for a
+// summed pool).
+export interface SpendHitDiceResult {
+  character: Record<string, unknown>;
+  dieType: string;
+  rolls: number[]; // raw roll per die spent, in spend order
+  conModifier: number;
+  healedPerDie: number[]; // max(1, roll + conModifier), same order as rolls
+  totalHealed: number;
+  hitDiceRemaining: Record<string, number>;
+  encounterSyncs: EncounterHpSyncTarget[];
+}
+
+export async function spendHitDice(
+  pool: Pool,
+  actorId: string,
+  characterId: string,
+  input: SpendHitDiceInput,
+): Promise<SpendHitDiceResult> {
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  const role = await authorizeCharacterAction(pool, actorId, character);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const locked = await client.query<
+      HpState & { is_alive: boolean; hit_dice_remaining: Record<string, number> | null; con: number }
+    >(
+      `SELECT hp_current, hp_max, hp_temp, is_alive, hit_dice_remaining, con FROM characters WHERE id = $1 FOR UPDATE`,
+      [characterId],
+    );
+    const row = locked.rows[0]!;
+
+    if (!row.is_alive) {
+      throw new AppError('CONFLICT', 'This character has died and cannot spend hit dice to heal');
+    }
+
+    const progression = await fetchHitDieProgression(client, characterId);
+    if (!progression.some((p) => p.dieType === input.dieType)) {
+      throw new AppError('VALIDATION_ERROR', `This character has no ${input.dieType} hit dice`);
+    }
+
+    // Same "missing key = 0 remaining" reading as computeHitDiceRestore's
+    // `current ?? {}` — a character whose hit_dice_remaining was never
+    // initialized for this die type has none tracked to spend, rather than
+    // this silently assuming a full (unspent) pool.
+    const currentRemaining = row.hit_dice_remaining?.[input.dieType] ?? 0;
+    if (input.count > currentRemaining) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `Only ${currentRemaining} ${input.dieType} hit dice remaining, cannot spend ${input.count}`,
+      );
+    }
+
+    const conModifier = Math.floor((row.con - 10) / 2);
+    const sides = parseInt(input.dieType.slice(1), 10);
+
+    const rolls: number[] = [];
+    const healedPerDie: number[] = [];
+    let hpCurrent = row.hp_current;
+    let totalHealed = 0;
+    const wasAtZero = hpCurrent === 0;
+    for (let i = 0; i < input.count; i++) {
+      const roll = rollDie(sides);
+      const healed = Math.max(1, roll + conModifier);
+      rolls.push(roll);
+      healedPerDie.push(healed);
+      totalHealed += healed;
+      hpCurrent = Math.min(row.hp_max, hpCurrent + healed);
+    }
+
+    const hitDiceRemaining = { ...(row.hit_dice_remaining ?? {}) };
+    hitDiceRemaining[input.dieType] = currentRemaining - input.count;
+
+    // Same edge case 11 reset as applyHpDelta above — regaining real HP from
+    // 0 clears the death-save counters and Stable, whichever path did it.
+    const resetDeathSaveState = wasAtZero && hpCurrent > 0;
+
+    const result = await client.query(
+      `UPDATE characters
+       SET hp_current = $1,
+           hit_dice_remaining = $2,
+           death_save_successes = CASE WHEN $4 THEN 0 ELSE death_save_successes END,
+           death_save_failures  = CASE WHEN $4 THEN 0 ELSE death_save_failures  END,
+           is_stable             = CASE WHEN $4 THEN false ELSE is_stable END,
+           updated_at = now()
+       WHERE id = $3
+       RETURNING *`,
+      [hpCurrent, JSON.stringify(hitDiceRemaining), characterId, resetDeathSaveState],
+    );
+
+    if (resetDeathSaveState) {
+      await applyOrRemoveUnconsciousEffect(client, characterId, null, false);
+    }
+
+    const encounterSyncs = await client.query<EncounterHpSyncTarget>(
+      `UPDATE encounters e
+       SET sync_seq = sync_seq + 1
+       FROM combat_participants cp
+       WHERE cp.character_id = $1 AND cp.encounter_id = e.id
+       RETURNING e.id AS encounter_id, e.campaign_id, e.sync_seq, cp.id AS participant_id`,
+      [characterId],
+    );
+
+    await client.query('COMMIT');
+    return {
+      character: redactGmNotes(result.rows[0], role),
+      dieType: input.dieType,
+      rolls,
+      conModifier,
+      healedPerDie,
+      totalHealed,
+      hitDiceRemaining,
+      encounterSyncs: encounterSyncs.rows,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-11 (CB-02) — Rage-style
+// TEMPORARY resistance. docs/rules/attacks-and-damage.md §2.4 (this
+// project's own prior design doc): a character's PERMANENT resistance
+// sources live in characters.damage_resistances; a temporary source (Rage)
+// should instead be a `grants_resistance` field on whichever
+// effect_definitions template is currently active on this character, read
+// FRESH here and unioned by the caller — never written into the permanent
+// columns, which would be exactly the "DM forgets to remove it when Rage
+// ends" bug this design avoids. Self-contained per service file rather than
+// importing from effects.ts (same "self-contained" precedent as
+// armorClass.ts's abilityModifier) — effects.ts already imports FROM this
+// file, so importing back would be a cycle.
+async function fetchActiveGrantedResistances(client: PoolClient, characterId: string): Promise<string[]> {
+  const result = await client.query<{ grants_resistance: string[] }>(
+    `SELECT ed.grants_resistance FROM active_effects ae
+     JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
+     WHERE ae.character_id = $1 AND ae.removed_at IS NULL`,
+    [characterId],
+  );
+  const union = new Set<string>();
+  for (const row of result.rows) for (const type of row.grants_resistance) union.add(type);
+  return [...union];
+}
+
 // REFACTOR-PLAN.md §6 / docs/rules/attacks-and-damage.md §2.3 — a sibling to
 // applyHpDelta above, not a replacement: this is the one that actually
 // applies resistance/vulnerability/immunity, by rolling the damage dice
@@ -946,9 +1109,19 @@ export async function applyDamage(
     const rolls = Array.from({ length: diceCount }, () => rollDie(input.diceSides));
     const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
 
+    // P1-11 — Rage-style TEMPORARY resistance, read fresh on every damage
+    // application (never cached — see fetchActiveGrantedResistances's own
+    // comment) and unioned with the permanent columns, never written into
+    // them.
+    const grantedResistances = await fetchActiveGrantedResistances(client, characterId);
+
     const applied = computeAppliedDamage(
       { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical },
-      { resistances: row.damage_resistances, vulnerabilities: row.damage_vulnerabilities, immunities: row.damage_immunities },
+      {
+        resistances: [...new Set([...row.damage_resistances, ...grantedResistances])],
+        vulnerabilities: row.damage_vulnerabilities,
+        immunities: row.damage_immunities,
+      },
     );
 
     const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(row, { delta: -applied.appliedDamage, tempDelta: 0 });
