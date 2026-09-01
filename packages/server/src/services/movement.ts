@@ -8,11 +8,17 @@
 // citations this implements). Known, deliberate simplifications relative to
 // that doc's full findings — see OPEN_QUESTIONS.md #6 for the product-level
 // framing:
-//   - 2024's occupancy passability exception for "Incapacitated" creatures is
-//     NOT implemented (this app has no queryable Incapacitated predicate —
-//     active_effects stores applied conditions by name, not structured
-//     booleans). 2024 occupancy here is: same-side, Tiny, or >=2 size
-//     categories different.
+//   - docs/roadmap/dnd-2024-gap-analysis.md P2-1 (CB-01) closed the
+//     Incapacitated occupancy gap OPEN_QUESTIONS.md #6 originally flagged
+//     here — Occupant.isIncapacitated (below) is now a caller-supplied
+//     boolean, derived server-side (services/encounters.ts's
+//     loadMovementContext) by matching each occupant's active effect names
+//     against the 5 conditions whose OWN 2024 text composes "you have the
+//     Incapacitated condition" (rulesGlossary.md: Incapacitated itself,
+//     Paralyzed line 1223, Petrified line 1255, Stunned line 1543,
+//     Unconscious line 1653) — this module stays trait-agnostic per its own
+//     established convention (see diceEngine.ts's header comment on the same
+//     principle) and never looks up effects itself.
 //   - Multi-speed switching (fly/swim/climb/burrow) is modeled as a single
 //     numeric budget with a per-cell cost multiplier when the cell's medium
 //     doesn't match one of the mover's alternate speeds, NOT the SRD's
@@ -31,7 +37,17 @@
 
 import { hasLineOfSight, type Point, type Segment } from '../domain/vision.js';
 
-export type CostType = 'difficult' | 'impassable' | 'special';
+// docs/roadmap/dnd-2024-gap-analysis.md P3-1 (ER-06) — 'pit' is a NEW cost
+// type, but deliberately NOT handled as a cost branch in computeStepCost
+// below: a hidden pit trap doesn't visibly cost extra movement to step onto
+// (that's the whole point of it being hidden), it falls through to the same
+// normal-cost path as an unlisted cell. Detecting/resolving the actual fall
+// is a separate concern (services/encounters.ts's computeValidatedMoveCost
+// reports pitTriggered from the destination cell's override; resolving the
+// fall itself is services/fallDamage.ts) — same "geometric fact, computed
+// and reported, never silently auto-applied" precedent as this module's own
+// opportunityAttackTriggers plumbing one layer up.
+export type CostType = 'difficult' | 'impassable' | 'special' | 'pit';
 export type Medium = 'ground' | 'water' | 'air' | 'underground';
 export type Faction = 'player' | 'ally' | 'enemy' | 'neutral';
 export type DiagonalRule = 'flat' | 'alternating_5_10_5';
@@ -40,12 +56,19 @@ export interface CellOverride {
   costType: CostType;
   medium: Medium;
   specialCostFt: number | null;
+  /** Only meaningful when costType === 'pit' (P3-1); null otherwise. */
+  pitDepthFt: number | null;
 }
 
 export interface Occupant {
   participantId: string;
   faction: Faction;
   sizeRank: number; // 0=Tiny .. 5=Gargantuan, see SIZE_RANK below
+  /** P2-1 (CB-01) — true when this occupant currently has the Incapacitated
+   * condition, or a condition whose own text grants it (Paralyzed, Petrified,
+   * Stunned, Unconscious). 2024-only exception (see isOccupantPassable);
+   * irrelevant, and never read, for a 2014 grid. */
+  isIncapacitated: boolean;
 }
 
 export interface MovementGrid {
@@ -125,8 +148,9 @@ function isOccupantPassable(mover: MoverProfile, occupant: Occupant, edition: '2
     // opposing sides; neutral is nonhostile to everyone.
     return sameSide;
   }
-  // 2024: ally (same side) or Tiny, or the size-difference check above.
-  return sameSide || occupant.sizeRank === 0;
+  // 2024: ally (same side), Tiny, Incapacitated (P2-1/CB-01), or the
+  // size-difference check above (rulesGlossary.md combat.md lines 59-64).
+  return sameSide || occupant.sizeRank === 0 || occupant.isIncapacitated;
 }
 
 /** True if entering this cell requires an alternate speed the mover doesn't have. */
@@ -305,4 +329,77 @@ export function computeReachableSet(grid: MovementGrid, mover: MoverProfile, fro
     reachable.add(`${x},${y}`);
   }
   return reachable;
+}
+
+// docs/roadmap/dnd-2024-gap-analysis.md P2-3 (CB-08) — Opportunity Attack
+// trigger detection. rulesGlossary.md line 1215: "You can make an
+// Opportunity Attack when a creature that you can see leaves your reach
+// using its action, its Bonus Action, its Reaction, or one of its speeds."
+// "Compute-and-suggest" only, same precedent as P2-2/CB-07 and P1-10/Cover
+// (this app has no attack resolution pipeline to enforce a forced reaction
+// spend against) — this returns WHICH threat sources a move left the reach
+// of; the caller (services/encounters.ts's setParticipantPosition) surfaces
+// that list, and the DM/player decides whether to actually spend a Reaction
+// via the existing applyActionEconomy(spend: 'reaction') path.
+//
+// Reach is a flat 5 ft for every threat source (rulesGlossary.md "Reach":
+// "A creature has a reach of 5 feet unless a rule says otherwise" — this
+// app tracks no per-creature/per-weapon reach override, so the stated
+// DEFAULT is the correct value here, not a simplification). "Within reach"
+// is measured as Chebyshev (grid) distance, matching this module's own
+// step-cost model — under the 'flat' diagonal rule a diagonal step costs
+// the same as an orthogonal one, i.e. this module already treats
+// diagonally-adjacent cells as equally "1 step" away, which is the grid
+// convention this reach check mirrors (not true Euclidean geometry, which
+// domain/vision.ts's `distance` uses for line-of-sight/vision RANGE checks
+// instead — a different, non-grid-snapped question).
+export interface ThreatSource {
+  participantId: string;
+  faction: Faction;
+  x: number;
+  y: number;
+  /** reaction_used === false AND not currently Incapacitated — an
+   * Incapacitated creature can't take a Reaction at all (rulesGlossary.md
+   * line 1028) and a spent Reaction can't be spent twice; both make this
+   * threat source structurally incapable of the Opportunity Attack it would
+   * otherwise be reported for, so it's excluded rather than reported
+   * as a trigger the DM would then have to notice is illegal anyway. */
+  canReact: boolean;
+}
+
+function chebyshevDistanceCells(a: PathStep, b: PathStep): number {
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
+const DEFAULT_REACH_FT = 5;
+
+/** Threat-source participant ids whose reach this path leaves at some step
+ * — i.e. was within reach at step N, no longer within reach at step N+1.
+ * Never fires for a threat source on the mover's own side (party/foes split,
+ * same as isOccupantPassable's sideOf) or a neutral participant on either
+ * side (matches this module's existing "neutral is nonhostile to everyone"
+ * reading). At most one trigger per threat source per call, even if the
+ * path leaves and re-enters that same threat's reach more than once. */
+export function computeOpportunityAttackTriggers(path: PathStep[], moverFaction: Faction, feetPerCell: number, threats: ThreatSource[]): string[] {
+  if (path.length < 2 || feetPerCell <= 0) return [];
+  const moverSide = sideOf(moverFaction);
+  const reachCells = DEFAULT_REACH_FT / feetPerCell;
+
+  const triggered: string[] = [];
+  for (const threat of threats) {
+    if (!threat.canReact) continue;
+    const threatSide = sideOf(threat.faction);
+    if (moverSide === 'neutral' || threatSide === 'neutral' || moverSide === threatSide) continue;
+
+    let wasInReach = chebyshevDistanceCells(path[0]!, threat) <= reachCells;
+    for (let i = 1; i < path.length; i++) {
+      const nowInReach = chebyshevDistanceCells(path[i]!, threat) <= reachCells;
+      if (wasInReach && !nowInReach) {
+        triggered.push(threat.participantId);
+        break;
+      }
+      wasInReach = nowInReach;
+    }
+  }
+  return triggered;
 }

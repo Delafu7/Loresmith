@@ -45,9 +45,32 @@ export const applyDamageSchema = z.object({
   // applyMonsterInstanceDamage). Omitted for DM-applied damage, which keeps its
   // original unconditional path.
   attackerParticipantId: z.string().uuid().optional(),
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-12 — wiring up
+  // character_attacks.half_on_save. saveDc mirrors that column's existing
+  // convention (services/diceEngine.ts's computeSaveDc comment: always a
+  // manually-entered flat integer, trusted the same way diceType/damageType
+  // already are). savingThrowRollId is the TARGET's saving_throw dice_rolls
+  // row id — the server re-derives success/failure from that row's own
+  // stored result_total (never a client-asserted succeeded/failed boolean),
+  // mirroring attackRollId/isCritical's existing "never trust the client's
+  // interpretation of a roll it didn't make" pattern (docs/rules/
+  // attacks-and-damage.md §3 edge case 6). Omitted entirely for damage with
+  // no backing save (a plain attack-roll hit, a DM's manual correction).
+  saveDc: z.number().int().min(1).max(30).optional(),
+  savingThrowRollId: z.string().uuid().optional(),
+  // Mirrors character_attacks.half_on_save's own default (true) — kept
+  // optional rather than defaulted here so existing callers that never send
+  // a save at all don't need to start sending it; computeAppliedDamage
+  // (services/damage.ts) already treats undefined the same as true. Only
+  // meaningful alongside saveDc/savingThrowRollId.
+  halfOnSave: z.boolean().optional(),
 })
   .refine((data) => !data.attackerParticipantId || data.encounterId, {
     message: 'encounterId is required when attackerParticipantId is provided',
     path: ['encounterId'],
+  })
+  .refine((data) => !data.savingThrowRollId || data.saveDc !== undefined, {
+    message: 'saveDc is required when savingThrowRollId is provided',
+    path: ['saveDc'],
   });
 export type ApplyDamageInput = z.infer<typeof applyDamageSchema>;

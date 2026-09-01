@@ -6,10 +6,10 @@ import { authorizeAttackerOnTurn } from './encounters.js';
 import { createPendingAction, type PendingActionCreated } from './pendingActions.js';
 import { isCheckViolation } from './dbErrors.js';
 import { recomputeSpellSlots, validateMulticlassPrerequisites } from './spellSlots.js';
-import { fetchHitDieProgression } from './rests.js';
+import { fetchHitDieProgression, interruptInProgressRest } from './rests.js';
 import { recomputeAndApplyCharacterArmorClass, type ArmorClassEncounterSync } from './armorClass.js';
 import { computeAppliedDamage } from './damage.js';
-import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
+import { rollDie, deriveIsCriticalFromAttackRoll, deriveSaveOutcomeSucceeded } from './diceRolls.js';
 import { criticalDiceCount } from './diceEngine.js';
 import { findUserByEmail } from './users.js';
 import { resolveVisibilitySync } from './visibility.js';
@@ -1017,6 +1017,8 @@ export interface ApplyDamageResult {
     resistanceApplied: boolean;
     vulnerabilityApplied: boolean;
     immune: boolean;
+    savedHalved: boolean;
+    savedNegated: boolean;
   };
   // Phase 2 "concentration-broken save prompt" — set only when this damage
   // actually landed (appliedDamage > 0) AND the character was concentrating
@@ -1078,7 +1080,18 @@ export async function applyDamage(
 
   // M3: re-derived from the actual stored roll, never trusted from
   // input.isCritical — see deriveIsCriticalFromAttackRoll's own comment.
-  const isCritical = await deriveIsCriticalFromAttackRoll(pool, character.campaign_id, input.attackRollId);
+  // docs/rules/attacks-and-damage.md §3 edge case 6 — a save-based hit can
+  // never crit; forcing false whenever a save is in play, rather than
+  // trusting attackRollId/isCritical to never ALSO be sent alongside one, is
+  // the same defensive posture as deriveIsCriticalFromAttackRoll itself.
+  const isCritical = input.savingThrowRollId
+    ? false
+    : await deriveIsCriticalFromAttackRoll(pool, character.campaign_id, input.attackRollId);
+
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-12 — re-derived from the
+  // target's actual stored saving-throw roll, never a client-asserted
+  // succeeded/failed boolean; see deriveSaveOutcomeSucceeded's own comment.
+  const savingThrowSucceeded = await deriveSaveOutcomeSucceeded(pool, character.campaign_id, input.savingThrowRollId, input.saveDc);
 
   const client = await pool.connect();
   try {
@@ -1116,13 +1129,26 @@ export async function applyDamage(
     const grantedResistances = await fetchActiveGrantedResistances(client, characterId);
 
     const applied = computeAppliedDamage(
-      { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical },
+      {
+        rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical,
+        savingThrowSucceeded, halfOnSave: input.halfOnSave,
+      },
       {
         resistances: [...new Set([...row.damage_resistances, ...grantedResistances])],
         vulnerabilities: row.damage_vulnerabilities,
         immunities: row.damage_immunities,
       },
     );
+
+    // P2-5 (ER-04) — rulesGlossary.md lines 1147/1409: "Taking any damage"
+    // interrupts a rest, regardless of how much of it temp HP absorbs (that
+    // absorption is a separate, later step — see damageToHp's own comment
+    // just below) or whether it's ultimately resisted to 0 (0 damage was
+    // never actually "taken"). A no-op unless this character has an
+    // in-progress rest (see interruptInProgressRest's own comment).
+    if (applied.appliedDamage > 0) {
+      await interruptInProgressRest(client, characterId, 'damage');
+    }
 
     const { hpCurrent, hpTemp } = applyHpDeltaWithTempAbsorption(row, { delta: -applied.appliedDamage, tempDelta: 0 });
 

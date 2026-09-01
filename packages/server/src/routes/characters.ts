@@ -600,6 +600,14 @@ charactersRouter.get('/:id/effects', async (req, res) => {
   res.json({ effects });
 });
 
+// docs/roadmap/dnd-2024-gap-analysis.md P2-2 (CB-07) — read-only "what would
+// this target's currently active conditions suggest" report; never applied
+// automatically (see services/effects.ts's own header comment on this).
+charactersRouter.get('/:id/condition-effects', async (req, res) => {
+  const report = await effectsService.getCharacterConditionEffects(pool, req.user!.id, (req.params.id as string));
+  res.json(report);
+});
+
 charactersRouter.post('/:id/effects', async (req, res) => {
   const input = applyTargetEffectSchema.parse(req.body);
   const { effect, effectDefinitionName, encounterSyncs, replacedEffect } = await effectsService.applyCharacterEffect(pool, req.user!.id, (req.params.id as string), input);

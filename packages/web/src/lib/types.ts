@@ -703,7 +703,8 @@ export type ItemType =
   | 'magic_item'
   | 'consumable'
   | 'mount'
-  | 'vehicle';
+  | 'vehicle'
+  | 'trinket';
 
 export type ItemRarity = 'mundane' | 'common' | 'uncommon' | 'rare' | 'very_rare' | 'legendary' | 'artifact';
 

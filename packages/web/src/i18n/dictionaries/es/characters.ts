@@ -97,6 +97,15 @@ export const characters = {
       none: 'Aún no se ha añadido equipo.',
       notesLabel: 'Notas',
     },
+    trinket: {
+      heading: 'Baratija',
+      description: 'Puedes tener una baratija sin coste (PHB 2024).',
+      roll: 'Tirar una baratija',
+      browseLabel: 'O elige una',
+      browsePlaceholder: 'Buscar entre las 100 baratijas…',
+      remove: 'Quitar',
+      reroll: 'Tirar de nuevo',
+    },
     portrait: {
       alt: 'Retrato del personaje',
       upload: 'Subir retrato',

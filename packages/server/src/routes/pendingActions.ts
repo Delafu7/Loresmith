@@ -5,9 +5,9 @@
 // services/pendingActions.ts resolves campaign membership from the request
 // row itself).
 //
-// This file is the one place that needs to import ALL FIVE resolvers
+// This file is the one place that needs to import ALL SIX resolvers
 // (applyDamage/applyMonsterInstanceDamage/castFromEncounter/performShove/
-// performGrapple) to dispatch approval by `kind` — see
+// performGrapple/performHide) to dispatch approval by `kind` — see
 // services/pendingActions.ts's header comment for why that dispatch doesn't
 // live there instead (avoids a five-way service import cycle). Approving
 // replays the exact same resolver the DM's own unconditional path already
@@ -26,11 +26,13 @@ import * as monstersService from '../services/monsters.js';
 import { castFromEncounter } from '../services/casting.js';
 import { performShove } from '../services/shove.js';
 import { performGrapple } from '../services/grapple.js';
+import { performHide } from '../services/hide.js';
 import * as combatActionsService from '../services/combatActions.js';
 import type { ApplyDamageInput } from '../schemas/damage.js';
 import type { CastFromEncounterInput } from '../schemas/casting.js';
 import type { PerformShoveInput } from '../schemas/shove.js';
 import type { PerformGrappleInput } from '../schemas/grapple.js';
+import type { PerformHideInput } from '../schemas/hide.js';
 import {
   getIo,
   broadcastHpChanged,
@@ -239,6 +241,38 @@ async function resolveApprovedRequest(req: Request, pending: pendingActionsServi
         defenderRoll: result.defenderRoll,
         defenderTotal: result.defenderTotal,
         defenderOverridden: result.defenderOverridden,
+        success: result.success,
+        appliedEffect: result.appliedEffect?.effect ?? null,
+        message: result.message,
+      });
+      return;
+    }
+    case 'hide': {
+      const input = pending.payload as PerformHideInput;
+      const result = await performHide(pool, pending.encounter_id, pending.actor_participant_id, actorId, input);
+      if ('pending' in result) throw new AppError('CONFLICT', 'Unexpected: DM approval produced another pending request');
+      await broadcastActionEconomyChanged(io, result.encounter, result.participant);
+      await broadcastDiceRolled(io, result.encounter.campaign_id, result.checkRoll);
+      if (result.appliedEffect) {
+        await Promise.all(
+          result.appliedEffect.encounterSyncs.map((sync) =>
+            broadcastEffectApplied(io, sync, result.appliedEffect!.effect, result.appliedEffect!.effectDefinitionName),
+          ),
+        );
+      }
+      const hideAction = await combatActionsService.recordAction(pool, actorId, pending.encounter_id, {
+        actorParticipantId: pending.actor_participant_id,
+        targetParticipantIds: [pending.actor_participant_id],
+        actionType: 'ability',
+        meansLabel: 'Hide',
+        diceRollId: result.checkRoll.id,
+        resultKind: result.success ? 'effect' : 'miss',
+        effectDescription: result.success ? 'Hidden (Invisible)' : undefined,
+      });
+      await broadcastActionRecorded(io, pool, hideAction, result.encounter.campaign_id);
+      await pendingActionsService.markPendingApproved(pool, actorId, pending.id, {
+        participant: result.participant,
+        checkRoll: result.checkRoll,
         success: result.success,
         appliedEffect: result.appliedEffect?.effect ?? null,
         message: result.message,

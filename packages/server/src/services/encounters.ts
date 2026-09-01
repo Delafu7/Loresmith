@@ -12,10 +12,19 @@ import { assertMonsterCuratedInBestiary } from './campaignBestiary.js';
 import { resolveVisibilitySync } from './visibility.js';
 import { assessEncounterXp, type MonsterXpInput, type XpBudgetResult } from '../domain/xpBudget.js';
 import { computeBlocksMovement } from '../domain/mapElementVisibility.js';
-import type { Segment } from '../domain/vision.js';
+import { distance, type Segment } from '../domain/vision.js';
+import {
+  obscurementFromLightLevel,
+  computeSightResult,
+  perceptionConsequenceOf,
+  type ObscurementLevel,
+  type SightSource,
+} from '../domain/obscurement.js';
+import { interruptInProgressRest } from './rests.js';
 import {
   computePathCost,
   computeReachableSet,
+  computeOpportunityAttackTriggers,
   sizeRankFor,
   type CellOverride,
   type CostType,
@@ -25,6 +34,7 @@ import {
   type MovementGrid,
   type MoverProfile,
   type Occupant,
+  type ThreatSource,
 } from './movement.js';
 import type {
   AddParticipantInput,
@@ -33,6 +43,7 @@ import type {
   SetEncounterModeInput,
   SetInitiativeInput,
   SetParticipantCoverInput,
+  SetParticipantElevationInput,
   SetParticipantFactionInput,
   SetParticipantHpVisibilityInput,
   SetParticipantPositionInput,
@@ -110,6 +121,9 @@ interface ParticipantRow {
   vision_enabled: boolean;
   vision_radius_ft: number;
   darkvision_radius_ft: number;
+  blindsight_radius_ft: number;
+  tremorsense_radius_ft: number;
+  truesight_radius_ft: number;
   is_surprised: boolean;
   cover: CoverLevel;
   [key: string]: unknown;
@@ -420,6 +434,7 @@ export interface MapCellOverrideRow {
   cost_type: CostType;
   medium: Medium;
   special_cost_ft: number | null;
+  pit_depth_ft: number | null;
   note: string | null;
 }
 
@@ -427,7 +442,7 @@ export async function listMapCellOverrides(pool: Pool, encounterId: string): Pro
   const map = await getEncounterMap(pool, encounterId);
   if (!map) return [];
   const result = await pool.query<MapCellOverrideRow>(
-    `SELECT x, y, cost_type, medium, special_cost_ft, note FROM map_cell_overrides WHERE encounter_map_id = $1 ORDER BY y, x`,
+    `SELECT x, y, cost_type, medium, special_cost_ft, pit_depth_ft, note FROM map_cell_overrides WHERE encounter_map_id = $1 ORDER BY y, x`,
     [map.id],
   );
   return result.rows;
@@ -437,6 +452,8 @@ export interface UpsertCellOverrideInput {
   costType: CostType;
   medium?: Medium;
   specialCostFt?: number | null;
+  /** P3-1 (ER-06) — only meaningful when costType === 'pit'. */
+  pitDepthFt?: number | null;
   note?: string | null;
 }
 
@@ -460,12 +477,13 @@ export async function upsertMapCellOverride(
     if (!map) throw new AppError('CONFLICT', 'No map configured for this encounter yet');
 
     await client.query(
-      `INSERT INTO map_cell_overrides (encounter_map_id, x, y, cost_type, medium, special_cost_ft, note, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+      `INSERT INTO map_cell_overrides (encounter_map_id, x, y, cost_type, medium, special_cost_ft, pit_depth_ft, note, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
        ON CONFLICT (encounter_map_id, x, y) DO UPDATE SET
          cost_type = EXCLUDED.cost_type, medium = EXCLUDED.medium,
-         special_cost_ft = EXCLUDED.special_cost_ft, note = EXCLUDED.note, updated_at = now()`,
-      [map.id, x, y, input.costType, input.medium ?? 'ground', input.specialCostFt ?? null, input.note ?? null],
+         special_cost_ft = EXCLUDED.special_cost_ft, pit_depth_ft = EXCLUDED.pit_depth_ft,
+         note = EXCLUDED.note, updated_at = now()`,
+      [map.id, x, y, input.costType, input.medium ?? 'ground', input.specialCostFt ?? null, input.pitDepthFt ?? null, input.note ?? null],
     );
 
     const encounterRes = await client.query<EncounterRow>(
@@ -642,7 +660,7 @@ async function loadMovementContext(
   client: Pool | PoolClient,
   encounter: EncounterRow,
   participant: ParticipantRow,
-): Promise<{ grid: MovementGrid; mover: MoverProfile; speedFt: number; remainingFt: number } | null> {
+): Promise<{ grid: MovementGrid; mover: MoverProfile; speedFt: number; remainingFt: number; threats: ThreatSource[]; isDisengaging: boolean } | null> {
   const mapRes = await client.query<{ id: string; feet_per_cell: number; grid_columns: number; grid_rows: number }>(
     `SELECT id, feet_per_cell, grid_columns, grid_rows FROM maps WHERE id = (SELECT active_map_id FROM encounters WHERE id = $1)`,
     [encounter.id],
@@ -655,6 +673,7 @@ async function loadMovementContext(
     size: string;
     alt_speeds: Record<string, number>;
     is_prone: boolean;
+    is_disengaging: boolean;
   }>(
     `SELECT
        COALESCE(c.speed, NULLIF(regexp_replace(COALESCE(m.speed->>'walk', ''), '[^0-9]', '', 'g'), '')::int) AS speed_ft,
@@ -665,7 +684,15 @@ async function loadMovementContext(
          JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
          WHERE ae.removed_at IS NULL AND LOWER(ed.name) = 'prone'
            AND ((ae.character_id = $1 AND $1 IS NOT NULL) OR (ae.monster_instance_id = $2 AND $2 IS NOT NULL))
-       ) AS is_prone
+       ) AS is_prone,
+       -- P2-3 (CB-08) — Disengaging (rulesGlossary.md line 794): movement
+       -- doesn't provoke Opportunity Attacks for the rest of the turn.
+       EXISTS (
+         SELECT 1 FROM active_effects ae
+         JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
+         WHERE ae.removed_at IS NULL AND LOWER(ed.name) = 'disengaging'
+           AND ((ae.character_id = $1 AND $1 IS NOT NULL) OR (ae.monster_instance_id = $2 AND $2 IS NOT NULL))
+       ) AS is_disengaging
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id
      LEFT JOIN monster_instances mi ON mi.id = cp.monster_instance_id
@@ -682,17 +709,35 @@ async function loadMovementContext(
   );
   const campaign = campaignRes.rows[0]!;
 
-  const overridesRes = await client.query<{ x: number; y: number; cost_type: CostType; medium: Medium; special_cost_ft: number | null }>(
-    `SELECT x, y, cost_type, medium, special_cost_ft FROM map_cell_overrides WHERE encounter_map_id = $1`,
+  const overridesRes = await client.query<{ x: number; y: number; cost_type: CostType; medium: Medium; special_cost_ft: number | null; pit_depth_ft: number | null }>(
+    `SELECT x, y, cost_type, medium, special_cost_ft, pit_depth_ft FROM map_cell_overrides WHERE encounter_map_id = $1`,
     [map.id],
   );
   const overrides = new Map<string, CellOverride>();
   for (const row of overridesRes.rows) {
-    overrides.set(`${row.x},${row.y}`, { costType: row.cost_type, medium: row.medium, specialCostFt: row.special_cost_ft });
+    overrides.set(`${row.x},${row.y}`, {
+      costType: row.cost_type, medium: row.medium, specialCostFt: row.special_cost_ft, pitDepthFt: row.pit_depth_ft,
+    });
   }
 
-  const occupantsRes = await client.query<{ pos_x: number; pos_y: number; faction: Faction; size: string }>(
-    `SELECT cp.pos_x, cp.pos_y, cp.faction, COALESCE(m.size, 'Medium') AS size
+  // P2-1 (CB-01) — 2024's occupancy passability exception for Incapacitated
+  // creatures (docs/rules/movement.md §1.7/§2.4's own flagged gap). Matches
+  // each occupant's currently-active effect names against the 5 conditions
+  // whose OWN 2024 text composes "you have the Incapacitated condition"
+  // (see services/movement.ts's header comment for the exact citations) —
+  // same correlated-EXISTS-subquery shape as this function's own is_prone
+  // check for the mover, just per occupant row instead of for one participant.
+  const occupantsRes = await client.query<{
+    id: string; pos_x: number; pos_y: number; faction: Faction; size: string; is_incapacitated: boolean; reaction_used: boolean;
+  }>(
+    `SELECT cp.id, cp.pos_x, cp.pos_y, cp.faction, COALESCE(m.size, 'Medium') AS size, cp.reaction_used,
+       EXISTS (
+         SELECT 1 FROM active_effects ae
+         JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
+         WHERE ae.removed_at IS NULL AND LOWER(ed.name) IN ('incapacitated', 'paralyzed', 'petrified', 'stunned', 'unconscious')
+           AND ((ae.character_id = cp.character_id AND cp.character_id IS NOT NULL)
+             OR (ae.monster_instance_id = cp.monster_instance_id AND cp.monster_instance_id IS NOT NULL))
+       ) AS is_incapacitated
      FROM combat_participants cp
      LEFT JOIN monster_instances mi ON mi.id = cp.monster_instance_id
      LEFT JOIN monsters m ON m.id = mi.monster_id
@@ -700,8 +745,19 @@ async function loadMovementContext(
     [encounter.id, participant.id],
   );
   const occupants = new Map<string, Occupant>();
+  // P2-3 (CB-08) — the SAME query already loaded every other positioned
+  // participant's faction/reaction_used/isIncapacitated, which is exactly
+  // what computeOpportunityAttackTriggers needs too — built alongside the
+  // occupants map rather than issuing a second, near-identical query.
+  const threats: ThreatSource[] = [];
   for (const row of occupantsRes.rows) {
-    occupants.set(`${row.pos_x},${row.pos_y}`, { participantId: '', faction: row.faction, sizeRank: sizeRankFor(row.size) });
+    occupants.set(`${row.pos_x},${row.pos_y}`, {
+      participantId: row.id, faction: row.faction, sizeRank: sizeRankFor(row.size), isIncapacitated: row.is_incapacitated,
+    });
+    threats.push({
+      participantId: row.id, faction: row.faction, x: row.pos_x, y: row.pos_y,
+      canReact: !row.reaction_used && !row.is_incapacitated,
+    });
   }
 
   // Wall movement blocking — same map_elements rows the darkness vision
@@ -739,7 +795,7 @@ async function loadMovementContext(
   };
   const remainingFt = mv.speed_ft + (participant.dash_used ? mv.speed_ft : 0) - participant.movement_used_ft;
 
-  return { grid, mover, speedFt: mv.speed_ft, remainingFt };
+  return { grid, mover, speedFt: mv.speed_ft, remainingFt, threats, isDisengaging: mv.is_disengaging };
 }
 
 // docs/rules/movement.md §2.4: validation only applies to an ACTUAL move of
@@ -762,7 +818,7 @@ async function computeValidatedMoveCost(
   participant: ParticipantRow,
   to: { x: number | null; y: number | null },
   actorRole: CampaignRole,
-): Promise<{ costFt: number } | null> {
+): Promise<{ costFt: number; opportunityAttackTriggers: string[]; pitTriggered: { depthFt: number } | null } | null> {
   if (to.x === null || to.y === null) return null; // removal from the map
   if (participant.pos_x === null || participant.pos_y === null) return null; // initial placement
   if (encounter.mode === 'exploration') return null; // free roam, DM or player
@@ -790,7 +846,29 @@ async function computeValidatedMoveCost(
     });
   }
 
-  return { costFt: path.costFt };
+  // P2-3 (CB-08) — "compute-and-suggest" only (confirmed with the user for
+  // P2-2/CB-07, same reasoning applies here): report which threat sources
+  // this move left the reach of, never force a reaction spend. A
+  // Disengaging mover never provokes at all (rulesGlossary.md line 794),
+  // short-circuited before even calling the pure detector.
+  const opportunityAttackTriggers = ctx.isDisengaging
+    ? []
+    : computeOpportunityAttackTriggers(path.path, ctx.mover.faction, ctx.grid.feetPerCell, ctx.threats);
+
+  // P3-1 (ER-06) — a pit is a purely geometric fact (did this move END on a
+  // DM-placed 'pit' cell), not a judgment call, so unlike Cover/Surprise/
+  // Hide this is detected automatically. Still only REPORTED here, never
+  // auto-resolved — same "compute-and-suggest" precedent as
+  // opportunityAttackTriggers just above: the caller (services/
+  // fallDamage.ts's performFallDamage, via its own explicit endpoint) is
+  // what actually rolls and applies the fall.
+  const destinationOverride = ctx.grid.overrides.get(`${to.x},${to.y}`);
+  const pitTriggered =
+    destinationOverride?.costType === 'pit' && destinationOverride.pitDepthFt != null
+      ? { depthFt: destinationOverride.pitDepthFt }
+      : null;
+
+  return { costFt: path.costFt, opportunityAttackTriggers, pitTriggered };
 }
 
 // REFACTOR-PLAN.md §4: "selecting a character highlights reachable cells...
@@ -848,13 +926,27 @@ export async function getParticipantReachableCells(
   return { cells: [...reachable], remainingFt: ctx.remainingFt, spentCells };
 }
 
+// docs/roadmap/dnd-2024-gap-analysis.md P2-3 (CB-08) — the one field beyond
+// the generic ParticipantMutationResult shape every other participant
+// mutation returns; kept on its own interface rather than added to the
+// shared one so callers of every OTHER mutation don't gain an irrelevant,
+// always-empty field.
+export interface SetParticipantPositionResult extends ParticipantMutationResult {
+  opportunityAttackTriggers: string[];
+  /** P3-1 (ER-06) — set when this move's destination cell is a DM-placed
+   * pit override; the caller resolves the actual fall via a separate
+   * POST .../fall call (services/fallDamage.ts), same "report, don't
+   * auto-apply" shape as opportunityAttackTriggers above. */
+  pitTriggered: { depthFt: number } | null;
+}
+
 export async function setParticipantPosition(
   pool: Pool,
   encounterId: string,
   participantId: string,
   input: SetParticipantPositionInput,
   actorRole: CampaignRole,
-): Promise<ParticipantMutationResult> {
+): Promise<SetParticipantPositionResult> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -887,7 +979,12 @@ export async function setParticipantPosition(
     );
 
     await client.query('COMMIT');
-    return { encounter: encounterRes.rows[0]!, participant };
+    return {
+      encounter: encounterRes.rows[0]!,
+      participant,
+      opportunityAttackTriggers: validated?.opportunityAttackTriggers ?? [],
+      pitTriggered: validated?.pitTriggered ?? null,
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -950,10 +1047,17 @@ export async function setParticipantVision(
       `UPDATE combat_participants SET
          vision_enabled = COALESCE($1, vision_enabled),
          vision_radius_ft = COALESCE($2, vision_radius_ft),
-         darkvision_radius_ft = COALESCE($3, darkvision_radius_ft)
-       WHERE id = $4 AND encounter_id = $5
+         darkvision_radius_ft = COALESCE($3, darkvision_radius_ft),
+         blindsight_radius_ft = COALESCE($4, blindsight_radius_ft),
+         tremorsense_radius_ft = COALESCE($5, tremorsense_radius_ft),
+         truesight_radius_ft = COALESCE($6, truesight_radius_ft)
+       WHERE id = $7 AND encounter_id = $8
        RETURNING *`,
-      [input.visionEnabled ?? null, input.visionRadiusFt ?? null, input.darkvisionRadiusFt ?? null, participantId, encounterId],
+      [
+        input.visionEnabled ?? null, input.visionRadiusFt ?? null, input.darkvisionRadiusFt ?? null,
+        input.blindsightRadiusFt ?? null, input.tremorsenseRadiusFt ?? null, input.truesightRadiusFt ?? null,
+        participantId, encounterId,
+      ],
     );
     const participant = updated.rows[0];
     if (!participant) throw notFound('Participant');
@@ -1098,6 +1202,46 @@ export async function setParticipantCover(
     const updated = await client.query<ParticipantRow>(
       `UPDATE combat_participants SET cover = $1 WHERE id = $2 AND encounter_id = $3 RETURNING *`,
       [input.cover, participantId, encounterId],
+    );
+    const participant = updated.rows[0];
+    if (!participant) throw notFound('Participant');
+
+    const encounterRes = await client.query<EncounterRow>(
+      `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING *`,
+      [encounterId],
+    );
+
+    await client.query('COMMIT');
+    return { encounter: encounterRes.rows[0]!, participant };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// P3-1 (ER-06) — DM-only correction for a participant's current height
+// above the map's ground plane, same shape as setParticipantCover just
+// above (a small, DM-tunable board attribute — see
+// 1784269842666_add-participant-elevation.ts's header comment). Also
+// written by services/fallDamage.ts's performFallDamage after a resolved
+// fall, but that path updates the row directly (already inside its own
+// damage-application transaction) rather than calling this function, so a
+// fall's elevation update and its HP change land in one atomic write.
+export async function setParticipantElevation(
+  pool: Pool,
+  encounterId: string,
+  participantId: string,
+  input: SetParticipantElevationInput,
+): Promise<ParticipantMutationResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query<ParticipantRow>(
+      `UPDATE combat_participants SET elevation_ft = $1 WHERE id = $2 AND encounter_id = $3 RETURNING *`,
+      [input.elevationFt, participantId, encounterId],
     );
     const participant = updated.rows[0];
     if (!participant) throw notFound('Participant');
@@ -1500,6 +1644,9 @@ export interface CombatSnapshotParticipant {
   armor_class_effective: number;
   cover_ac_bonus: number;
   cover_blocks_targeting: boolean;
+  // P3-1 (ER-06) — current height above the map's ground plane, same "not
+  // HP-sensitive, no redaction" treatment as cover/vision above.
+  elevation_ft: number;
 }
 
 export interface CombatSnapshot {
@@ -1529,7 +1676,7 @@ export async function getEncounterCombatSnapshot(pool: Pool | PoolClient, encoun
             cp.visible_to_players, cp.hp_visibility, cp.legendary_actions_remaining,
             cp.vision_enabled, cp.vision_radius_ft, cp.darkvision_radius_ft,
             c.owner_user_id AS character_owner_user_id,
-            cp.cover
+            cp.cover, cp.elevation_ft
      FROM combat_participants cp
      LEFT JOIN characters c ON c.id = cp.character_id
      LEFT JOIN campaign_assets ca_char ON ca_char.id = c.portrait_asset_id
@@ -1988,6 +2135,72 @@ export function coverBlocksTargeting(cover: CoverLevel): boolean {
   return cover === 'total';
 }
 
+// docs/roadmap/dnd-2024-gap-analysis.md P2-6 (ER-09) — read-only "what does
+// this viewer perceive of this target right now" report, built from
+// domain/obscurement.ts's pure functions (advisory only — never applied to
+// domain/vision.ts's actual reveal-engine gate, see that module's own header
+// comment for the full rationale). Same "no actor/role param, route-level
+// requireOwnParticipantOrDm middleware does the gating" convention as
+// getParticipantReachableCells just above.
+export interface ParticipantSightReport {
+  lightLevel: 'bright' | 'dim' | 'dark';
+  distanceFt: number;
+  obscurement: ObscurementLevel;
+  perceivesInvisible: boolean;
+  source: SightSource;
+  perceptionCheckDisadvantage: boolean;
+  effectivelyBlindedForThisTarget: boolean;
+}
+
+export async function getParticipantSightReport(
+  pool: Pool,
+  encounterId: string,
+  viewerParticipantId: string,
+  targetParticipantId: string,
+): Promise<ParticipantSightReport | null> {
+  const mapRes = await pool.query<{ lighting_state: 'bright' | 'dim' | 'dark'; feet_per_cell: number }>(
+    `SELECT m.lighting_state, m.feet_per_cell FROM maps m WHERE m.id = (SELECT active_map_id FROM encounters WHERE id = $1)`,
+    [encounterId],
+  );
+  const map = mapRes.rows[0];
+  if (!map) return null; // nothing configured to report against yet
+
+  const participantsRes = await pool.query<{
+    id: string; pos_x: number | null; pos_y: number | null;
+    darkvision_radius_ft: number; blindsight_radius_ft: number; truesight_radius_ft: number; cover: CoverLevel;
+  }>(
+    `SELECT id, pos_x, pos_y, darkvision_radius_ft, blindsight_radius_ft, truesight_radius_ft, cover
+     FROM combat_participants WHERE id = ANY($1::uuid[]) AND encounter_id = $2`,
+    [[viewerParticipantId, targetParticipantId], encounterId],
+  );
+  const viewer = participantsRes.rows.find((r) => r.id === viewerParticipantId);
+  const target = participantsRes.rows.find((r) => r.id === targetParticipantId);
+  if (!viewer || !target) throw notFound('Participant');
+  if (viewer.pos_x == null || viewer.pos_y == null || target.pos_x == null || target.pos_y == null || map.feet_per_cell <= 0) {
+    return null; // not placed on the map yet, or no usable map scale
+  }
+
+  const distanceFt = distance({ x: viewer.pos_x, y: viewer.pos_y }, { x: target.pos_x, y: target.pos_y }) * map.feet_per_cell;
+  const baseObscurement = obscurementFromLightLevel(map.lighting_state);
+  const sight = computeSightResult(
+    baseObscurement,
+    distanceFt,
+    { darkvisionRadiusFt: viewer.darkvision_radius_ft, blindsightRadiusFt: viewer.blindsight_radius_ft, truesightRadiusFt: viewer.truesight_radius_ft },
+    coverBlocksTargeting(target.cover),
+  );
+  const consequence = perceptionConsequenceOf(sight.obscurement);
+
+  return {
+    lightLevel: map.lighting_state,
+    distanceFt,
+    obscurement: sight.obscurement,
+    perceivesInvisible: sight.perceivesInvisible,
+    source: sight.source,
+    perceptionCheckDisadvantage: consequence.perceptionCheckDisadvantage,
+    effectivelyBlindedForThisTarget: consequence.effectivelyBlindedForThisTarget,
+  };
+}
+
 // Round-robin turn advancement: given every remaining participant's
 // turn_order (ascending, need not be dense/contiguous) and whichever
 // turn_order value is currently active, finds the next one strictly greater
@@ -2114,6 +2327,13 @@ async function rollAndReorderInitiative(
       `UPDATE combat_participants SET initiative_roll = $1, initiative_tiebreak = $2 WHERE id = $3`,
       [d20 + mod, mod, participant.id],
     );
+    // P2-5 (ER-04) — rulesGlossary.md lines 1145/1407: "Rolling Initiative"
+    // interrupts a rest. A no-op unless this character has an in-progress
+    // rest (see interruptInProgressRest's own comment) — monster instances
+    // have no character_id and never rest via this app's rest flow.
+    if (participant.character_id != null) {
+      await interruptInProgressRest(client, participant.character_id, 'initiative');
+    }
   }
 
   await reorderTurnOrderByInitiative(client, encounterId);
@@ -2429,6 +2649,13 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
     // countdown, so it can't use the 'rounds' decrement path above — instead
     // directly soft-remove any still-live Dodge effect belonging to
     // whichever participant's turn is starting right now.
+    //
+    // Disengaging (P2-3/CB-08, docs/roadmap/dnd-2024-gap-analysis.md):
+    // "for the rest of the current turn" clears at the same trigger point —
+    // this app never lets a participant move again between their own turn
+    // ending and their own next turn starting, so "cleared when MY next
+    // turn starts" is functionally equivalent to "cleared at the end of MY
+    // current turn" for every move this app can actually produce.
     const startingParticipant = startingRes.rows[0];
     const dodgeTargetColumn = startingParticipant?.character_id != null ? 'character_id' : 'monster_instance_id';
     const dodgeTargetId = startingParticipant?.character_id ?? startingParticipant?.monster_instance_id ?? null;
@@ -2437,7 +2664,7 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
         `UPDATE active_effects ae
          SET removed_at = now()
          FROM effect_definitions ed
-         WHERE ae.effect_definition_id = ed.id AND ed.name = 'Dodge'
+         WHERE ae.effect_definition_id = ed.id AND ed.name IN ('Dodge', 'Disengaging')
            AND ae.removed_at IS NULL AND ae.${dodgeTargetColumn} = $1
          RETURNING ae.id, ae.character_id, ae.monster_instance_id, ae.effect_definition_id,
                    ae.duration_type, ae.duration_value, ae.concentration, ae.source_character_id,

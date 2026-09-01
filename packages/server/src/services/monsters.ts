@@ -7,7 +7,7 @@ import { applyHpDeltaWithTempAbsorption } from './hp.js';
 import { redactEntityFields, resolveReveals } from './entityFieldReveal.js';
 import { MONSTER_INSTANCE_STAT_BLOCK_SQL } from '../domain/revealFields.js';
 import { computeAppliedDamage } from './damage.js';
-import { rollDie, deriveIsCriticalFromAttackRoll } from './diceRolls.js';
+import { rollDie, deriveIsCriticalFromAttackRoll, deriveSaveOutcomeSucceeded } from './diceRolls.js';
 import { criticalDiceCount } from './diceEngine.js';
 import { computeConcentrationDc, findActiveConcentrationEffect } from './concentration.js';
 import type {
@@ -384,6 +384,8 @@ export interface ApplyMonsterInstanceDamageResult {
     resistanceApplied: boolean;
     vulnerabilityApplied: boolean;
     immune: boolean;
+    savedHalved: boolean;
+    savedNegated: boolean;
   };
 }
 
@@ -450,7 +452,16 @@ export async function applyMonsterInstanceDamage(
 
   // M3: re-derived from the actual stored roll, never trusted from
   // input.isCritical — see deriveIsCriticalFromAttackRoll's own comment.
-  const isCritical = await deriveIsCriticalFromAttackRoll(pool, instance.campaign_id, input.attackRollId);
+  // docs/rules/attacks-and-damage.md §3 edge case 6 — see
+  // services/characters.ts's applyDamage sibling comment for the full
+  // rationale on forcing false whenever a save is in play.
+  const isCritical = input.savingThrowRollId
+    ? false
+    : await deriveIsCriticalFromAttackRoll(pool, instance.campaign_id, input.attackRollId);
+
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-12 — see
+  // services/characters.ts's applyDamage sibling comment.
+  const savingThrowSucceeded = await deriveSaveOutcomeSucceeded(pool, instance.campaign_id, input.savingThrowRollId, input.saveDc);
 
   const client = await pool.connect();
   try {
@@ -482,7 +493,10 @@ export async function applyMonsterInstanceDamage(
     const grantedResistances = await fetchActiveGrantedResistances(client, instanceId);
 
     const applied = computeAppliedDamage(
-      { rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical },
+      {
+        rolledDiceTotal: diceTotal, modifier: input.modifier, damageType: input.damageType ?? null, isCritical,
+        savingThrowSucceeded, halfOnSave: input.halfOnSave,
+      },
       {
         resistances: [...new Set([...(row.damage_resistances ?? []), ...grantedResistances])],
         vulnerabilities: row.damage_vulnerabilities ?? [],

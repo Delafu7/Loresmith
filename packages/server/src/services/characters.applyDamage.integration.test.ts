@@ -243,6 +243,126 @@ describe('applyDamage (integration, live DB, throwaway fixtures)', () => {
     expect(result.appliedDamage).toBe(result.rawTotal);
   });
 
+  describe('P1-12: half_on_save wiring', () => {
+    async function insertSavingThrow(resultTotal: number): Promise<string> {
+      const res = await pool.query<{ id: string }>(
+        `INSERT INTO dice_rolls (campaign_id, user_id, roll_type, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+         VALUES ($1, $2, 'saving_throw', ARRAY[$3::int], 'normal', 20, 1, 0, $3) RETURNING id`,
+        [campaignId, dmUserId, resultTotal],
+      );
+      return res.rows[0]!.id;
+    }
+
+    it('a successful save (result_total >= saveDc) automatically halves damage', async () => {
+      const saveRollId = await insertSavingThrow(15); // succeeds against DC 12
+      const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 19,
+        damageType: null,
+        isCritical: false,
+        savingThrowRollId: saveRollId,
+        saveDc: 12,
+      });
+      expect(result.appliedDamage).toBe(Math.floor(result.rawTotal / 2));
+      expect(result.breakdown.savedHalved).toBe(true);
+    });
+
+    it('a failed save (result_total < saveDc) applies full damage', async () => {
+      const saveRollId = await insertSavingThrow(5); // fails against DC 12
+      const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 19,
+        damageType: null,
+        isCritical: false,
+        savingThrowRollId: saveRollId,
+        saveDc: 12,
+      });
+      expect(result.appliedDamage).toBe(result.rawTotal);
+      expect(result.breakdown.savedHalved).toBe(false);
+    });
+
+    it('halfOnSave: false negates damage entirely on a successful save', async () => {
+      const saveRollId = await insertSavingThrow(20);
+      const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 19,
+        damageType: null,
+        isCritical: false,
+        savingThrowRollId: saveRollId,
+        saveDc: 12,
+        halfOnSave: false,
+      });
+      expect(result.appliedDamage).toBe(0);
+      expect(result.breakdown.savedNegated).toBe(true);
+    });
+
+    it('a save-based hit can never crit, even if attackRollId is also (incorrectly) supplied', async () => {
+      const saveRollId = await insertSavingThrow(5); // fails, so full (non-doubled) dice would show through
+      const critRoll = await pool.query<{ id: string }>(
+        `INSERT INTO dice_rolls (campaign_id, user_id, roll_type, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+         VALUES ($1, $2, 'attack', ARRAY[20], 'normal', 20, 1, 0, 20) RETURNING id`,
+        [campaignId, dmUserId],
+      );
+      const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 0,
+        damageType: null,
+        isCritical: true,
+        attackRollId: critRoll.rows[0]!.id,
+        savingThrowRollId: saveRollId,
+        saveDc: 12,
+      });
+      expect(result.diceRoll.rolls.length).toBe(1); // never doubled to 2d4
+    });
+
+    it('half-on-save applies before resistance — a resisted, saved-against fire hit halves twice in the correct order', async () => {
+      const saveRollId = await insertSavingThrow(20);
+      const result = await applyDamage(pool, dmUserId, resistantCharacterId, {
+        diceSides: 4,
+        diceCount: 1,
+        modifier: 19,
+        damageType: 'fire',
+        isCritical: false,
+        savingThrowRollId: saveRollId,
+        saveDc: 12,
+      });
+      // half-on-save: floor(raw/2), then resistance: floor(that/2)
+      expect(result.appliedDamage).toBe(Math.floor(Math.floor(result.rawTotal / 2) / 2));
+      expect(result.breakdown.savedHalved).toBe(true);
+      expect(result.breakdown.resistanceApplied).toBe(true);
+    });
+
+    it('a saveDc with no matching savingThrowRollId in this campaign is treated as a failed/no save — full damage', async () => {
+      const otherCampaign = await pool.query<{ id: string }>(
+        `INSERT INTO campaigns (name, dm_user_id, srd_edition) VALUES ('Other Campaign', $1, '2024') RETURNING id`,
+        [dmUserId],
+      );
+      const foreignSaveRoll = await pool.query<{ id: string }>(
+        `INSERT INTO dice_rolls (campaign_id, user_id, roll_type, d20_rolls, keep, dice_sides, dice_count, modifier, result_total)
+         VALUES ($1, $2, 'saving_throw', ARRAY[20], 'normal', 20, 1, 0, 20) RETURNING id`,
+        [otherCampaign.rows[0]!.id, dmUserId],
+      );
+      try {
+        const result = await applyDamage(pool, dmUserId, plainCharacterId, {
+          diceSides: 4,
+          diceCount: 1,
+          modifier: 19,
+          damageType: null,
+          isCritical: false,
+          savingThrowRollId: foreignSaveRoll.rows[0]!.id,
+          saveDc: 12,
+        });
+        expect(result.appliedDamage).toBe(result.rawTotal);
+      } finally {
+        await pool.query(`DELETE FROM campaigns WHERE id = $1`, [otherCampaign.rows[0]!.id]);
+      }
+    });
+  });
+
   describe('concentration-broken save prompt (Phase 2)', () => {
     it('reports a concentration check when the target is concentrating and takes damage, DC = max(10, floor(damage/2))', async () => {
       const defRes = await pool.query<{ id: string }>(

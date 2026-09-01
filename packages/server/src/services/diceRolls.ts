@@ -104,13 +104,44 @@ export function rollHitDice(hitDice: string): number {
   return Math.max(1, total);
 }
 
+// docs/roadmap/dnd-2024-gap-analysis.md P1-13 (Hide) — an attack roll ends
+// the Invisible condition regardless of source: Hide's own "you make an
+// attack roll" break condition (rulesGlossary.md line 960), AND the
+// Invisibility spell's own "the spell ends early if the target attacks"
+// text (line 1993's seeded description) — both editions' Invisible ends the
+// same way here, so rollDice below clears ANY active 'Invisible' effect on
+// the roller, not just a Hide-sourced one, rather than needing a
+// source-type branch to tell the two apart.
+export interface ClearedInvisibleEffect {
+  id: string;
+  character_id: string | null;
+  monster_instance_id: string | null;
+  effect_definition_id: string;
+  duration_type: string;
+  duration_value: number | null;
+  concentration: boolean;
+  source_character_id: string | null;
+  effect_definition_name: string;
+  encounter_id: string | null;
+  encounter_sync_seq: number | null;
+}
+
+export interface RollDiceResult extends DiceRollRow {
+  /** Set only when this roll was an 'attack' roll AND it broke an active
+   * Invisible effect on the same character/monster instance — undefined for
+   * every other roll. routes/diceRolls.ts is the one caller that broadcasts
+   * EFFECT_EXPIRED for it; every other existing caller of rollDice already
+   * only reads the plain DiceRollRow fields and is unaffected. */
+  clearedInvisibleEffect?: ClearedInvisibleEffect | null;
+}
+
 export async function rollDice(
   pool: Pool,
   campaignId: string,
   actorId: string,
   role: CampaignRole,
   input: CreateDiceRollInput,
-): Promise<DiceRollRow> {
+): Promise<RollDiceResult> {
   // Security major M1 — a "bare" roll (neither characterId nor
   // monsterInstanceId) was the only branch of this function with no role
   // check at all: the characterId branch rejects a spectator via
@@ -225,13 +256,19 @@ export async function rollDice(
         : rolls.reduce((sum, r) => sum + r, 0);
   const resultTotal = keptTotal + input.modifier;
 
+  // P1-13 — an 'attack' roll for a character/monster instance always needs
+  // the same transaction as the Invisible-clearing UPDATE below, so it's
+  // folded into the same "does this roll need a real transaction" decision
+  // as the existing roll-request-fulfillment case.
+  const needsTransaction =
+    requestTargetId !== null || (input.rollType === 'attack' && (characterId !== null || monsterInstanceId !== null));
+
   // A plain single INSERT is atomic on its own — no second write needed
-  // unless this roll fulfills a request, in which case the target-row
-  // update must commit atomically alongside it (never leave a request
-  // target 'pending' after its roll already exists, or vice versa).
-  const client = requestTargetId !== null ? await pool.connect() : pool;
+  // unless this roll fulfills a request, or breaks an active Invisible
+  // effect (both need a second write to commit atomically alongside it).
+  const client = needsTransaction ? await pool.connect() : pool;
   try {
-    if (requestTargetId !== null) await (client as PoolClient).query('BEGIN');
+    if (needsTransaction) await (client as PoolClient).query('BEGIN');
 
     const result = await client.query<DiceRollRow>(
       `INSERT INTO dice_rolls
@@ -258,21 +295,57 @@ export async function rollDice(
         input.manualRolls !== undefined,
       ],
     );
-    const roll = result.rows[0]!;
+    const roll: RollDiceResult = result.rows[0]!;
 
     if (requestTargetId !== null) {
       await client.query(
         `UPDATE dice_roll_request_targets SET status = 'rolled', dice_roll_id = $1, responded_at = now() WHERE id = $2`,
         [roll.id, requestTargetId],
       );
+    }
+
+    if (input.rollType === 'attack' && (characterId !== null || monsterInstanceId !== null)) {
+      const column = characterId !== null ? 'character_id' : 'monster_instance_id';
+      const targetId = characterId ?? monsterInstanceId;
+      const clearedRes = await client.query<Omit<ClearedInvisibleEffect, 'encounter_sync_seq'>>(
+        `UPDATE active_effects ae
+         SET removed_at = now()
+         FROM effect_definitions ed
+         WHERE ae.effect_definition_id = ed.id AND ed.name = 'Invisible'
+           AND ae.removed_at IS NULL AND ae.${column} = $1
+         RETURNING ae.id, ae.character_id, ae.monster_instance_id, ae.effect_definition_id,
+                   ae.duration_type, ae.duration_value, ae.concentration, ae.source_character_id,
+                   ae.encounter_id, ed.name AS effect_definition_name`,
+        [targetId],
+      );
+      const cleared = clearedRes.rows[0];
+      if (cleared) {
+        // Same "every effect removal bumps its owning encounter's sync_seq"
+        // discipline as encounters.ts's advanceTurn Dodge-clear — only when
+        // the cleared effect actually belongs to an encounter (Hide/
+        // Invisibility can apply outside combat too, where there's no
+        // participant sync target to bump).
+        let encounterSyncSeq: number | null = null;
+        if (cleared.encounter_id !== null) {
+          const syncRes = await client.query<{ sync_seq: number }>(
+            `UPDATE encounters SET sync_seq = sync_seq + 1 WHERE id = $1 RETURNING sync_seq`,
+            [cleared.encounter_id],
+          );
+          encounterSyncSeq = syncRes.rows[0]?.sync_seq ?? null;
+        }
+        roll.clearedInvisibleEffect = { ...cleared, encounter_sync_seq: encounterSyncSeq };
+      }
+    }
+
+    if (needsTransaction) {
       await (client as PoolClient).query('COMMIT');
     }
     return roll;
   } catch (err) {
-    if (requestTargetId !== null) await (client as PoolClient).query('ROLLBACK');
+    if (needsTransaction) await (client as PoolClient).query('ROLLBACK');
     throw err;
   } finally {
-    if (requestTargetId !== null) (client as PoolClient).release();
+    if (needsTransaction) (client as PoolClient).release();
   }
 }
 
@@ -307,6 +380,31 @@ export async function deriveIsCriticalFromAttackRoll(
         ? row.d20_rolls.indexOf(Math.min(...row.d20_rolls))
         : row.d20_rolls.indexOf(Math.max(...row.d20_rolls));
   return row.d20_rolls[keptIndex] === 20;
+}
+
+// docs/roadmap/dnd-2024-gap-analysis.md P1-12 — mirrors
+// deriveIsCriticalFromAttackRoll's own "never trust a client-asserted
+// succeeded/failed boolean" pattern: re-derive whether a save succeeded from
+// the actual stored dice_rolls row's result_total (already kept-die +
+// modifier, computed at roll time above), compared against the
+// caller-supplied DC. A missing/cross-campaign/wrong-type roll id resolves
+// to `false` (no save happened / treat as failed, i.e. full damage) rather
+// than throwing — same "absent is just the null case, not an error"
+// precedent as deriveIsCriticalFromAttackRoll.
+export async function deriveSaveOutcomeSucceeded(
+  pool: Pool | PoolClient,
+  campaignId: string,
+  savingThrowRollId: string | undefined,
+  saveDc: number | undefined,
+): Promise<boolean> {
+  if (!savingThrowRollId || saveDc === undefined) return false;
+  const res = await pool.query<Pick<DiceRollRow, 'result_total'>>(
+    `SELECT result_total FROM dice_rolls WHERE id = $1 AND campaign_id = $2 AND roll_type = 'saving_throw'`,
+    [savingThrowRollId, campaignId],
+  );
+  const row = res.rows[0];
+  if (!row) return false;
+  return row.result_total >= saveDc;
 }
 
 // ---- GET /campaigns/:id/dice-rolls — keyset (cursor) pagination ----

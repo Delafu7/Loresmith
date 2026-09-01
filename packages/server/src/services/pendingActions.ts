@@ -12,7 +12,7 @@ import type { Pool } from 'pg';
 import { AppError, notFound } from '../middleware/errors.js';
 import { requireMembership, requireDm } from './authz.js';
 
-export type PendingActionKind = 'attack_character' | 'attack_monster' | 'cast' | 'shove' | 'grapple';
+export type PendingActionKind = 'attack_character' | 'attack_monster' | 'cast' | 'shove' | 'grapple' | 'hide';
 export type PendingActionStatus = 'pending' | 'approved' | 'rejected';
 
 export interface PendingActionRequestRow {

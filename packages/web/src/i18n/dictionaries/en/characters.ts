@@ -111,6 +111,15 @@ export const characters = {
       none: 'No equipment added yet.',
       notesLabel: 'Notes',
     },
+    trinket: {
+      heading: 'Trinket',
+      description: 'You can have one trinket at no cost (2024 PHB).',
+      roll: 'Roll a trinket',
+      browseLabel: 'Or choose one',
+      browsePlaceholder: 'Search all 100 trinkets…',
+      remove: 'Remove',
+      reroll: 'Reroll',
+    },
     portrait: {
       alt: 'Character portrait',
       upload: 'Upload portrait',

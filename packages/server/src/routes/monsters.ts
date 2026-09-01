@@ -294,6 +294,13 @@ monsterInstancesRouter.get('/:id/effects', async (req, res) => {
   res.json({ effects });
 });
 
+// docs/roadmap/dnd-2024-gap-analysis.md P2-2 (CB-07) — see routes/characters.ts's
+// sibling route for the full rationale.
+monsterInstancesRouter.get('/:id/condition-effects', async (req, res) => {
+  const report = await effectsService.getMonsterInstanceConditionEffects(pool, req.user!.id, (req.params.id as string));
+  res.json(report);
+});
+
 // Effects applied outside combat (encounter_id = null) — DM-only, see services/effects.ts.
 monsterInstancesRouter.post('/:id/effects', async (req, res) => {
   const input = applyTargetEffectSchema.parse(req.body);

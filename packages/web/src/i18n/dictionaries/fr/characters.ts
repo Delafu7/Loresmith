@@ -97,6 +97,15 @@ export const characters = {
       none: 'Aucun équipement ajouté pour l’instant.',
       notesLabel: 'Notes',
     },
+    trinket: {
+      heading: 'Babiole',
+      description: 'Vous pouvez avoir une babiole gratuite (PHB 2024).',
+      roll: 'Tirer une babiole',
+      browseLabel: 'Ou en choisir une',
+      browsePlaceholder: 'Rechercher parmi les 100 babioles…',
+      remove: 'Retirer',
+      reroll: 'Tirer à nouveau',
+    },
     portrait: {
       alt: 'Portrait du personnage',
       upload: 'Téléverser un portrait',

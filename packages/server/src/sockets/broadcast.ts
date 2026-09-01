@@ -1068,6 +1068,9 @@ export async function buildFullStateSyncPayload(
     coverAcBonus: p.cover_ac_bonus,
     armorClassEffective: p.armor_class_effective,
     coverBlocksTargeting: p.cover_blocks_targeting,
+    // P3-1 (ER-06) — current height above the map's ground plane; see
+    // 1784269842666_add-participant-elevation.ts's header comment.
+    elevationFt: p.elevation_ft,
     hp: resolveHpForViewer(
       { hpCurrent: p.hp_current, hpMax: p.hp_max, hpTemp: p.hp_temp, hpVisibility: p.hp_visibility },
       viewerRole,

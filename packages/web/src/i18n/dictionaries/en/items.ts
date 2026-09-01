@@ -13,6 +13,7 @@ export const items = {
     consumable: 'Consumable',
     mount: 'Mount',
     vehicle: 'Vehicle',
+    trinket: 'Trinket',
   },
   rarity: {
     mundane: 'Mundane',

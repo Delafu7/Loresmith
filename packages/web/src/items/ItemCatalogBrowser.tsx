@@ -24,7 +24,7 @@ export const RARITY_COLOR: Record<ItemRarity, string> = {
   artifact: 'text-red-400',
 };
 
-const ITEM_TYPES: ItemType[] = ['weapon', 'armor', 'shield', 'tool', 'adventuring_gear', 'magic_item', 'consumable', 'mount', 'vehicle'];
+const ITEM_TYPES: ItemType[] = ['weapon', 'armor', 'shield', 'tool', 'adventuring_gear', 'magic_item', 'consumable', 'mount', 'vehicle', 'trinket'];
 const ITEM_RARITIES: ItemRarity[] = ['mundane', 'common', 'uncommon', 'rare', 'very_rare', 'legendary', 'artifact'];
 
 export function ItemCatalogBrowser({

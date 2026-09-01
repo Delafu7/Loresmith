@@ -12,6 +12,17 @@ import { requireDm, requireMembership, type CampaignRole } from './authz.js';
 import { fetchCharacterOrThrow, requireCharacterReadAccess } from './characters.js';
 import { isUniqueViolation } from './dbErrors.js';
 import type { ApplyEncounterEffectInput, ApplyTargetEffectInput } from '../schemas/effects.js';
+import {
+  computeOwnAttackRollModifiers,
+  computeAttacksAgainstMelee,
+  computeAttacksAgainstRanged,
+  criticalHitSourcesWithin5ft,
+  computeAbilityCheckModifiers,
+  computeSavingThrowModifiers,
+  computeExhaustionPenalty,
+  type RollModifiers,
+  type AbilityKey,
+} from './conditionEffects.js';
 
 interface EffectDefinitionRow {
   id: string;
@@ -295,6 +306,93 @@ export async function listMonsterInstanceEffects(pool: Pool, actorId: string, mo
     [monsterInstanceId],
   );
   return result.rows;
+}
+
+// ---- Condition Effects Report (docs/roadmap/dnd-2024-gap-analysis.md P2-2,
+// CB-07) — "compute-and-suggest" only, confirmed with the user first: this
+// app has no attack hit/miss resolution pipeline to enforce advantage/
+// disadvantage on, so GET /characters/:id/condition-effects and
+// GET /monster-instances/:id/condition-effects just report what a target's
+// CURRENTLY active conditions would suggest for the DM/player's own roll —
+// never applied automatically. The actual rules table lives entirely in
+// services/conditionEffects.ts (pure, no DB); this function's only job is
+// looking up which conditions are active and which edition/exhaustion level
+// apply, then handing that off.
+
+export interface ConditionEffectsReport {
+  conditions: string[];
+  exhaustionLevel: number;
+  exhaustionPenalty: number;
+  ownAttackRolls: RollModifiers;
+  attacksAgainstThemMelee: RollModifiers;
+  attacksAgainstThemRanged: RollModifiers;
+  criticalHitSourcesWithin5ft: string[];
+  abilityChecks: RollModifiers;
+  savingThrows: Record<AbilityKey, RollModifiers>;
+}
+
+const ABILITY_KEYS: AbilityKey[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+
+function buildConditionEffectsReport(conditions: string[], edition: '2014' | '2024', exhaustionLevel: number): ConditionEffectsReport {
+  const savingThrows = {} as Record<AbilityKey, RollModifiers>;
+  for (const ability of ABILITY_KEYS) savingThrows[ability] = computeSavingThrowModifiers(conditions, ability);
+
+  return {
+    conditions,
+    exhaustionLevel,
+    exhaustionPenalty: computeExhaustionPenalty(edition, exhaustionLevel),
+    ownAttackRolls: computeOwnAttackRollModifiers(conditions),
+    attacksAgainstThemMelee: computeAttacksAgainstMelee(conditions),
+    attacksAgainstThemRanged: computeAttacksAgainstRanged(conditions),
+    criticalHitSourcesWithin5ft: criticalHitSourcesWithin5ft(conditions),
+    abilityChecks: computeAbilityCheckModifiers(conditions),
+    savingThrows,
+  };
+}
+
+async function fetchActiveConditionNames(pool: Pool, column: 'character_id' | 'monster_instance_id', targetId: string): Promise<string[]> {
+  const result = await pool.query<{ name: string }>(
+    `SELECT LOWER(ed.name) AS name FROM active_effects ae
+     JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
+     WHERE ae.${column} = $1 AND ae.removed_at IS NULL AND ed.condition_id IS NOT NULL`,
+    [targetId],
+  );
+  return result.rows.map((r) => r.name);
+}
+
+export async function getCharacterConditionEffects(pool: Pool, actorId: string, characterId: string): Promise<ConditionEffectsReport> {
+  const character = await fetchCharacterOrThrow(pool, characterId);
+  await requireCharacterReadAccess(pool, actorId, character);
+
+  const campaignRes = await pool.query<{ srd_edition: '2014' | '2024' }>(`SELECT srd_edition FROM campaigns WHERE id = $1`, [character.campaign_id]);
+  const edition = campaignRes.rows[0]!.srd_edition;
+  const conditions = await fetchActiveConditionNames(pool, 'character_id', characterId);
+  return buildConditionEffectsReport(conditions, edition, (character.exhaustion_level as number) ?? 0);
+}
+
+export async function getMonsterInstanceConditionEffects(pool: Pool, actorId: string, monsterInstanceId: string): Promise<ConditionEffectsReport> {
+  const instRes = await pool.query<{ campaign_id: string; srd_edition: '2014' | '2024' }>(
+    `SELECT mi.campaign_id, c.srd_edition FROM monster_instances mi JOIN campaigns c ON c.id = mi.campaign_id WHERE mi.id = $1`,
+    [monsterInstanceId],
+  );
+  const instance = instRes.rows[0];
+  if (!instance) throw notFound('Monster instance');
+  await requireMembership(pool, instance.campaign_id, actorId);
+
+  const conditions = await fetchActiveConditionNames(pool, 'monster_instance_id', monsterInstanceId);
+  // Monster instances have no exhaustion_level column of their own (unlike
+  // characters) — a DM tracks it, if at all, via a plain "Exhaustion"
+  // active_effects row using stack_count as the level, same mechanism
+  // CONDITION_EFFECT_DURATIONS's seed comment documents for that condition.
+  const exhaustionRes = await pool.query<{ stack_count: number | null }>(
+    `SELECT ae.stack_count FROM active_effects ae
+     JOIN effect_definitions ed ON ed.id = ae.effect_definition_id
+     WHERE ae.monster_instance_id = $1 AND ae.removed_at IS NULL AND LOWER(ed.name) = 'exhaustion'
+     LIMIT 1`,
+    [monsterInstanceId],
+  );
+  const exhaustionLevel = exhaustionRes.rows[0]?.stack_count ?? 0;
+  return buildConditionEffectsReport(conditions, instance.srd_edition, exhaustionLevel);
 }
 
 export async function applyEncounterEffect(

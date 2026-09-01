@@ -30,15 +30,19 @@ describe('performRest (integration, live DB, throwaway fixtures)', () => {
   let campaignId: string;
   let longRestCharacterId: string;
   let shortRestCharacterId: string;
+  let exhaustedCharacterId: string;
+  let zeroExhaustionCharacterId: string;
 
-  async function makeCharacter(fighterClassId: string, hpMax: number, hpCurrent: number, hitDiceRemaining: Record<string, number>) {
+  async function makeCharacter(
+    fighterClassId: string, hpMax: number, hpCurrent: number, hitDiceRemaining: Record<string, number>, exhaustionLevel = 0,
+  ) {
     const res = await pool.query<{ id: string }>(
       `INSERT INTO characters
          (campaign_id, is_pc, owner_user_id, created_by_user_id, name, str, dex, con, int, wis, cha,
-          armor_class, hp_max, hp_current, hit_dice_remaining)
-       VALUES ($1, true, $2, $2, 'Rest Test Fighter', 10, 10, 10, 10, 10, 10, 10, $3, $4, $5)
+          armor_class, hp_max, hp_current, hit_dice_remaining, exhaustion_level)
+       VALUES ($1, true, $2, $2, 'Rest Test Fighter', 10, 10, 10, 10, 10, 10, 10, $3, $4, $5, $6)
        RETURNING id`,
-      [campaignId, userId, hpMax, hpCurrent, JSON.stringify(hitDiceRemaining)],
+      [campaignId, userId, hpMax, hpCurrent, JSON.stringify(hitDiceRemaining), exhaustionLevel],
     );
     const characterId = res.rows[0]!.id;
     // Fighter, level 4 -> 4 total (d10) hit dice. This campaign is
@@ -83,6 +87,8 @@ describe('performRest (integration, live DB, throwaway fixtures)', () => {
 
     longRestCharacterId = await makeCharacter(fighterClassId, 30, 10, { d10: 0 });
     shortRestCharacterId = await makeCharacter(fighterClassId, 30, 10, { d10: 1 });
+    exhaustedCharacterId = await makeCharacter(fighterClassId, 30, 30, { d10: 0 }, 3);
+    zeroExhaustionCharacterId = await makeCharacter(fighterClassId, 30, 30, { d10: 0 }, 0);
   });
 
   afterAll(async () => {
@@ -148,5 +154,47 @@ describe('performRest (integration, live DB, throwaway fixtures)', () => {
     expect(byKey.long_pool).toBe(0); // untouched
     expect(byKey.dawn_pool).toBe(0); // untouched
     expect(byKey.never_pool).toBe(0); // untouched
+  });
+
+  // docs/roadmap/dnd-2024-gap-analysis.md P2-4 (ER-03) — rulesGlossary.md
+  // line 838: "Finishing a Long Rest removes 1 of your Exhaustion levels."
+  describe('exhaustion (P2-4/ER-03)', () => {
+    it('a long rest reduces exhaustion_level by exactly 1', async () => {
+      const { characters } = await performRest(pool, userId, campaignId, {
+        restType: 'long',
+        characterIds: [exhaustedCharacterId],
+      });
+      expect(characters[0]!.exhaustionBefore).toBe(3);
+      expect(characters[0]!.exhaustionAfter).toBe(2);
+
+      const row = await pool.query<{ exhaustion_level: number }>(`SELECT exhaustion_level FROM characters WHERE id = $1`, [exhaustedCharacterId]);
+      expect(row.rows[0]!.exhaustion_level).toBe(2);
+    });
+
+    it('a long rest never takes exhaustion_level below 0', async () => {
+      const { characters } = await performRest(pool, userId, campaignId, {
+        restType: 'long',
+        characterIds: [zeroExhaustionCharacterId],
+      });
+      expect(characters[0]!.exhaustionBefore).toBe(0);
+      expect(characters[0]!.exhaustionAfter).toBe(0);
+
+      const row = await pool.query<{ exhaustion_level: number }>(`SELECT exhaustion_level FROM characters WHERE id = $1`, [zeroExhaustionCharacterId]);
+      expect(row.rows[0]!.exhaustion_level).toBe(0);
+    });
+
+    it('a short rest never touches exhaustion_level', async () => {
+      // exhaustedCharacterId is now at level 2 from the test above — spend a
+      // short rest on it and confirm it's still 2, not further reduced.
+      const { characters } = await performRest(pool, userId, campaignId, {
+        restType: 'short',
+        characterIds: [exhaustedCharacterId],
+      });
+      expect(characters[0]!.exhaustionBefore).toBe(2);
+      expect(characters[0]!.exhaustionAfter).toBe(2);
+
+      const row = await pool.query<{ exhaustion_level: number }>(`SELECT exhaustion_level FROM characters WHERE id = $1`, [exhaustedCharacterId]);
+      expect(row.rows[0]!.exhaustion_level).toBe(2);
+    });
   });
 });

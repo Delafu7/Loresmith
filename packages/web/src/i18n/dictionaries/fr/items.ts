@@ -10,6 +10,7 @@ export const items = {
     consumable: 'Consommable',
     mount: 'Monture',
     vehicle: 'Véhicule',
+    trinket: 'Babiole',
   },
   rarity: {
     mundane: 'Banal',

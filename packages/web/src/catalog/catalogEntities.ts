@@ -81,7 +81,7 @@ export const CATALOG_ENTITIES: CatalogEntityConfig[] = [
       { key: 'slug', label: 'Slug', type: 'text', required: true, helpText: 'A short unique identifier, e.g. "flametongue-dagger".' },
       { key: 'name', label: 'Name', type: 'text', required: true },
       editionField,
-      { key: 'itemType', label: 'Item type', type: 'select', required: true, options: ['weapon', 'armor', 'shield', 'tool', 'adventuring_gear', 'magic_item', 'consumable', 'mount', 'vehicle'] },
+      { key: 'itemType', label: 'Item type', type: 'select', required: true, options: ['weapon', 'armor', 'shield', 'tool', 'adventuring_gear', 'magic_item', 'consumable', 'mount', 'vehicle', 'trinket'] },
       { key: 'rarity', label: 'Rarity', type: 'select', required: true, options: ['mundane', 'common', 'uncommon', 'rare', 'very_rare', 'legendary', 'artifact'] },
       { key: 'weightLb', label: 'Weight (lb)', type: 'number' },
       { key: 'costCp', label: 'Cost (cp)', type: 'number' },

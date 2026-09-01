@@ -17,7 +17,9 @@ export const itemHomebrewShape = {
   slug: z.string().min(1).max(200),
   name: z.string().min(1).max(200),
   editionScope,
-  itemType: z.enum(['weapon', 'armor', 'shield', 'tool', 'adventuring_gear', 'magic_item', 'consumable', 'mount', 'vehicle']),
+  // 'trinket' added for P2-7 (docs/roadmap/dnd-2024-gap-analysis.md CC-04) —
+  // mirrors the items_item_type_check DB constraint exactly.
+  itemType: z.enum(['weapon', 'armor', 'shield', 'tool', 'adventuring_gear', 'magic_item', 'consumable', 'mount', 'vehicle', 'trinket']),
   rarity: z.enum(['mundane', 'common', 'uncommon', 'rare', 'very_rare', 'legendary', 'artifact']),
   weightLb: z.number().nonnegative().optional().nullable(),
   costCp: z.number().int().nonnegative().optional().nullable(),

@@ -38,6 +38,8 @@ import { campaignRestsRouter } from './routes/rests.js';
 import { notesRouter } from './routes/notes.js';
 import { plotThreadsRouter } from './routes/plotThreads.js';
 import { locationsRouter } from './routes/locations.js';
+import { travelPaceRouter } from './routes/travelPace.js';
+import { campaignHazardsRouter } from './routes/hazards.js';
 import { campaignEventsRouter } from './routes/campaignEvents.js';
 import { bastionsRouter } from './routes/bastions.js';
 import { factionsRouter } from './routes/factions.js';
@@ -123,6 +125,8 @@ async function main(): Promise<void> {
   app.use('/campaigns/:id/notes', notesRouter);
   app.use('/campaigns/:id/plot-threads', plotThreadsRouter);
   app.use('/campaigns/:id/locations', locationsRouter);
+  app.use('/campaigns/:id/travel-pace', travelPaceRouter);
+  app.use('/campaigns/:id/hazards', campaignHazardsRouter);
   app.use('/campaigns/:id/events', campaignEventsRouter);
   app.use('/campaigns/:id/bastions', bastionsRouter);
   app.use('/campaigns/:id/factions', factionsRouter);

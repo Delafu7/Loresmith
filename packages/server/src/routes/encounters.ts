@@ -16,6 +16,7 @@ import {
   setInitiativeSchema,
   setMapLightingSchema,
   setParticipantCoverSchema,
+  setParticipantElevationSchema,
   setParticipantFactionSchema,
   setParticipantHpVisibilitySchema,
   setParticipantPositionSchema,
@@ -31,12 +32,18 @@ import {
 } from '../schemas/encounters.js';
 import { performShoveSchema } from '../schemas/shove.js';
 import { performGrappleSchema } from '../schemas/grapple.js';
+import { performHideSchema } from '../schemas/hide.js';
+import { performFallSchema } from '../schemas/fallDamage.js';
+import { burningTickSchema, suffocationTickSchema } from '../schemas/hazards.js';
 import { performDoorActionSchema } from '../schemas/doorActions.js';
 import { recordActionSchema } from '../schemas/combatActions.js';
 import * as encountersService from '../services/encounters.js';
 import * as spawnService from '../services/spawn.js';
 import { performShove } from '../services/shove.js';
 import { performGrapple } from '../services/grapple.js';
+import { performHide } from '../services/hide.js';
+import { performFallDamage } from '../services/fallDamage.js';
+import { performBurningTick, performSuffocationTick } from '../services/hazards.js';
 import { performDoorAction } from '../services/doorActions.js';
 import * as entityFieldRevealService from '../services/entityFieldReveal.js';
 import * as combatActionsService from '../services/combatActions.js';
@@ -70,6 +77,8 @@ import {
   broadcastEncounterOpened,
   pushEncounterRoomJoinForOwner,
   broadcastPendingActionCreated,
+  broadcastHpChanged,
+  broadcastConcentrationCheckPrompted,
 } from '../sockets/broadcast.js';
 
 // Mounted at /campaigns/:id/encounters — nested CRUD (id under the campaign
@@ -416,11 +425,17 @@ encountersRouter.post('/:id/active-map', requireEncounterDm, async (req, res) =>
 // resolved role stashed on the request.
 encountersRouter.patch('/:id/participants/:pid/position', requireOwnParticipantOrDm, async (req, res) => {
   const input = setParticipantPositionSchema.parse(req.body);
-  const { encounter, participant } = await encountersService.setParticipantPosition(
+  const { encounter, participant, opportunityAttackTriggers, pitTriggered } = await encountersService.setParticipantPosition(
     pool, (req.params.id as string), (req.params.pid as string), input, req.participantActionRole!,
   );
   await broadcastTokenMoved(getIo(req.app), encounter, participant);
-  res.json({ participant });
+  // docs/roadmap/dnd-2024-gap-analysis.md P2-3 (CB-08) — advisory only, see
+  // services/encounters.ts's computeValidatedMoveCost comment; returned in
+  // the mover's own response rather than broadcast (same "response-only,
+  // not a socket event" scope as the reachable-cells endpoint). P3-1
+  // (ER-06)'s pitTriggered is the same shape: the caller resolves the
+  // actual fall via a separate POST .../fall call.
+  res.json({ participant, opportunityAttackTriggers, pitTriggered });
 });
 
 // Exploration vs. combat mode toggle — DM-only, independent of status.
@@ -472,6 +487,24 @@ encountersRouter.get('/:id/disposition/events', async (req, res) => {
 encountersRouter.get('/:id/participants/:pid/reachable', requireOwnParticipantOrDm, async (req, res) => {
   const result = await encountersService.getParticipantReachableCells(pool, (req.params.id as string), (req.params.pid as string));
   res.json(result);
+});
+
+// docs/roadmap/dnd-2024-gap-analysis.md P2-6 (ER-09) — "what does the
+// mover's own participant perceive of a named target right now" (light
+// level, obscurement, blindsight/tremorsense/truesight piercing). Advisory
+// only — see services/encounters.ts's getParticipantSightReport for the
+// full rationale on why this is separate from domain/vision.ts's actual
+// reveal-engine. Same requireOwnParticipantOrDm gate as reachable cells
+// just above — a player may check their OWN participant's perception.
+encountersRouter.get('/:id/participants/:pid/obscurement', requireOwnParticipantOrDm, async (req, res) => {
+  const targetParticipantId = req.query.targetParticipantId;
+  if (typeof targetParticipantId !== 'string' || !isUuid(targetParticipantId)) {
+    throw new AppError('VALIDATION_ERROR', 'targetParticipantId query parameter is required and must be a valid id');
+  }
+  const result = await encountersService.getParticipantSightReport(
+    pool, (req.params.id as string), (req.params.pid as string), targetParticipantId,
+  );
+  res.json({ report: result });
 });
 
 // Terrain cell overrides (REFACTOR-PLAN.md §4). DM-only, same guard as the
@@ -632,6 +665,18 @@ encountersRouter.patch('/:id/participants/:pid/hp-visibility', requireEncounterD
 encountersRouter.patch('/:id/participants/:pid/cover', requireEncounterDm, async (req, res) => {
   const input = setParticipantCoverSchema.parse(req.body);
   const { encounter, participant } = await encountersService.setParticipantCover(
+    pool, (req.params.id as string), (req.params.pid as string), input,
+  );
+  await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
+  res.json({ participant });
+});
+
+// docs/roadmap/dnd-2024-gap-analysis.md P3-1 (ER-06) — DM-only correction
+// for a participant's tracked height, same resync shape as /cover just
+// above (see 1784269842666_add-participant-elevation.ts's header comment).
+encountersRouter.patch('/:id/participants/:pid/elevation', requireEncounterDm, async (req, res) => {
+  const input = setParticipantElevationSchema.parse(req.body);
+  const { encounter, participant } = await encountersService.setParticipantElevation(
     pool, (req.params.id as string), (req.params.pid as string), input,
   );
   await broadcastFullStateResync(getIo(req.app), encounter.id, encounter.campaign_id);
@@ -805,6 +850,241 @@ encountersRouter.post('/:id/participants/:pid/grapple', requireOwnParticipantOrD
     success: grapple.success,
     appliedEffect: grapple.appliedEffect?.effect ?? null,
     message: grapple.message,
+  });
+});
+
+// Hide Action (docs/roadmap/dnd-2024-gap-analysis.md P1-13) — mirrors the
+// Shove/Grapple routes exactly, including the Phase 3 requireOwnParticipantOrDm
+// gating (a player may hide using their OWN participant; performHide's
+// requireCurrentTurn already enforces it's actually their turn) and the
+// Phase 4 pending-approval branch. See services/hide.ts's header comment for
+// why there's no defenderRoll/defenderOverride to thread through here.
+encountersRouter.post('/:id/participants/:pid/hide', requireOwnParticipantOrDm, async (req, res) => {
+  const input = performHideSchema.parse(req.body ?? {});
+  const hide = await performHide(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
+  const io = getIo(req.app);
+
+  // Phase 4 "DM approval before a player-submitted action resolves" — see
+  // routes/monsters.ts's apply-damage route for the identical branch.
+  if ('pending' in hide) {
+    await broadcastPendingActionCreated(io, hide.request.campaign_id, hide.request);
+    res.status(202).json({ pending: true, request: hide.request });
+    return;
+  }
+
+  await broadcastActionEconomyChanged(io, hide.encounter, hide.participant);
+  await broadcastDiceRolled(io, hide.encounter.campaign_id, hide.checkRoll);
+  if (hide.appliedEffect) {
+    await Promise.all(
+      hide.appliedEffect.encounterSyncs.map((sync) =>
+        broadcastEffectApplied(io, sync, hide.appliedEffect!.effect, hide.appliedEffect!.effectDefinitionName),
+      ),
+    );
+  }
+  const hideAction = await combatActionsService.recordAction(pool, req.user!.id, (req.params.id as string), {
+    actorParticipantId: (req.params.pid as string),
+    targetParticipantIds: [(req.params.pid as string)],
+    actionType: 'ability',
+    meansLabel: 'Hide',
+    diceRollId: hide.checkRoll.id,
+    resultKind: hide.success ? 'effect' : 'miss',
+    effectDescription: hide.success ? 'Hidden (Invisible)' : undefined,
+  });
+  await broadcastActionRecorded(io, pool, hideAction, hide.encounter.campaign_id);
+  res.json({
+    participant: hide.participant,
+    checkRoll: hide.checkRoll,
+    success: hide.success,
+    appliedEffect: hide.appliedEffect?.effect ?? null,
+    message: hide.message,
+  });
+});
+
+// Falling (docs/roadmap/dnd-2024-gap-analysis.md P3-1, ER-06) — same
+// requireOwnParticipantOrDm gate as Hide/Shove/Grapple just above: a player
+// may resolve their OWN character falling, the DM anyone's. Not an
+// action-economy spend (falling isn't a chosen action), so — like
+// spend-hit-dice — this doesn't touch action_used/recordAction, just HP and
+// the Prone/elevation state.
+encountersRouter.post('/:id/participants/:pid/fall', requireOwnParticipantOrDm, async (req, res) => {
+  const input = performFallSchema.parse(req.body ?? {});
+  const result = await performFallDamage(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
+  const io = getIo(req.app);
+
+  // Defensive only — see services/fallDamage.ts's own comment: this branch
+  // is unreachable in practice (no attackerParticipantId is ever sent).
+  if ('pending' in result) {
+    await broadcastPendingActionCreated(io, result.request.campaign_id, result.request);
+    res.status(202).json({ pending: true, request: result.request });
+    return;
+  }
+
+  // result.damage is null for a fall under 10 ft (services/fallDamage.ts's
+  // own comment on why that case never calls applyDamage at all) — nothing
+  // to broadcast except the elevation resync at the very end.
+  if (result.damage) {
+    const damage = result.damage;
+    const targetRow = 'character' in damage ? damage.character : damage.monsterInstance;
+    const hpMax = 'character' in damage
+      ? (targetRow.hp_max as number)
+      : ((targetRow.hp_max_override as number | null) ?? (targetRow.hit_point_average as number));
+
+    await Promise.all(
+      damage.encounterSyncs.map((sync) =>
+        broadcastHpChanged(io, {
+          encounterId: sync.encounter_id,
+          campaignId: sync.campaign_id,
+          seq: sync.sync_seq,
+          participantId: result.participantId,
+          characterId: result.characterId,
+          monsterInstanceId: result.monsterInstanceId,
+          hpCurrent: targetRow.hp_current as number,
+          hpMax,
+          hpTemp: targetRow.hp_temp as number,
+          delta: -result.appliedDamage,
+        }),
+      ),
+    );
+    if (damage.concentrationCheck) {
+      const controllerUserId = result.characterId
+        ? ((targetRow.controller_user_id ?? targetRow.owner_user_id ?? null) as string | null)
+        : null;
+      await Promise.all(
+        damage.encounterSyncs.map((sync) =>
+          broadcastConcentrationCheckPrompted(io, {
+            encounterId: sync.encounter_id,
+            campaignId: sync.campaign_id,
+            characterId: result.characterId,
+            monsterInstanceId: result.monsterInstanceId,
+            effectId: damage.concentrationCheck!.effectId,
+            effectDefinitionId: damage.concentrationCheck!.effectDefinitionId,
+            effectName: damage.concentrationCheck!.effectName,
+            dc: damage.concentrationCheck!.dc,
+            damage: result.appliedDamage,
+            controllerUserId,
+          }),
+        ),
+      );
+    }
+  }
+  if (result.proneEffect) {
+    await Promise.all(
+      result.proneEffect.encounterSyncs.map((sync) =>
+        broadcastEffectApplied(io, sync, result.proneEffect!.effect, result.proneEffect!.effectDefinitionName),
+      ),
+    );
+  }
+  // Elevation isn't part of any other broadcast above — resync covers it,
+  // same "small board attribute, resync the snapshot" precedent as Cover.
+  await broadcastFullStateResync(io, result.encounterId, result.campaignId);
+
+  res.json({
+    distanceFt: result.distanceFt,
+    diceCount: result.diceCount,
+    appliedDamage: result.appliedDamage,
+    landedProne: result.landedProne,
+    elevationFt: result.elevationFt,
+    rawTotal: result.damage?.rawTotal ?? 0,
+    breakdown: result.damage?.breakdown ?? null,
+  });
+});
+
+// docs/roadmap/dnd-2024-gap-analysis.md P3-3 (ER-08) — Burning [Hazard].
+// One turn's 1d4 Fire, applied through the same apply-damage pipeline as a
+// fall (Fire Resistance/Immunity, temp-HP, death-save transitions all apply).
+// requireOwnParticipantOrDm like Fall/Hide: a player may tick their own
+// burning character. The service requires an active "Burning" effect first
+// (the DM applies it via the normal effects endpoint; the DM removes it —
+// "extinguished" — the same way).
+encountersRouter.post('/:id/participants/:pid/burning-tick', requireOwnParticipantOrDm, async (req, res) => {
+  burningTickSchema.parse(req.body ?? {});
+  const result = await performBurningTick(pool, (req.params.id as string), (req.params.pid as string), req.user!.id);
+  const io = getIo(req.app);
+
+  if ('pending' in result) {
+    await broadcastPendingActionCreated(io, result.request.campaign_id, result.request);
+    res.status(202).json({ pending: true, request: result.request });
+    return;
+  }
+
+  const damage = result.damage;
+  const targetRow = 'character' in damage ? damage.character : damage.monsterInstance;
+  const hpMax = 'character' in damage
+    ? (targetRow.hp_max as number)
+    : ((targetRow.hp_max_override as number | null) ?? (targetRow.hit_point_average as number));
+  await Promise.all(
+    damage.encounterSyncs.map((sync) =>
+      broadcastHpChanged(io, {
+        encounterId: sync.encounter_id,
+        campaignId: sync.campaign_id,
+        seq: sync.sync_seq,
+        participantId: result.participantId,
+        characterId: result.characterId,
+        monsterInstanceId: result.monsterInstanceId,
+        hpCurrent: targetRow.hp_current as number,
+        hpMax,
+        hpTemp: targetRow.hp_temp as number,
+        delta: -result.appliedDamage,
+      }),
+    ),
+  );
+  if (damage.concentrationCheck) {
+    const controllerUserId = result.characterId
+      ? ((targetRow.controller_user_id ?? targetRow.owner_user_id ?? null) as string | null)
+      : null;
+    await Promise.all(
+      damage.encounterSyncs.map((sync) =>
+        broadcastConcentrationCheckPrompted(io, {
+          encounterId: sync.encounter_id,
+          campaignId: sync.campaign_id,
+          characterId: result.characterId,
+          monsterInstanceId: result.monsterInstanceId,
+          effectId: damage.concentrationCheck!.effectId,
+          effectDefinitionId: damage.concentrationCheck!.effectDefinitionId,
+          effectName: damage.concentrationCheck!.effectName,
+          dc: damage.concentrationCheck!.dc,
+          damage: result.appliedDamage,
+          controllerUserId,
+        }),
+      ),
+    );
+  }
+
+  res.json({
+    edition: result.edition,
+    diceCount: result.diceCount,
+    diceSides: result.diceSides,
+    appliedDamage: result.appliedDamage,
+    rawTotal: damage.rawTotal,
+    breakdown: damage.breakdown,
+    endConditions: result.endConditions,
+    notes: result.notes,
+  });
+});
+
+// docs/roadmap/dnd-2024-gap-analysis.md P3-3 (ER-08) — Suffocation [Hazard].
+// 2024: one turn out of breath = +1 Exhaustion (auto-written); `canBreatheAgain`
+// removes every Exhaustion level this episode accrued (tracked on a
+// "Suffocating" ledger effect's stack_count). 2014: report-only (that
+// edition drops you to 0 HP and dying instead — an interaction with the death
+// state machine that's out of scope here). Character participants only.
+encountersRouter.post('/:id/participants/:pid/suffocation-tick', requireOwnParticipantOrDm, async (req, res) => {
+  const input = suffocationTickSchema.parse(req.body);
+  const result = await performSuffocationTick(pool, (req.params.id as string), (req.params.pid as string), req.user!.id, input);
+  const io = getIo(req.app);
+
+  // exhaustion_level isn't carried on any HP/effect broadcast shape — a full
+  // resync covers it, same "small character attribute, resync the snapshot"
+  // precedent as elevation/cover.
+  if (result.exhaustion && result.exhaustion.applied !== 0) {
+    await broadcastFullStateResync(io, result.encounterId, result.campaignId);
+  }
+  res.json({
+    edition: result.edition,
+    outcome: result.outcome,
+    exhaustion: result.exhaustion,
+    suffocationExhaustionAccrued: result.suffocationExhaustionAccrued,
+    suffocationExhaustionRemoved: result.suffocationExhaustionRemoved,
   });
 });
 

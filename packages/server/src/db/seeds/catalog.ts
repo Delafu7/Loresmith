@@ -170,6 +170,7 @@ export async function seedCatalog(client: Client): Promise<void> {
   await seedSpells(client, schoolMap, abilityMap, classMap);
   await seedWeaponMasteryProperties(client);
   await seedItems(client, damageTypeMap);
+  await seedTrinkets(client);
   await seedClassMulticlassPrerequisites(client, abilityMap, classMap);
   await seedMulticlassSpellSlotTable(client);
   await seedEffectDefinitions(client);
@@ -2166,6 +2167,141 @@ async function seedItems(client: Client, damageTypeMap: Map<string, number>): Pr
   return itemMap;
 }
 
+// docs/roadmap/dnd-2024-gap-analysis.md P2-7 (CC-04) — the 2024 PHB's
+// Trinkets table (chapter2- creatingCharacter.md, "## Trinkets", the
+// `### Trinkets` d100 table starting at line 771), transcribed verbatim in
+// row order 1-100 (SRD roll "00" = this array's 100th/last entry, per
+// chapter1's own d100-table convention: "roll that die, find the number...
+// in that column"). 2024-only: this project's rules authority
+// (docs/players-handbook-2024/) has no verified 2014 Trinkets table text to
+// cross-check against, so — same "for the classes this project can actually
+// verify" precedent as P1-5's subclass catalog — no 2014 entries are seeded
+// rather than guessed from training-data recollection. Modeled as ordinary
+// `items` rows (item_type='trinket', no weight/cost — "a Tiny trinket... at
+// no cost") rather than a parallel table, so a chosen trinket becomes a real
+// character_items inventory row through the exact same pipeline every other
+// piece of starting gear already uses.
+const TRINKETS: string[] = [
+  'A mummified goblin hand',
+  'A crystal that faintly glows in moonlight',
+  'A gold coin minted in an unknown land',
+  "A diary written in a language you don't know",
+  'A brass ring that never tarnishes',
+  'An old chess piece made from glass',
+  'A pair of knucklebone dice, each with a skull symbol on the side that would normally show six pips',
+  'A small idol depicting a nightmarish creature that gives you unsettling dreams when you sleep near it',
+  "A lock of someone's hair",
+  'The deed for a parcel of land in a realm unknown to you',
+  'A 1-ounce block made from an unknown material',
+  'A small cloth doll skewered with needles',
+  'A tooth from an unknown beast',
+  'An enormous scale, perhaps from a dragon',
+  'A bright-green feather',
+  'An old divination card bearing your likeness',
+  'A glass orb filled with moving smoke',
+  'A 1-pound egg with a bright-red shell',
+  'A pipe that blows bubbles',
+  'A glass jar containing a bit of flesh floating in pickling fluid',
+  'A gnome-crafted music box that plays a song you dimly remember from your childhood',
+  'A wooden statuette of a smug halfling',
+  'A brass orb etched with strange runes',
+  'A multicolored stone disk',
+  'A silver icon of a raven',
+  'A bag containing forty-seven teeth, one of which is rotten',
+  'A shard of obsidian that always feels warm to the touch',
+  "A dragon's talon strung on a leather necklace",
+  'A pair of old socks',
+  'A blank book whose pages refuse to hold ink, chalk, graphite, or any other marking',
+  'A silver badge that is a five-pointed star',
+  'A knife that belonged to a relative',
+  'A glass vial filled with nail clippings',
+  'A rectangular metal device with two tiny metal cups on one end that throws sparks when wet',
+  'A white, sequined glove sized for a human',
+  'A vest with one hundred tiny pockets',
+  'A weightless stone',
+  'A sketch of a goblin',
+  'An empty glass vial that smells of perfume',
+  'A gemstone that looks like a lump of coal when examined by anyone but you',
+  'A scrap of cloth from an old banner',
+  'A rank insignia from a lost legionnaire',
+  'A silver bell without a clapper',
+  'A mechanical canary inside a lamp',
+  'A miniature chest carved to look like it has numerous feet on the bottom',
+  'A dead sprite inside a clear glass bottle',
+  'A metal can that has no opening but sounds as if it is filled with liquid, sand, spiders, or broken glass (your choice)',
+  'A glass orb filled with water, in which swims a clockwork goldfish',
+  'A silver spoon with an M engraved on the handle',
+  'A whistle made from gold-colored wood',
+  'A dead scarab beetle the size of your hand',
+  'Two toy soldiers, one missing a head',
+  'A small box filled with different-sized buttons',
+  "A candle that can't be lit",
+  'A miniature cage with no door',
+  'An old key',
+  'An indecipherable treasure map',
+  'A hilt from a broken sword',
+  "A rabbit's foot",
+  'A glass eye',
+  'A cameo of a hideous person',
+  'A silver skull the size of a coin',
+  'An alabaster mask',
+  'A cone of sticky black incense that stinks',
+  'A nightcap that gives you pleasant dreams when you wear it',
+  'A single caltrop made from bone',
+  'A gold monocle frame without the lens',
+  'A 1-inch cube, each side a different color',
+  'A crystal doorknob',
+  'A packet filled with pink dust',
+  'A fragment of a beautiful song, written as musical notes on two pieces of parchment',
+  'A silver teardrop earring containing a real teardrop',
+  'An eggshell painted with scenes of misery in disturbing detail',
+  'A fan that, when unfolded, shows a sleepy cat',
+  'A set of bone pipes',
+  'A four-leaf clover pressed inside a book discussing manners and etiquette',
+  'A sheet of parchment upon which is drawn a mechanical contraption',
+  'An ornate scabbard that fits no blade you have found',
+  'An invitation to a party where a murder happened',
+  "A bronze pentacle with an etching of a rat's head in its center",
+  'A purple handkerchief embroidered with the name of an archmage',
+  'Half a floor plan for a temple, a castle, or another structure',
+  'A bit of folded cloth that, when unfolded, turns into a stylish cap',
+  'A receipt of deposit at a bank in a far-off city',
+  'A diary with seven missing pages',
+  'An empty silver snuffbox bearing the inscription "dreams" on its lid',
+  'An iron holy symbol devoted to an unknown god',
+  "A book about a legendary hero's rise and fall, with the last chapter missing",
+  'A vial of dragon blood',
+  'An ancient arrow of elven design',
+  'A needle that never bends',
+  'An ornate brooch of dwarven design',
+  'An empty wine bottle bearing a pretty label that says, "The Wizard of Wines Winery, Red Dragon Crush, 331422-W"',
+  'A mosaic tile with a multicolored, glazed surface',
+  'A petrified mouse',
+  "A black pirate flag adorned with a dragon's skull and crossbones",
+  "A tiny mechanical crab or spider that moves about when it's not being observed",
+  'A glass jar containing lard with a label that reads, "Griffon Grease"',
+  'A wooden box with a ceramic bottom that holds a living worm with a head on each end of its body',
+  'A metal urn containing the ashes of a hero',
+];
+
+async function seedTrinkets(client: Client): Promise<void> {
+  for (let i = 0; i < TRINKETS.length; i++) {
+    const rollNumber = i + 1;
+    // Zero-padded in both slug AND name — listItems (services/catalog.ts)
+    // sorts by `name ASC`, and an unpadded "Trinket #10" would sort
+    // lexicographically before "Trinket #2", scrambling the wizard's list.
+    const padded = String(rollNumber).padStart(3, '0');
+    const slug = `trinket-${padded}`;
+    await client.query(
+      `INSERT INTO items (slug, name, edition_scope, item_type, rarity, weight_lb, cost_cp, description, source)
+       VALUES ($1, $2, '2024', 'trinket', 'mundane', 0, 0, $3, $4)
+       ON CONFLICT (slug, edition_scope) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description`,
+      [slug, `Trinket #${padded}`, TRINKETS[i], 'PHB 2024 ch.2 "Trinkets" table'],
+    );
+  }
+  console.log(`  trinkets (items.item_type='trinket'): ${TRINKETS.length}`);
+}
+
 // SRD-validation amendment (PLAN.md §3.4 item 1): real 5e multiclass ability
 // prerequisites, identical across both editions (the 2024 PHB's own
 // "Multiclassing" section — see the dnd5e-srd skill's
@@ -2310,6 +2446,18 @@ const SPELL_EFFECT_DEFINITIONS: Array<{
   { name: 'Bless', description: 'Target adds 1d4 to attack rolls and saving throws.', durationType: 'minutes', durationValue: 1, concentration: true, stackingRule: 'refresh' },
   { name: 'Hex', description: 'Extra 1d6 necrotic damage on hit, plus disadvantage on ability checks with a chosen ability.', durationType: 'hours', durationValue: 1, concentration: true, stackingRule: 'refresh' },
   { name: 'Dodge', description: 'Attack rolls against this creature have disadvantage (if the attacker can see it), and it makes Dexterity saving throws with advantage — until the start of its next turn.', durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'refresh' },
+  // docs/roadmap/dnd-2024-gap-analysis.md P2-3 (CB-08) — rulesGlossary.md
+  // line 794: "your movement doesn't provoke Opportunity Attacks for the
+  // rest of the current turn." Tracked as an active_effects row for exactly
+  // the same reason Dodge is (a real, currently-active mechanical state the
+  // opportunity-attack trigger detector needs to read, not just flavor
+  // text) — cleared by the SAME advanceTurn code path that already clears
+  // Dodge on this participant's own next turn starting (functionally
+  // equivalent to "the rest of the current turn" for this app's model,
+  // since nothing lets a participant move again before then — see
+  // advanceTurn's own comment on this specific block for the full
+  // equivalence argument).
+  { name: 'Disengaging', description: "This creature's movement doesn't provoke Opportunity Attacks for the rest of the current turn.", durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'refresh' },
   // Hide (docs/rules/actions.md's Hide section, 2014-confirmed mechanic —
   // "a creature that can't see you"): grants advantage on this creature's
   // attacks against anyone who can't see it, disadvantage on their attacks
@@ -2373,6 +2521,28 @@ const SPELL_EFFECT_DEFINITIONS: Array<{
     description: 'Resistance to Bludgeoning, Piercing, and Slashing damage while this Rage is active.',
     durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'none',
     grantsResistance: ['bludgeoning', 'piercing', 'slashing'],
+  },
+  // docs/roadmap/dnd-2024-gap-analysis.md P3-3 (ER-08) — environmental hazards.
+  // "Burning" and "Suffocating" aren't SRD conditions (no `conditions` row to
+  // link via condition_id), same as Dodge/Raging above — plain tracked
+  // active_effects rows so a DM/player can see the state and it can drive an
+  // endpoint. Burning: the POST .../burning-tick endpoint requires this row
+  // to be present and applies its 1d4 Fire; the DM removes it when the fire
+  // is extinguished. Suffocating: the POST .../suffocation-tick endpoint
+  // maintains this row itself — its stack_count is how many Exhaustion levels
+  // THIS suffocation episode caused (2024), so "removes all levels it gained
+  // from suffocating" (rulesGlossary.md:1553) can be honoured on breathe-again
+  // without a per-source Exhaustion model. `stack` stacking so stack_count is
+  // meaningful (same shape as a monster's manual "Exhaustion" row, P2-6).
+  {
+    name: 'Burning',
+    description: '1d4 Fire damage at the start of each of its turns. Ends when extinguished (2024: give yourself Prone and roll, as an action) or when the fire is doused, submerged, or suffocated.',
+    durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'refresh',
+  },
+  {
+    name: 'Suffocating',
+    description: 'Out of breath. 2024: gains 1 Exhaustion level at the end of each of its turns; all Exhaustion gained from this suffocation is removed when it can breathe again. 2014: drops to 0 HP and is dying after a few rounds instead.',
+    durationType: 'until_removed', durationValue: null, concentration: false, stackingRule: 'stack',
   },
 ];
 

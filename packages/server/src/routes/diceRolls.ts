@@ -4,7 +4,9 @@ import { requireAuth } from '../middleware/auth.js';
 import { requireCampaignMember } from '../middleware/campaign.js';
 import { createDiceRollSchema, listDiceRollsQuerySchema } from '../schemas/diceRolls.js';
 import * as diceRollsService from '../services/diceRolls.js';
-import { getIo, broadcastDiceRolled, broadcastDiceRollVoided, broadcastDiceRollRequestUpdated } from '../sockets/broadcast.js';
+import {
+  getIo, broadcastDiceRolled, broadcastDiceRollVoided, broadcastDiceRollRequestUpdated, broadcastEffectExpired,
+} from '../sockets/broadcast.js';
 
 // Mounted at /campaigns/:id/dice-rolls. No requireRole('dm') gate on the
 // whole router — both DM and players may roll (per-field restrictions,
@@ -21,6 +23,20 @@ diceRollsRouter.post('/', async (req, res) => {
   // already returned), same "broadcast only after commit" discipline used
   // everywhere else in this codebase.
   await broadcastDiceRolled(getIo(req.app), req.campaignId!, roll);
+  // docs/roadmap/dnd-2024-gap-analysis.md P1-13 — an attack roll may have
+  // just broken an active Invisible effect (services/diceRolls.ts's rollDice,
+  // same transaction as the roll insert); only set when that effect belonged
+  // to an encounter (Hide/Invisibility applied outside combat has no
+  // participant sync target to notify here).
+  const cleared = roll.clearedInvisibleEffect;
+  if (cleared && cleared.encounter_id !== null) {
+    await broadcastEffectExpired(
+      getIo(req.app),
+      { encounter_id: cleared.encounter_id, campaign_id: req.campaignId!, sync_seq: cleared.encounter_sync_seq! },
+      cleared,
+      cleared.effect_definition_name,
+    );
+  }
   // If this roll fulfilled a GM roll request, tell every connected client
   // that target's status changed — the request/target metadata is never
   // sensitive (see broadcastDiceRollRequestUpdated's own comment), so this

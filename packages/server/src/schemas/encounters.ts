@@ -136,15 +136,30 @@ export const setParticipantCoverSchema = z.object({
 });
 export type SetParticipantCoverInput = z.infer<typeof setParticipantCoverSchema>;
 
+// docs/roadmap/dnd-2024-gap-analysis.md P3-1 (ER-06) — DM-only correction
+// for a participant's current height above the map's ground plane, same
+// "one small DM knob" shape as setParticipantCoverSchema just above.
+export const setParticipantElevationSchema = z.object({
+  elevationFt: z.number().int().min(0).max(10000),
+});
+export type SetParticipantElevationInput = z.infer<typeof setParticipantElevationSchema>;
+
 // DM battle-map vision feature — see 1784269817666_add-participant-vision.ts.
 // Encounter-scoped (not a character/monster-instance property), DM-tunable
 // per fight, mirroring setParticipantFactionSchema's "one small DM knob"
 // shape. All three fields optional so the DM can patch just one at a time
 // (e.g. flip visionEnabled without resending the radii).
+// docs/roadmap/dnd-2024-gap-analysis.md P2-6 (ER-09) — blindsight/
+// tremorsense/truesight radii, same DM-tunable-per-seating shape as
+// visionRadiusFt/darkvisionRadiusFt (all optional so the DM can patch just
+// one field at a time).
 export const setParticipantVisionSchema = z.object({
   visionEnabled: z.boolean().optional(),
   visionRadiusFt: z.number().int().min(0).max(1000).optional(),
   darkvisionRadiusFt: z.number().int().min(0).max(1000).optional(),
+  blindsightRadiusFt: z.number().int().min(0).max(1000).optional(),
+  tremorsenseRadiusFt: z.number().int().min(0).max(1000).optional(),
+  truesightRadiusFt: z.number().int().min(0).max(1000).optional(),
 });
 export type SetParticipantVisionInput = z.infer<typeof setParticipantVisionSchema>;
 
@@ -172,9 +187,14 @@ export type TransitionDispositionInput = z.infer<typeof transitionDispositionSch
 // row (see map_cell_overrides' own "sparse table" comment), so removing an
 // override (DELETE) is how a cell goes back to normal, not a PUT with this value.
 export const upsertCellOverrideSchema = z.object({
-  costType: z.enum(['difficult', 'impassable', 'special']),
+  // 'pit' (P3-1/ER-06): a hidden pit trap — see services/movement.ts's own
+  // CostType comment for why this doesn't add extra movement cost the way
+  // 'difficult'/'special' do.
+  costType: z.enum(['difficult', 'impassable', 'special', 'pit']),
   medium: z.enum(['ground', 'water', 'air', 'underground']).optional(),
   specialCostFt: z.number().int().positive().optional().nullable(),
+  /** Only meaningful when costType === 'pit'. */
+  pitDepthFt: z.number().int().positive().optional().nullable(),
   note: z.string().max(200).optional().nullable(),
 });
 export type UpsertCellOverrideInput = z.infer<typeof upsertCellOverrideSchema>;
