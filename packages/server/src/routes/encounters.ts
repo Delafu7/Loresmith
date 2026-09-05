@@ -360,6 +360,17 @@ encountersRouter.post('/:id/advance-turn', requireEncounterDm, async (req, res) 
   res.json(result);
 });
 
+// Live Map turn overlay "previous turn" control (DM-only, same guard as
+// /advance-turn) — see services/encounters.ts's previousTurn for why this
+// isn't a full undo of advanceTurn's side effects. Reuses TURN_ADVANCED
+// (not a new event) since the payload it broadcasts — round/turn
+// index/active participant — is identical either direction.
+encountersRouter.post('/:id/previous-turn', requireEncounterDm, async (req, res) => {
+  const result = await encountersService.previousTurn(pool, (req.params.id as string));
+  broadcastTurnAdvanced(getIo(req.app), result.encounter, result.participants);
+  res.json(result);
+});
+
 // Battle map (Phase 3.3). Same requireEncounterDm guard as /start, /end,
 // etc. — placing tokens and configuring the map is a DM tool.
 encountersRouter.put('/:id/map', requireEncounterDm, async (req, res) => {

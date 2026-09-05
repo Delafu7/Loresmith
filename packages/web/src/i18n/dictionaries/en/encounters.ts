@@ -422,6 +422,17 @@ export const encounters = {
     turnOrder: 'Turn order',
     openSheet: "Open {name}'s sheet",
   },
+  turnOverlay: {
+    title: 'Turn controls',
+    collapse: 'Collapse turn controls',
+    expand: 'Expand turn controls',
+    previousTurn: 'Previous turn',
+    previousTurnShort: 'Prev',
+    previousTurnShortcut: 'Previous turn (Alt+Left)',
+    nextTurn: 'Next turn',
+    nextTurnShort: 'Next',
+    nextTurnShortcut: 'Next turn (Alt+Right)',
+  },
   overlay: {
     manageTitle: 'Manage encounter',
   },

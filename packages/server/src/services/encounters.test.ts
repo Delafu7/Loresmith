@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeNextTurn, dexModifier, requireCurrentTurn } from './encounters.js';
+import { computeNextTurn, computePreviousTurn, dexModifier, requireCurrentTurn } from './encounters.js';
 
 describe('dexModifier', () => {
   it.each([
@@ -45,6 +45,30 @@ describe('computeNextTurn', () => {
 
   it('wraps and increments the round when the just-removed active combatant was last in order', () => {
     expect(computeNextTurn([0, 1, 3], 5, 1)).toEqual({ nextTurnOrder: 0, nextRound: 2 });
+  });
+});
+
+describe('computePreviousTurn', () => {
+  it('steps back to the previous turn_order without changing the round mid-encounter', () => {
+    expect(computePreviousTurn([0, 1, 2, 3, 4], 4, 1)).toEqual({ previousTurnOrder: 3, previousRound: 1 });
+    expect(computePreviousTurn([0, 1, 2, 3, 4], 1, 1)).toEqual({ previousTurnOrder: 0, previousRound: 1 });
+  });
+
+  it('wraps to the highest turn_order and decrements the round when stepping back past the first participant', () => {
+    expect(computePreviousTurn([0, 1, 2, 3, 4], 0, 2)).toEqual({ previousTurnOrder: 4, previousRound: 1 });
+  });
+
+  it('returns null when already at the first turn of round 1 — nowhere left to step back to', () => {
+    expect(computePreviousTurn([0, 1, 2, 3, 4], 0, 1)).toBeNull();
+    expect(computePreviousTurn([0], 0, 1)).toBeNull();
+  });
+
+  it('is immune to gaps in turn_order — a removed participant leaves a hole that must be skipped, not blocked on', () => {
+    expect(computePreviousTurn([0, 1, 3, 4], 3, 1)).toEqual({ previousTurnOrder: 1, previousRound: 1 });
+  });
+
+  it('resolves a currentTurnOrder that no longer exists in the list to whoever is previous by value', () => {
+    expect(computePreviousTurn([0, 1, 3], 2, 1)).toEqual({ previousTurnOrder: 1, previousRound: 1 });
   });
 });
 

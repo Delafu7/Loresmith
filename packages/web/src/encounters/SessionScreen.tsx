@@ -69,6 +69,7 @@ export interface SessionScreenProps {
   forceFullscreenMutation: MutationLike<void>;
   rollInitiativeMutation: MutationLike<boolean>;
   advanceTurnMutation: MutationLike<void>;
+  previousTurnMutation: MutationLike<void>;
   addParticipantMutation: AsyncMutationLike<{ characterId?: string; monsterInstanceId?: string }, { participant: { id: string } }>;
   spawnMutation: AsyncMutationLike<SpawnParticipantsBody, { participants: Array<{ id: string }> }>;
   removeParticipantMutation: MutationLike<string>;
@@ -116,6 +117,7 @@ export function SessionScreen({
   forceFullscreenMutation,
   rollInitiativeMutation,
   advanceTurnMutation,
+  previousTurnMutation,
   addParticipantMutation,
   spawnMutation,
   removeParticipantMutation,
@@ -296,6 +298,9 @@ export function SessionScreen({
               myCharacterIds={myCharacterIds}
               characters={characters}
               onOpenSheet={openSheet}
+              rollInitiativeMutation={rollInitiativeMutation}
+              advanceTurnMutation={advanceTurnMutation}
+              previousTurnMutation={previousTurnMutation}
             />
           </div>
           <SidebarShell>

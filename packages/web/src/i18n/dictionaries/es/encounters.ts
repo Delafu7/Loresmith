@@ -417,6 +417,17 @@ export const encounters = {
     turnOrder: 'Orden de iniciativa',
     openSheet: 'Abrir la ficha de {name}',
   },
+  turnOverlay: {
+    title: 'Control de turnos',
+    collapse: 'Contraer control de turnos',
+    expand: 'Expandir control de turnos',
+    previousTurn: 'Turno anterior',
+    previousTurnShort: 'Anterior',
+    previousTurnShortcut: 'Turno anterior (Alt+Izquierda)',
+    nextTurn: 'Siguiente turno',
+    nextTurnShort: 'Siguiente',
+    nextTurnShortcut: 'Siguiente turno (Alt+Derecha)',
+  },
   overlay: {
     manageTitle: 'Gestionar encuentro',
   },

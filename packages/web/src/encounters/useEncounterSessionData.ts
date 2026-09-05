@@ -150,6 +150,14 @@ export function useEncounterSessionData(encounter: Encounter) {
     mutationFn: () => api.post(`/encounters/${encounter.id}/advance-turn`),
     onSuccess: invalidateControlPlane,
   });
+  // Live Map turn overlay "previous turn" convenience control — mirrors
+  // advanceTurnMutation exactly (same TURN_ADVANCED socket event patches
+  // live.encounter/activeParticipantId either direction, see
+  // useEncounterLive.ts's onTurnAdvanced).
+  const previousTurnMutation = useMutation({
+    mutationFn: () => api.post(`/encounters/${encounter.id}/previous-turn`),
+    onSuccess: invalidateControlPlane,
+  });
   const removeParticipantMutation = useMutation({
     mutationFn: (participantId: string) => api.delete(`/encounters/${encounter.id}/participants/${participantId}`),
     onSuccess: invalidateControlPlane,
@@ -258,6 +266,7 @@ export function useEncounterSessionData(encounter: Encounter) {
     forceFullscreenMutation,
     rollInitiativeMutation,
     advanceTurnMutation,
+    previousTurnMutation,
     removeParticipantMutation,
     visibilityMutation,
     addParticipantMutation,

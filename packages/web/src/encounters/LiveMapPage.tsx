@@ -213,6 +213,7 @@ function LiveMapSession({ encounter }: { encounter: Encounter }) {
     forceFullscreenMutation,
     rollInitiativeMutation,
     advanceTurnMutation,
+    previousTurnMutation,
     removeParticipantMutation,
     visibilityMutation,
     addParticipantMutation,
@@ -254,6 +255,7 @@ function LiveMapSession({ encounter }: { encounter: Encounter }) {
       forceFullscreenMutation={forceFullscreenMutation}
       rollInitiativeMutation={rollInitiativeMutation}
       advanceTurnMutation={advanceTurnMutation}
+      previousTurnMutation={previousTurnMutation}
       addParticipantMutation={addParticipantMutation}
       spawnMutation={spawnMutation}
       removeParticipantMutation={removeParticipantMutation}

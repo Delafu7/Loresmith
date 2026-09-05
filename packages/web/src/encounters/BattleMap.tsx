@@ -44,6 +44,8 @@ import { DoorActionPanel } from './elements/DoorActionPanel';
 import { useCreateMapElement, useSetMapElementsVisibilityBatch } from './elements/useMapElements';
 import { VisionOverlay } from './vision/VisionOverlay';
 import { useCampaignShell } from '../campaigns/CampaignShell';
+import { TurnControlOverlay } from './TurnControlOverlay';
+import type { MutationLike } from './BattleModeDmPanel';
 
 const GRID_MIN = 5;
 const GRID_MAX = 50;
@@ -121,6 +123,9 @@ export function BattleMap({
   myCharacterIds = new Set(),
   characters,
   onOpenSheet,
+  rollInitiativeMutation,
+  advanceTurnMutation,
+  previousTurnMutation,
 }: {
   encounterId: string;
   campaignId: string;
@@ -165,6 +170,15 @@ export function BattleMap({
    * itself still drives move-targeting exactly as before whether or not this
    * is supplied. */
   onOpenSheet?: (participantId: string) => void;
+  /** Live Map turn overlay (map-corner panel, isDm-gated internally by the
+   * caller — see SessionScreen.tsx) — the same roll-initiative/advance-turn/
+   * previous-turn mutations BattleModeDmPanel.tsx's Manage overlay already
+   * calls, threaded here so the DM can trigger them without leaving the map.
+   * All three optional so BattleMap stays usable standalone (e.g.
+   * maps/FullscreenMapPage.tsx) without wiring turn control at all. */
+  rollInitiativeMutation?: MutationLike<boolean>;
+  advanceTurnMutation?: MutationLike<void>;
+  previousTurnMutation?: MutationLike<void>;
 }) {
   const { t } = useLocale();
   const { user } = useAuth();
@@ -1405,6 +1419,26 @@ export function BattleMap({
                 </div>
               </div>
             </div>
+
+            {/* Live Map turn overlay — a sibling of the pan/zoom transform
+                div above, not a child of it, so its screen position stays
+                fixed to this container's corner regardless of pan/zoom.
+                DM-only (every action it exposes requires the DM role
+                server-side); a player's initiative order is still always
+                visible in SessionScreen's sticky strip above the map. */}
+            {isDm && rollInitiativeMutation && advanceTurnMutation && previousTurnMutation && (
+              <TurnControlOverlay
+                mode={encounter.mode}
+                participants={participants}
+                activeParticipantId={activeParticipantId}
+                characters={characters}
+                myUserId={user?.id}
+                onSelect={onOpenSheet}
+                rollInitiativeMutation={rollInitiativeMutation}
+                advanceTurnMutation={advanceTurnMutation}
+                previousTurnMutation={previousTurnMutation}
+              />
+            )}
         </div>
 
       {/* Exact-coordinates input — a third path to the same pendingMove/

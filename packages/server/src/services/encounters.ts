@@ -2227,6 +2227,27 @@ export function computeNextTurn(
   return { nextTurnOrder: sortedTurnOrders[0]!, nextRound: currentRound + 1 };
 }
 
+// Mirror of computeNextTurn, walking backward — added for the Live Map turn
+// overlay's "previous turn" convenience control (correcting a misclick or
+// reviewing the last turn without leaving the map). Finds the greatest
+// turn_order strictly LESS than the current one, wrapping to the highest and
+// decrementing the round when there isn't one. Returns null when there's
+// nowhere to go back to (round 1, first participant in turn order) —
+// stepping back further would mean going before combat even started;
+// previousTurn (below) reports that as a CONFLICT rather than doing nothing.
+export function computePreviousTurn(
+  sortedTurnOrders: number[],
+  currentTurnOrder: number,
+  currentRound: number,
+): { previousTurnOrder: number; previousRound: number } | null {
+  const prev = [...sortedTurnOrders].reverse().find((t) => t < currentTurnOrder);
+  if (prev !== undefined) {
+    return { previousTurnOrder: prev, previousRound: currentRound };
+  }
+  if (currentRound <= 1) return null;
+  return { previousTurnOrder: sortedTurnOrders[sortedTurnOrders.length - 1]!, previousRound: currentRound - 1 };
+}
+
 // docs/rules/actions.md:113 flagged this as a known gap: no endpoint that
 // spends a per-turn resource (action economy, shove) ever checked whose turn
 // it actually was — authorization only verified "own character or DM," not
@@ -2677,6 +2698,101 @@ export async function advanceTurn(pool: Pool, encounterId: string): Promise<Adva
     await client.query('COMMIT');
     const participants = await fetchParticipants(pool, encounterId);
     return { encounter: updatedRes.rows[0]!, participants, expiredEffects, roundAdvanced, deathSaveDue };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export interface PreviousTurnResult {
+  encounter: EncounterRow;
+  participants: ParticipantRow[];
+  deathSaveDue: boolean;
+}
+
+// DM "previous turn" convenience control (Live Map turn overlay) — moves the
+// active-turn pointer backward, for correcting a misclick or reviewing what
+// just happened, without leaving the map. Deliberately NOT a full undo of
+// advanceTurn's side effects: 'rounds' effect expiry, legendary-action
+// resets, is_surprised clearing, and Dodge/Disengaging expiry are all
+// one-directional consequences of time passing at the table (an expired
+// effect might already be the reason a player took some other action since),
+// so reversing them would silently misrepresent what actually happened.
+// Only the turn/round pointer and the newly-active participant's action
+// economy move — the same fields TURN_ADVANCED already carries, which is why
+// routes/encounters.ts broadcasts this via that same event rather than a new
+// one.
+export async function previousTurn(pool: Pool, encounterId: string): Promise<PreviousTurnResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const encounterRes = await client.query<EncounterRow>(
+      `SELECT * FROM encounters WHERE id = $1 FOR UPDATE`,
+      [encounterId],
+    );
+    const encounter = encounterRes.rows[0];
+    if (!encounter) throw notFound('Encounter');
+    if (encounter.status !== 'active') {
+      throw new AppError('CONFLICT', `Cannot go to a previous turn on an encounter in status '${encounter.status}' (must be 'active')`);
+    }
+
+    const turnOrdersRes = await client.query<{ turn_order: number }>(
+      `SELECT turn_order FROM combat_participants WHERE encounter_id = $1 ORDER BY turn_order ASC`,
+      [encounterId],
+    );
+    if (turnOrdersRes.rows.length === 0) {
+      throw new AppError('CONFLICT', 'This encounter has no participants to step back through');
+    }
+
+    const stepBack = computePreviousTurn(
+      turnOrdersRes.rows.map((r) => r.turn_order),
+      encounter.current_turn_index,
+      encounter.current_round,
+    );
+    if (stepBack === null) {
+      throw new AppError('CONFLICT', 'Already at the first turn of combat');
+    }
+    const { previousTurnOrder, previousRound } = stepBack;
+
+    // Fresh action economy for whoever's turn is starting, same as
+    // advanceTurn — a DM stepping back to re-adjudicate that turn shouldn't
+    // find it already spent.
+    const startingRes = await client.query<{ id: string; character_id: string | null }>(
+      `UPDATE combat_participants
+       SET action_used = false, bonus_action_used = false, reaction_used = false,
+           dash_used = false, movement_used_ft = 0, object_interaction_used = false,
+           last_action_economy_snapshot = NULL
+       WHERE encounter_id = $1 AND turn_order = $2
+       RETURNING id, character_id`,
+      [encounterId, previousTurnOrder],
+    );
+    const previousParticipantId = startingRes.rows[0]!.id;
+
+    let deathSaveDue = false;
+    const startingCharacterId = startingRes.rows[0]!.character_id;
+    if (startingCharacterId != null) {
+      const deathSaveRes = await client.query<{ hp_current: number; is_alive: boolean; is_stable: boolean }>(
+        `SELECT hp_current, is_alive, is_stable FROM characters WHERE id = $1`,
+        [startingCharacterId],
+      );
+      const deathSaveRow = deathSaveRes.rows[0];
+      deathSaveDue = deathSaveRow != null && deathSaveRow.hp_current === 0 && deathSaveRow.is_alive && !deathSaveRow.is_stable;
+    }
+
+    const updatedRes = await client.query<EncounterRow>(
+      `UPDATE encounters
+       SET current_turn_index = $1, current_round = $2, active_participant_id = $3, sync_seq = sync_seq + 1
+       WHERE id = $4
+       RETURNING *`,
+      [previousTurnOrder, previousRound, previousParticipantId, encounterId],
+    );
+
+    await client.query('COMMIT');
+    const participants = await fetchParticipants(pool, encounterId);
+    return { encounter: updatedRes.rows[0]!, participants, deathSaveDue };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
