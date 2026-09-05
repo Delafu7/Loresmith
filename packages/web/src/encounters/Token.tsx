@@ -200,8 +200,15 @@ function TokenComponent({
     // handler untouched, not get hijacked into a token drag. stopPropagation
     // is the other half of that contract: a drag we DO start here must not
     // also register as a map pan-start (BattleMap's handler runs on bubble).
+    // Stopped unconditionally, even when this token isn't draggable (wrong
+    // owner/turn) — otherwise a click-drag on a token you can't move falls
+    // straight through to BattleMap's leftDragCandidate/pan promotion,
+    // silently panning the whole viewport instead of doing nothing. That
+    // read as "the token/image jumped somewhere else" (the camera moved,
+    // not the token) — a real bug report, not a permissions question.
     if (e.button !== 0) return;
     e.stopPropagation();
+    if (!isDraggable) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragStart.current = { pointerX: e.clientX, pointerY: e.clientY };
     setDragOffset({ dx: 0, dy: 0 });
@@ -302,7 +309,7 @@ function TokenComponent({
     <div
       className={`absolute flex items-center justify-center ${isDraggable ? 'cursor-grab active:cursor-grabbing touch-none' : 'cursor-pointer'}`}
       style={{ left, top, width: spanPx, height: spanPx, zIndex: dragOffset ? 30 : isSelected ? 20 : 10 }}
-      onPointerDown={isDraggable ? handlePointerDown : undefined}
+      onPointerDown={handlePointerDown}
       onPointerMove={isDraggable ? handlePointerMove : undefined}
       onPointerUp={isDraggable ? handlePointerUp : undefined}
       onClick={onSelect}
@@ -359,7 +366,7 @@ function TokenComponent({
             </div>
           )}
           <div
-            className={`relative rounded-full border-2 ${FACTION_STYLES[participant.faction].border} ${
+            className={`relative shrink-0 rounded-full border-2 ${FACTION_STYLES[participant.faction].border} ${
               isActive ? 'ring-2 ring-amber-500 ring-offset-1 ring-offset-stone-950' : ''
             } ${isSelected ? 'outline outline-2 outline-offset-2 outline-amber-300' : ''} ${
               isMultiSelected ? 'outline outline-2 outline-offset-2 outline-sky-400' : ''
